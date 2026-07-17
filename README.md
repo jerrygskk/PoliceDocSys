@@ -178,7 +178,7 @@
 | 檔案 | 用途 |
 |------|------|
 | `PACKED.zip` | 程式＋空白資料庫打包，**新使用者下載這個** |
-| `Police-Document-Manager.exe` | 主程式（單一執行檔） |
+| `Police-Document-Manager_v版號.exe` | 主程式（單一執行檔，檔名帶版本號） |
 | `dbfile.db` | 空白資料庫（全新安裝用） |
 | `Quick_Start.pdf` | 兩頁速查卡 |
 
