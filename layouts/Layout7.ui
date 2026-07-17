@@ -1,0 +1,481 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>1100</width><height>768</height></rect>
+  </property>
+  <property name="windowTitle"><string>公文管理系統 - 資料庫設定</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainVerticalLayout">
+    <property name="spacing"><number>0</number></property>
+    <property name="leftMargin"><number>0</number></property>
+    <property name="topMargin"><number>0</number></property>
+    <property name="rightMargin"><number>0</number></property>
+    <property name="bottomMargin"><number>0</number></property>
+    <item>
+     <!--
+       外層 QStackedWidget：
+         index 0 = page_login   密碼驗證頁
+         index 1 = page_main    設定主畫面（左 nav + 右 inner_stack）
+       動態樣式（nav 選中切換、save_btn disabled 灰色）一律由 tab_settings.py 套用。
+     -->
+     <widget class="QStackedWidget" name="outer_stack">
+      <property name="currentIndex"><number>0</number></property>
+
+      <!-- ════════════════════════════════════════════════ -->
+      <!-- index 0：密碼驗證頁                                -->
+      <!-- ════════════════════════════════════════════════ -->
+      <widget class="QWidget" name="page_login">
+       <layout class="QVBoxLayout" name="loginOuterLayout">
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item>
+         <spacer name="loginTopSpacer">
+          <property name="orientation"><enum>Qt::Vertical</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>0</width><height>40</height></size></property>
+         </spacer>
+        </item>
+        <item>
+         <!-- 置中卡片列 -->
+         <layout class="QHBoxLayout" name="loginCenterRow">
+          <item>
+           <spacer name="loginLeftSpacer">
+            <property name="orientation"><enum>Qt::Horizontal</enum></property>
+            <property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QWidget" name="login_card" native="true">
+            <property name="minimumSize"><size><width>320</width><height>0</height></size></property>
+            <property name="maximumSize"><size><width>320</width><height>16777215</height></size></property>
+            <layout class="QVBoxLayout" name="loginCardLayout">
+             <property name="spacing"><number>12</number></property>
+             <property name="leftMargin"><number>32</number></property>
+             <property name="topMargin"><number>28</number></property>
+             <property name="rightMargin"><number>32</number></property>
+             <property name="bottomMargin"><number>28</number></property>
+             <item>
+              <widget class="QLabel" name="lbl_login_title">
+               <property name="text"><string>管理者驗證</string></property>
+               <property name="alignment"><set>Qt::AlignCenter</set></property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLineEdit" name="w_password">
+               <property name="minimumSize"><size><width>0</width><height>40</height></size></property>
+               <property name="echoMode"><enum>QLineEdit::Password</enum></property>
+               <property name="placeholderText"><string>請輸入管理者密碼</string></property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="lbl_login_err">
+               <property name="text"><string></string></property>
+               <property name="alignment"><set>Qt::AlignCenter</set></property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btn_login">
+               <property name="minimumSize"><size><width>0</width><height>40</height></size></property>
+               <property name="text"><string>登入</string></property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <spacer name="loginRightSpacer">
+            <property name="orientation"><enum>Qt::Horizontal</enum></property>
+            <property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <spacer name="loginBottomSpacer">
+          <property name="orientation"><enum>Qt::Vertical</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>0</width><height>40</height></size></property>
+         </spacer>
+        </item>
+       </layout>
+      </widget>
+
+      <!-- ════════════════════════════════════════════════ -->
+      <!-- index 1：設定主畫面                                -->
+      <!-- ════════════════════════════════════════════════ -->
+      <widget class="QWidget" name="page_main">
+       <layout class="QHBoxLayout" name="mainPageLayout">
+        <property name="spacing"><number>0</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+
+        <!-- ── 左側導航（固定寬 160） ── -->
+        <item>
+         <widget class="QWidget" name="nav_panel" native="true">
+          <property name="minimumSize"><size><width>160</width><height>0</height></size></property>
+          <property name="maximumSize"><size><width>160</width><height>16777215</height></size></property>
+          <layout class="QVBoxLayout" name="navLayout">
+           <property name="spacing"><number>4</number></property>
+           <property name="leftMargin"><number>12</number></property>
+           <property name="topMargin"><number>16</number></property>
+           <property name="rightMargin"><number>12</number></property>
+           <property name="bottomMargin"><number>16</number></property>
+           <item>
+            <widget class="QPushButton" name="btn_nav_personnel">
+             <property name="text"><string>人員管理</string></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_nav_dept">
+             <property name="text"><string>部門管理</string></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_nav_casetype">
+             <property name="text"><string>案件類型</string></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_nav_system">
+             <property name="text"><string>系統設定</string></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_nav_trash">
+             <property name="text"><string>資源回收筒</string></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_nav_backup">
+             <property name="text"><string>備份還原</string></property>
+            </widget>
+           </item>
+           <item>
+            <spacer name="navStretch">
+             <property name="orientation"><enum>Qt::Vertical</enum></property>
+             <property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="Line" name="nav_separator">
+             <property name="orientation"><enum>Qt::Horizontal</enum></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_change_pwd">
+             <property name="text"><string>變更密碼</string></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_year_reset">
+             <property name="text"><string>跨年度重置</string></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_logout">
+             <property name="text"><string>登出</string></property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+
+        <!-- ── 右側內容 QStackedWidget ── -->
+        <item>
+         <!--
+           inner_stack：
+             index 0 = page_personnel
+             index 1 = page_dept
+             index 2 = page_casetype
+             index 3 = page_system（歸檔資料夾／簽收表標題／閒置逾時／唯讀設定／自動備份）
+             index 4 = page_trash
+             index 5 = page_backup（備份還原）
+           前三頁結構相同，只差表頭文字與元件名後綴。
+         -->
+         <widget class="QStackedWidget" name="inner_stack">
+          <property name="currentIndex"><number>0</number></property>
+
+          <!-- ── 子頁 0：人員管理 ── -->
+          <widget class="QWidget" name="page_personnel">
+           <layout class="QVBoxLayout" name="personnelLayout">
+            <property name="spacing"><number>8</number></property>
+            <property name="leftMargin"><number>20</number></property>
+            <property name="topMargin"><number>16</number></property>
+            <property name="rightMargin"><number>20</number></property>
+            <property name="bottomMargin"><number>16</number></property>
+            <item>
+             <layout class="QHBoxLayout" name="personnelActionRow">
+              <property name="spacing"><number>8</number></property>
+              <item>
+               <widget class="QPushButton" name="btn_add_personnel">
+                <property name="text"><string>＋ 新增</string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_edit_personnel">
+                <property name="text"><string>✎ 修改</string></property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="personnelActionStretch">
+                <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                <property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="lbl_hint_personnel">
+                <property name="text"><string></string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_save_personnel">
+                <property name="text"><string>💾 儲存排序</string></property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTableWidget" name="tbl_personnel">
+              <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+              <column><property name="text"><string/></property></column>
+              <column><property name="text"><string>序號</string></property></column>
+              <column><property name="text"><string>姓名</string></property></column>
+              <column><property name="text"><string>別名</string></property></column>
+              <column><property name="text"><string>狀態</string></property></column>
+              
+             </widget>
+            </item>
+           </layout>
+          </widget>
+
+          <!-- ── 子頁 1：部門管理 ── -->
+          <widget class="QWidget" name="page_dept">
+           <layout class="QVBoxLayout" name="deptLayout">
+            <property name="spacing"><number>8</number></property>
+            <property name="leftMargin"><number>20</number></property>
+            <property name="topMargin"><number>16</number></property>
+            <property name="rightMargin"><number>20</number></property>
+            <property name="bottomMargin"><number>16</number></property>
+            <item>
+             <layout class="QHBoxLayout" name="deptActionRow">
+              <property name="spacing"><number>8</number></property>
+              <item>
+               <widget class="QPushButton" name="btn_add_dept">
+                <property name="text"><string>＋ 新增</string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_edit_dept">
+                <property name="text"><string>✎ 修改</string></property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="deptActionStretch">
+                <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                <property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="lbl_hint_dept">
+                <property name="text"><string></string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_save_dept">
+                <property name="text"><string>💾 儲存排序</string></property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTableWidget" name="tbl_dept">
+              <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+              <column><property name="text"><string/></property></column>
+              <column><property name="text"><string>序號</string></property></column>
+              <column><property name="text"><string>部門名稱</string></property></column>
+              <column><property name="text"><string>狀態</string></property></column>
+              
+             </widget>
+            </item>
+           </layout>
+          </widget>
+
+          <!-- ── 子頁 2：案件類型 ── -->
+          <widget class="QWidget" name="page_casetype">
+           <layout class="QVBoxLayout" name="casetypeLayout">
+            <property name="spacing"><number>8</number></property>
+            <property name="leftMargin"><number>20</number></property>
+            <property name="topMargin"><number>16</number></property>
+            <property name="rightMargin"><number>20</number></property>
+            <property name="bottomMargin"><number>16</number></property>
+            <item>
+             <layout class="QHBoxLayout" name="casetypeActionRow">
+              <property name="spacing"><number>8</number></property>
+              <item>
+               <widget class="QPushButton" name="btn_add_casetype">
+                <property name="text"><string>＋ 新增</string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_edit_casetype">
+                <property name="text"><string>✎ 修改</string></property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="casetypeActionStretch">
+                <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                <property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="lbl_hint_casetype">
+                <property name="text"><string></string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_save_casetype">
+                <property name="text"><string>💾 儲存排序</string></property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTableWidget" name="tbl_casetype">
+              <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+              <column><property name="text"><string/></property></column>
+              <column><property name="text"><string>序號</string></property></column>
+              <column><property name="text"><string>案件類型名稱</string></property></column>
+              <column><property name="text"><string>別名</string></property></column>
+              <column><property name="text"><string>狀態</string></property></column>
+
+             </widget>
+            </item>
+           </layout>
+          </widget>
+
+          <!-- ── 子頁 3：系統設定（群組面板由 tab_settings.py 動態掛入） ── -->
+          <widget class="QWidget" name="page_system">
+           <layout class="QVBoxLayout" name="systemOuterLayout">
+            <property name="spacing"><number>0</number></property>
+            <property name="leftMargin"><number>0</number></property>
+            <property name="topMargin"><number>0</number></property>
+            <property name="rightMargin"><number>0</number></property>
+            <property name="bottomMargin"><number>0</number></property>
+            <item>
+             <widget class="QScrollArea" name="system_scroll">
+              <property name="widgetResizable"><bool>true</bool></property>
+              <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+              <widget class="QWidget" name="system_scroll_content">
+               <layout class="QVBoxLayout" name="systemLayout">
+                <property name="spacing"><number>16</number></property>
+                <property name="leftMargin"><number>20</number></property>
+                <property name="topMargin"><number>16</number></property>
+                <property name="rightMargin"><number>20</number></property>
+                <property name="bottomMargin"><number>16</number></property>
+               </layout>
+              </widget>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+
+          <!-- ── 子頁 4：資源回收筒（僅 admin） ── -->
+          <widget class="QWidget" name="page_trash">
+           <layout class="QVBoxLayout" name="trashLayout">
+            <property name="spacing"><number>8</number></property>
+            <property name="leftMargin"><number>20</number></property>
+            <property name="topMargin"><number>16</number></property>
+            <property name="rightMargin"><number>20</number></property>
+            <property name="bottomMargin"><number>16</number></property>
+            <item>
+             <layout class="QHBoxLayout" name="trashActionRow">
+              <property name="spacing"><number>8</number></property>
+              <item>
+               <widget class="QLineEdit" name="w_trash_filter">
+                <property name="minimumSize"><size><width>240</width><height>0</height></size></property>
+                <property name="maximumSize"><size><width>300</width><height>16777215</height></size></property>
+                <property name="placeholderText"><string>搜尋主旨或對象人</string></property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="trashActionStretch">
+                <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                <property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="lbl_trash_count">
+                <property name="text"><string></string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_reload_trash">
+                <property name="text"><string>⟳ 重整</string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_restore_trash">
+                <property name="text"><string>↩ 還原</string></property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTableWidget" name="tbl_trash">
+              <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+              <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
+              <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+              <column><property name="text"><string>刪除時間</string></property></column>
+              <column><property name="text"><string>文號</string></property></column>
+              <column><property name="text"><string>類別</string></property></column>
+              <column><property name="text"><string>主旨</string></property></column>
+              <column><property name="text"><string>對象人</string></property></column>
+              <column><property name="text"><string>刪除身分</string></property></column>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lbl_hint_trash">
+              <property name="wordWrap"><bool>true</bool></property>
+              <property name="text"><string></string></property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+
+          <!-- ── 子頁 5：備份還原（僅 admin；內容由程式建立） ── -->
+          <widget class="QWidget" name="page_backup">
+           <layout class="QVBoxLayout" name="backupOuterLayout">
+            <property name="spacing"><number>0</number></property>
+            <property name="leftMargin"><number>0</number></property>
+            <property name="topMargin"><number>0</number></property>
+            <property name="rightMargin"><number>0</number></property>
+            <property name="bottomMargin"><number>0</number></property>
+            <item>
+             <widget class="QWidget" name="backup_content" native="true">
+              <layout class="QVBoxLayout" name="backupLayout">
+               <property name="spacing"><number>12</number></property>
+               <property name="leftMargin"><number>20</number></property>
+               <property name="topMargin"><number>16</number></property>
+               <property name="rightMargin"><number>20</number></property>
+               <property name="bottomMargin"><number>16</number></property>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+
+         </widget>
+        </item>
+       </layout>
+      </widget>
+
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+</ui>

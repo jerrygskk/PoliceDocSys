@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>1100</width><height>768</height></rect>
+  </property>
+  <property name="windowTitle"><string>公文管理系統 - 簽收單列印</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainVerticalLayout">
+    <property name="spacing"><number>10</number></property>
+    <property name="leftMargin"><number>16</number></property>
+    <property name="topMargin"><number>16</number></property>
+    <property name="rightMargin"><number>16</number></property>
+    <property name="bottomMargin"><number>16</number></property>
+
+    <!-- 控制列 -->
+    <item>
+     <layout class="QHBoxLayout" name="ctrlLayout">
+      <property name="spacing"><number>10</number></property>
+
+      <!-- 發文日期 標籤 -->
+      <item>
+       <widget class="QLabel" name="lbl_date">
+        <property name="text"><string>發文日期：</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+
+      <!-- 日期選擇器 -->
+      <item>
+       <widget class="QDateEdit" name="print_date">
+        <property name="minimumWidth"><number>120</number></property>
+        <property name="calendarPopup"><bool>true</bool></property>
+        <property name="displayFormat"><string>yyyy-MM-dd</string></property>
+       </widget>
+      </item>
+
+      <!-- 產生預覽按鈕 -->
+      <item>
+       <widget class="QPushButton" name="btn_generate">
+        <property name="text"><string>產生預覽</string></property>
+       </widget>
+      </item>
+
+      <!-- 狀態標籤 -->
+      <item>
+       <widget class="QLabel" name="lbl_status">
+        <property name="text"><string></string></property>
+        <property name="styleSheet"><string>color: gray; font-size: 12px;</string></property>
+       </widget>
+      </item>
+
+      <!-- 彈性空間（把右側兩顆按鈕推到最右） -->
+      <item>
+       <spacer name="hSpacer">
+        <property name="orientation"><enum>Qt::Horizontal</enum></property>
+        <property name="sizeHint" stdset="0">
+         <size><width>40</width><height>20</height></size>
+        </property>
+       </spacer>
+      </item>
+
+      <!-- 下載 PDF 按鈕 -->
+      <item>
+       <widget class="QPushButton" name="btn_download">
+        <property name="text"><string>下載 PDF</string></property>
+        <property name="enabled"><bool>false</bool></property>
+       </widget>
+      </item>
+
+      <!-- 列印表單按鈕 -->
+      <item>
+       <widget class="QPushButton" name="btn_print">
+        <property name="text"><string>列印表單</string></property>
+        <property name="enabled"><bool>false</bool></property>
+       </widget>
+      </item>
+
+     </layout>
+    </item>
+
+    <!-- 預覽捲動區 -->
+    <item>
+     <widget class="QScrollArea" name="scroll_preview">
+      <property name="widgetResizable"><bool>true</bool></property>
+      <property name="styleSheet"><string>background: #D0D0D0;</string></property>
+      <widget class="QWidget" name="scroll_contents">
+       <property name="geometry">
+        <rect><x>0</x><y>0</y><width>1068</width><height>700</height></rect>
+       </property>
+       <layout class="QVBoxLayout" name="preview_layout">
+        <property name="spacing"><number>14</number></property>
+        <property name="leftMargin"><number>16</number></property>
+        <property name="topMargin"><number>16</number></property>
+        <property name="rightMargin"><number>16</number></property>
+        <property name="bottomMargin"><number>16</number></property>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+
+   </layout>
+  </widget>
+ </widget>
+</ui>

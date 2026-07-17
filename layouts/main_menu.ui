@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Dialog</class>
+ <widget class="QDialog" name="Dialog">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>520</width><height>670</height></rect>
+  </property>
+  <property name="windowTitle">
+   <string>公文管理系統 - 主選單</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">
+QDialog, QDialog > QWidget, QDialog QLabel, QDialog QFrame {
+    background-color: #f2f2f7;
+}
+QLabel#titleLabel {
+    font-size: 22pt;
+    font-weight: 700;
+    color: #1c1c1e;
+    padding: 20px 0 4px 0;
+    background-color: #f2f2f7;
+}
+QLabel#subtitleLabel {
+    font-size: 13pt;
+    color: #636366;
+    padding: 0 0 8px 0;
+    background-color: #f2f2f7;
+}
+QLabel#versionLabel {
+    font-size: 11pt;
+    color: #aeaeb2;
+    background-color: #f2f2f7;
+}
+QToolButton {
+    background-color: #ffffff;
+    border: 1px solid #d9d9de;
+    border-radius: 12px;
+    color: #1c1c1e;
+    font-size: 13pt;
+    font-weight: 500;
+    padding: 8px 4px;
+}
+QToolButton:hover {
+    background-color: #eaf1f8;
+    border: 1px solid #b9cbe0;
+}
+QToolButton:pressed {
+    background-color: #d8e4f0;
+}
+   </string>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing"><number>0</number></property>
+   <property name="leftMargin"><number>24</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>24</number></property>
+   <property name="bottomMargin"><number>16</number></property>
+
+   <!-- 標題區 -->
+   <item>
+    <layout class="QVBoxLayout" name="headerLayout">
+     <property name="spacing"><number>4</number></property>
+     <item>
+      <widget class="QLabel" name="titleLabel">
+       <property name="text"><string>公文管理系統</string></property>
+       <property name="alignment"><set>Qt::AlignCenter</set></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="subtitleLabel">
+       <property name="text"><string>請選擇功能</string></property>
+       <property name="alignment"><set>Qt::AlignCenter</set></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <!-- 分隔線 -->
+   <item>
+    <widget class="QFrame" name="line">
+     <property name="frameShape"><enum>QFrame::HLine</enum></property>
+     <property name="frameShadow"><enum>QFrame::Sunken</enum></property>
+    </widget>
+   </item>
+
+   <!-- 按鈕區（2 欄磚格） -->
+   <item>
+    <layout class="QGridLayout" name="btnGrid">
+     <property name="horizontalSpacing"><number>10</number></property>
+     <property name="verticalSpacing"><number>10</number></property>
+     <property name="topMargin"><number>16</number></property>
+     <item row="0" column="0">
+      <widget class="QToolButton" name="btn_report_assignment">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>交辦單發文</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QToolButton" name="btn_receive_assignment">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>交辦單收文</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QToolButton" name="btn_report_case">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>公文陳報</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QToolButton" name="btn_reward">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>敘獎登錄</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="2" column="0">
+      <widget class="QToolButton" name="btn_ticket">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>罰單登錄</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QToolButton" name="btn_generate_receipt">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>簽收單列印</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="3" column="0">
+      <widget class="QToolButton" name="btn_dbbrowse">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>資料庫瀏覽</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QToolButton" name="btn_archive">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>檔案歸檔</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="4" column="0">
+      <widget class="QToolButton" name="btn_settings">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>資料庫設定</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="4" column="1">
+      <widget class="QToolButton" name="btn_audit">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>操作紀錄</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <!-- 彈性空間 -->
+   <item>
+    <spacer>
+     <property name="orientation"><enum>Qt::Vertical</enum></property>
+     <property name="sizeHint" stdset="0"><size><width>0</width><height>20</height></size></property>
+    </spacer>
+   </item>
+
+   <!-- 分隔線 -->
+   <item>
+    <widget class="QFrame" name="line2">
+     <property name="frameShape"><enum>QFrame::HLine</enum></property>
+     <property name="frameShadow"><enum>QFrame::Sunken</enum></property>
+    </widget>
+   </item>
+
+   <!-- 底部：版本 + 離開 -->
+   <item>
+    <layout class="QHBoxLayout" name="bottomLayout">
+     <property name="topMargin"><number>8</number></property>
+     <item>
+      <widget class="QLabel" name="versionLabel">
+       <property name="text"><string/></property>
+      </widget>
+     </item>
+     <item>
+      <spacer>
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
+       <property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_exit">
+       <property name="minimumSize"><size><width>110</width><height>36</height></size></property>
+       <property name="maximumSize"><size><width>110</width><height>36</height></size></property>
+       <property name="text"><string>離開系統</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+  </layout>
+ </widget>
+ <connections>
+  <connection>
+   <sender>btn_exit</sender>
+   <signal>clicked()</signal>
+   <receiver>Dialog</receiver>
+   <slot>close()</slot>
+  </connection>
+ </connections>
+</ui>

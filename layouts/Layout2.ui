@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>1100</width><height>768</height></rect>
+  </property>
+  <property name="windowTitle"><string>公文管理系統 - 交辦單收文</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainVerticalLayout">
+    <property name="spacing"><number>8</number></property>
+    <item>
+     <layout class="QGridLayout" name="formGrid">
+      <property name="horizontalSpacing"><number>8</number></property>
+      <property name="verticalSpacing"><number>8</number></property>
+
+      <!--
+        統一規格：
+        col0 = 標籤（Qt自動對齊）
+        col1 = 欄位A：combo 220px（收文人員/業務組/承辦人）
+               或 dateEdit 180px（收文日期）
+        col2 = 標籤
+        col3 = 欄位B：combo 220px（限辦日期 180px）
+        col4 = 額外元件（checkbox/按鈕）
+        col5 = spacer
+        col6 = 按鈕
+
+        重點：col1 寬度由最寬元件決定（220px combo）
+              col3 寬度由最寬元件決定（220px combo）
+              日期欄 180px 放 col1/col3 時會對齊到 220px 左緣
+      -->
+
+      <!-- row0: 收文日期(180) | 收文人員(220) | spacer | 清除 | 確認 -->
+      <item row="0" column="0">
+       <widget class="QLabel" name="lbl_recvDate">
+        <property name="text"><string>收文日期</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QDateEdit" name="recv_date">
+        <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="calendarPopup"><bool>true</bool></property>
+        <property name="displayFormat"><string>yyyy-MM-dd</string></property>
+       </widget>
+      </item>
+      <item row="0" column="2">
+       <widget class="QLabel" name="lbl_receiver">
+        <property name="text"><string>收文人員</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="0" column="3">
+       <widget class="QComboBox" name="recv_receiver">
+        <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="0" column="4">
+       <spacer>
+        <property name="orientation"><enum>Qt::Horizontal</enum></property>
+        <property name="sizeHint" stdset="0"><size><width>20</width><height>0</height></size></property>
+       </spacer>
+      </item>
+      <item row="0" column="5">
+       <widget class="QPushButton" name="btn_recv_clear">
+        <property name="minimumSize"><size><width>110</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>110</width><height>36</height></size></property>
+        <property name="text"><string>清除表單</string></property>
+       </widget>
+      </item>
+      <item row="0" column="6">
+       <widget class="QPushButton" name="btn_recv_submit">
+        <property name="minimumSize"><size><width>110</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>110</width><height>36</height></size></property>
+        <property name="text"><string>確認收文</string></property>
+       </widget>
+      </item>
+
+      <!-- row1: 業務組(220) -->
+      <item row="1" column="0">
+       <widget class="QLabel" name="lbl_dept">
+        <property name="text"><string>業務組</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="recv_dept">
+        <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+
+      <!-- row2: 交辦事由（跨 col1~col3，右緣對齊收文人員右緣） -->
+      <item row="2" column="0">
+       <widget class="QLabel" name="lbl_subject">
+        <property name="text"><string>交辦事由</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="2" column="1" colspan="3">
+       <widget class="QLineEdit" name="recv_subject">
+        <property name="minimumSize"><size><width>0</width><height>36</height></size></property>
+        <property name="placeholderText"><string>請輸入交辦事由</string></property>
+       </widget>
+      </item>
+
+      <!-- row3: 承辦人(220) | 限辦日期(180) | 免覆 -->
+      <item row="3" column="0">
+       <widget class="QLabel" name="lbl_processor">
+        <property name="text"><string>承辦人</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QComboBox" name="recv_processor">
+        <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="3" column="2">
+       <widget class="QLabel" name="lbl_deadline">
+        <property name="text"><string>限辦日期</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="3" column="3">
+       <widget class="QDateEdit" name="recv_deadline">
+        <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="calendarPopup"><bool>true</bool></property>
+        <property name="displayFormat"><string>yyyy-MM-dd</string></property>
+       </widget>
+      </item>
+      <item row="3" column="4">
+       <widget class="QCheckBox" name="chk_no_deadline">
+        <property name="text"><string>免覆</string></property>
+       </widget>
+      </item>
+
+      <!-- 分隔線 -->
+      <item row="4" column="0" colspan="7">
+       <widget class="QFrame" name="line_bot">
+        <property name="frameShape"><enum>QFrame::HLine</enum></property>
+        <property name="frameShadow"><enum>QFrame::Sunken</enum></property>
+       </widget>
+      </item>
+
+     </layout>
+    </item>
+
+    <!-- 預覽表格 -->
+    <item>
+     <widget class="QTableWidget" name="recv_tableWidget">
+      <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+      <column><property name="text"><string></string></property></column>
+      <column><property name="text"><string>交辦單編號</string></property></column>
+      <column><property name="text"><string>交辦事由</string></property></column>
+      <column><property name="text"><string>業務組</string></property></column>
+      <column><property name="text"><string>所承辦人</string></property></column>
+      <column><property name="text"><string>收文日期</string></property></column>
+      <column><property name="text"><string>限辦日期</string></property></column>
+      <column><property name="text"><string>狀態</string></property></column>
+     </widget>
+    </item>
+
+   </layout>
+  </widget>
+ </widget>
+ <tabstops>
+  <tabstop>recv_subject</tabstop>
+  <tabstop>recv_date</tabstop>
+  <tabstop>recv_receiver</tabstop>
+  <tabstop>recv_dept</tabstop>
+  <tabstop>recv_processor</tabstop>
+  <tabstop>recv_deadline</tabstop>
+ </tabstops>
+</ui>

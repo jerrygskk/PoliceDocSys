@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>1100</width><height>768</height></rect>
+  </property>
+  <property name="windowTitle"><string>公文管理系統 - 公文陳報</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainVerticalLayout">
+    <property name="spacing"><number>8</number></property>
+    <property name="contentsMargins"><number>8</number><number>8</number><number>8</number><number>8</number></property>
+
+    <!-- mainGrid：合併 topGrid + crimGrid + genGrid
+         row 0 ：陳報日期／發文人員（共用）
+         row 1-3：刑案欄位（發文分類／案件分類／查獲受理）
+         row 4-5：一般欄位（發文分類／承辦人）
+         欄位：col0=左標 col1=左欄 col2=Fixed16 col3=右標 col4=右欄
+               col5=小按鈕 col6=Fixed16 col7=報案人標 col8=報案人欄
+               col9=Expanding
+         清除表單／確認陳報鈕不在本 grid：由 tab_report.py 建立、
+         與刑案/一般子頁籤同列（QTabBar 右端）
+    -->
+    <item>
+     <layout class="QGridLayout" name="mainGrid">
+      <property name="horizontalSpacing"><number>8</number></property>
+      <property name="verticalSpacing"><number>0</number></property>
+      <property name="contentsMargins"><number>0</number><number>6</number><number>0</number><number>6</number></property>
+
+      <!-- ── col2 Fixed 16px（rowspan=6） ── -->
+      <item row="0" column="2" rowspan="6">
+       <spacer><property name="orientation"><enum>Qt::Horizontal</enum></property>
+        <property name="sizeHint" stdset="0"><size><width>16</width><height>0</height></size></property>
+        <property name="sizeType"><enum>QSizePolicy::Fixed</enum></property></spacer>
+      </item>
+
+      <!-- ── col6 Fixed 16px（rowspan=6） ── -->
+      <item row="0" column="6" rowspan="6">
+       <spacer><property name="orientation"><enum>Qt::Horizontal</enum></property>
+        <property name="sizeHint" stdset="0"><size><width>16</width><height>0</height></size></property>
+        <property name="sizeType"><enum>QSizePolicy::Fixed</enum></property></spacer>
+      </item>
+
+      <!-- ── col9 Expanding（rowspan=6） ── -->
+      <item row="0" column="9" rowspan="6">
+       <spacer><property name="orientation"><enum>Qt::Horizontal</enum></property>
+        <property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property>
+        <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer>
+      </item>
+
+      <!-- ════════════════════════════════════════
+           row 0：共用（陳報日期／發文人員／按鈕）
+           ════════════════════════════════════════ -->
+      <item row="0" column="0">
+       <widget class="QLabel">
+        <property name="text"><string>陳報日期</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QDateEdit" name="rpt_date">
+        <property name="minimumSize"><size><width>300</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>300</width><height>36</height></size></property>
+        <property name="calendarPopup"><bool>true</bool></property>
+        <property name="displayFormat"><string>yyyy-MM-dd</string></property>
+       </widget>
+      </item>
+      <item row="0" column="3">
+       <widget class="QLabel">
+        <property name="text"><string>發文人員</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="0" column="4" colspan="2">
+       <widget class="QComboBox" name="rpt_sender">
+        <property name="minimumSize"><size><width>0</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>16777215</width><height>36</height></size></property>
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+
+      <!-- ════════════════════════════════════════
+           row 1（刑案）：發文分類 radio ／ 陳報主旨
+           ════════════════════════════════════════ -->
+      <item row="1" column="0">
+       <widget class="QLabel" name="lbl_crim_status">
+        <property name="text"><string>發文分類</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QWidget" name="crim_status_group">
+        <property name="minimumSize"><size><width>300</width><height>36</height></size></property>
+        <layout class="QHBoxLayout" name="statusRadioLayout">
+         <property name="spacing"><number>20</number></property>
+         <property name="contentsMargins"><number>0</number><number>0</number><number>0</number><number>0</number></property>
+         <item><widget class="QRadioButton" name="radio_status_a">
+          <property name="text"><string>現行</string></property>
+          <property name="checked"><bool>true</bool></property>
+          <property name="minimumSize"><size><width>65</width><height>0</height></size></property>
+         </widget></item>
+         <item><widget class="QRadioButton" name="radio_status_b">
+          <property name="text"><string>到案</string></property>
+          <property name="minimumSize"><size><width>65</width><height>0</height></size></property>
+         </widget></item>
+         <item><widget class="QRadioButton" name="radio_status_c">
+          <property name="text"><string>未到</string></property>
+          <property name="minimumSize"><size><width>65</width><height>0</height></size></property>
+         </widget></item>
+         <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
+        </layout>
+       </widget>
+      </item>
+      <item row="1" column="3">
+       <widget class="QLabel" name="lbl_crim_subject">
+        <property name="text"><string>陳報主旨</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="1" column="4" colspan="2">
+       <widget class="QLineEdit" name="crim_subject">
+        <property name="minimumSize"><size><width>0</width><height>36</height></size></property>
+        <property name="placeholderText"><string>請輸入嫌疑人或案由</string></property>
+       </widget>
+      </item>
+
+      <!-- ════════════════════════════════════════
+           row 2（刑案）：案件分類 ／ 受理人員 + 同承辦
+           ════════════════════════════════════════ -->
+      <item row="2" column="0">
+       <widget class="QLabel" name="lbl_crim_casetype">
+        <property name="text"><string>案件分類</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QComboBox" name="crim_casetype">
+        <property name="minimumSize"><size><width>300</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>300</width><height>36</height></size></property>
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="2" column="3">
+       <widget class="QLabel" name="lbl_crim_receiver">
+        <property name="text"><string>受理人員</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="2" column="4">
+       <widget class="QComboBox" name="crim_receiver">
+        <property name="minimumSize"><size><width>180</width><height>36</height></size></property>
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="2" column="5">
+       <widget class="QPushButton" name="btn_copy_to_receiver">
+        <property name="minimumSize"><size><width>60</width><height>30</height></size></property>
+        <property name="maximumSize"><size><width>60</width><height>30</height></size></property>
+        <property name="text"><string>同承辦</string></property>
+       </widget>
+      </item>
+
+      <!-- ════════════════════════════════════════
+           row 3（刑案）：查獲/受理 ／ 承辦人員 + 同受理 ／ 報案人
+           ════════════════════════════════════════ -->
+      <item row="3" column="0">
+       <widget class="QLabel" name="lbl_crim_occdate">
+        <property name="text"><string>查獲/受理</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="NullableDateEdit" name="crim_occdate">
+        <property name="minimumSize"><size><width>300</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>300</width><height>36</height></size></property>
+       </widget>
+      </item>
+      <item row="3" column="3">
+       <widget class="QLabel" name="lbl_crim_processor">
+        <property name="text"><string>承辦人員</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="3" column="4">
+       <widget class="QComboBox" name="crim_processor">
+        <property name="minimumSize"><size><width>180</width><height>36</height></size></property>
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="3" column="5">
+       <widget class="QPushButton" name="btn_copy_to_processor">
+        <property name="minimumSize"><size><width>60</width><height>30</height></size></property>
+        <property name="maximumSize"><size><width>60</width><height>30</height></size></property>
+        <property name="text"><string>同受理</string></property>
+       </widget>
+      </item>
+      <item row="3" column="7">
+       <widget class="QLabel" name="lbl_crim_reporter">
+        <property name="text"><string>報案人</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="3" column="8">
+       <widget class="QLineEdit" name="crim_reporter">
+        <property name="minimumSize"><size><width>160</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>160</width><height>36</height></size></property>
+        <property name="placeholderText"><string>選填</string></property>
+       </widget>
+      </item>
+
+      <!-- ════════════════════════════════════════
+           row 4（一般）：發文分類 radio ／ 業務單位
+           ════════════════════════════════════════ -->
+      <item row="4" column="0">
+       <widget class="QLabel" name="lbl_gen_cat">
+        <property name="text"><string>發文分類</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QWidget" name="gen_cat_group">
+        <property name="minimumSize"><size><width>300</width><height>36</height></size></property>
+        <layout class="QHBoxLayout" name="genCatRadioLayout">
+         <property name="spacing"><number>20</number></property>
+         <property name="contentsMargins"><number>0</number><number>0</number><number>0</number><number>0</number></property>
+         <item><widget class="QRadioButton" name="radio_gen_cat_a">
+          <property name="text"><string>業務</string></property>
+          <property name="checked"><bool>true</bool></property>
+          <property name="minimumSize"><size><width>65</width><height>0</height></size></property>
+         </widget></item>
+         <item><widget class="QRadioButton" name="radio_gen_cat_b">
+          <property name="text"><string>其他</string></property>
+          <property name="minimumSize"><size><width>65</width><height>0</height></size></property>
+         </widget></item>
+         <item><widget class="QRadioButton" name="radio_gen_cat_c">
+          <property name="text"><string>相驗</string></property>
+          <property name="minimumSize"><size><width>65</width><height>0</height></size></property>
+         </widget></item>
+         <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
+        </layout>
+       </widget>
+      </item>
+      <item row="4" column="3">
+       <widget class="QLabel" name="lbl_gen_dept">
+        <property name="text"><string>業務單位</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="4" column="4" colspan="2">
+       <widget class="QComboBox" name="gen_dept">
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+
+      <!-- ════════════════════════════════════════
+           row 5（一般）：承辦人 ／ 陳報主旨
+           ════════════════════════════════════════ -->
+      <item row="5" column="0">
+       <widget class="QLabel" name="lbl_gen_processor">
+        <property name="text"><string>承辦人</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="5" column="1">
+       <widget class="QComboBox" name="gen_processor">
+        <property name="minimumSize"><size><width>300</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>300</width><height>36</height></size></property>
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="5" column="3">
+       <widget class="QLabel" name="lbl_gen_subject">
+        <property name="text"><string>陳報主旨</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="5" column="4" colspan="2">
+       <widget class="QLineEdit" name="gen_subject">
+        <property name="placeholderText"><string>請輸入陳報主旨</string></property>
+       </widget>
+      </item>
+
+     </layout>
+    </item>
+
+    <!-- 分隔線 -->
+    <item>
+     <widget class="QFrame" name="line_bot">
+      <property name="frameShape"><enum>QFrame::HLine</enum></property>
+      <property name="frameShadow"><enum>QFrame::Sunken</enum></property>
+     </widget>
+    </item>
+
+    <!-- ═══ 下半部：左右並列預覽 ═══ -->
+    <item>
+     <layout class="QHBoxLayout" name="previewLayout">
+      <property name="spacing"><number>8</number></property>
+
+      <item>
+       <layout class="QVBoxLayout" name="criminalPreviewLayout">
+        <property name="spacing"><number>4</number></property>
+        <item>
+         <widget class="QLabel" name="lbl_criminal_title">
+          <property name="text"><string>刑事案件陳報區塊</string></property>
+          <property name="alignment"><set>Qt::AlignCenter</set></property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTableWidget" name="crim_tableWidget">
+          <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+          <column><property name="text"><string></string></property></column>
+          <column><property name="text"><string>刑案編號</string></property></column>
+          <column><property name="text"><string>發文分類</string></property></column>
+          <column><property name="text"><string>案類</string></property></column>
+          <column><property name="text"><string>主承辦/查獲人</string></property></column>
+          <column><property name="text"><string>嫌疑人</string></property></column>
+          <column><property name="text"><string>受理/查獲日期</string></property></column>
+          <column><property name="text"><string>受理人</string></property></column>
+          <column><property name="text"><string>報案人</string></property></column>
+         </widget>
+        </item>
+       </layout>
+      </item>
+
+      <item>
+       <layout class="QVBoxLayout" name="generalPreviewLayout">
+        <property name="spacing"><number>4</number></property>
+        <item>
+         <widget class="QLabel" name="lbl_general_title">
+          <property name="text"><string>一般案件陳報區塊</string></property>
+          <property name="alignment"><set>Qt::AlignCenter</set></property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTableWidget" name="gen_tableWidget">
+          <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+          <column><property name="text"><string></string></property></column>
+          <column><property name="text"><string>陳報編號</string></property></column>
+          <column><property name="text"><string>發文分類</string></property></column>
+          <column><property name="text"><string>案類</string></property></column>
+          <column><property name="text"><string>承辦人</string></property></column>
+          <column><property name="text"><string>陳報單主旨</string></property></column>
+         </widget>
+        </item>
+       </layout>
+      </item>
+
+     </layout>
+    </item>
+
+   </layout>
+  </widget>
+ </widget>
+ <tabstops>
+  <tabstop>crim_subject</tabstop>
+  <tabstop>rpt_date</tabstop>
+  <tabstop>rpt_sender</tabstop>
+  <tabstop>crim_casetype</tabstop>
+  <tabstop>crim_receiver</tabstop>
+  <tabstop>crim_processor</tabstop>
+  <tabstop>crim_occdate</tabstop>
+  <tabstop>crim_reporter</tabstop>
+ </tabstops>
+</ui>

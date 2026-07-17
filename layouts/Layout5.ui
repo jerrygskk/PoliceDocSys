@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>1024</width><height>768</height></rect>
+  </property>
+  <property name="windowTitle"><string>公文管理系統 - 資料庫瀏覽</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainVerticalLayout">
+    <property name="spacing"><number>8</number></property>
+    <property name="leftMargin"><number>16</number></property>
+    <property name="topMargin"><number>12</number></property>
+    <property name="rightMargin"><number>16</number></property>
+    <property name="bottomMargin"><number>12</number></property>
+    <item>
+     <widget class="QTabWidget" name="browse_subtabs">
+      <property name="currentIndex"><number>0</number></property>
+      <widget class="QWidget" name="page_task">
+       <attribute name="title"><string>▤ 交辦單</string></attribute>
+       <layout class="QVBoxLayout" name="task_layout">
+        <property name="spacing"><number>8</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>8</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item>
+         <layout class="QHBoxLayout" name="task_filter">
+          <property name="spacing"><number>8</number></property>
+          <item>
+           <widget class="QComboBox" name="task_scope">
+            <property name="minimumSize"><size><width>120</width><height>34</height></size></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="task_kw">
+            <property name="minimumHeight"><number>34</number></property>
+            <property name="placeholderText"><string>關鍵字</string></property>
+            <property name="clearButtonEnabled"><bool>true</bool></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="task_search">
+            <property name="minimumSize"><size><width>80</width><height>34</height></size></property>
+            <property name="text"><string>查詢</string></property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="task_seg_layout">
+            <property name="spacing"><number>6</number></property>
+            <item>
+             <widget class="QPushButton" name="task_seg_full">
+              <property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
+              <property name="text"><string>完整</string></property>
+              <property name="checkable"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="task_reload">
+              <property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
+              <property name="text"><string>重載</string></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="toolTip"><string>強制重新載入此表全部資料</string></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QTableWidget" name="task_table"/>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="task_foot">
+          <item>
+           <widget class="QLabel" name="task_count"><property name="text"><string/></property></widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="task_overdue">
+            <property name="text"><string>逾期未回</string></property>
+            <property name="checkable"><bool>true</bool></property>
+            <property name="minimumSize"><size><width>0</width><height>26</height></size></property>
+            <property name="maximumSize"><size><width>88</width><height>26</height></size></property>
+            <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="task_spacer">
+            <property name="orientation"><enum>Qt::Horizontal</enum></property>
+            <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="task_hint"><property name="text"><string/></property></widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="page_crim">
+       <attribute name="title"><string>❐ 刑案陳報</string></attribute>
+       <layout class="QVBoxLayout" name="crim_layout">
+        <property name="spacing"><number>8</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>8</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item>
+         <layout class="QHBoxLayout" name="crim_filter">
+          <property name="spacing"><number>8</number></property>
+          <item>
+           <widget class="QComboBox" name="crim_scope">
+            <property name="minimumSize"><size><width>120</width><height>34</height></size></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="crim_kw">
+            <property name="minimumHeight"><number>34</number></property>
+            <property name="placeholderText"><string>關鍵字</string></property>
+            <property name="clearButtonEnabled"><bool>true</bool></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="crim_search">
+            <property name="minimumSize"><size><width>80</width><height>34</height></size></property>
+            <property name="text"><string>查詢</string></property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="crim_seg_layout">
+            <property name="spacing"><number>6</number></property>
+            <item>
+             <widget class="QPushButton" name="crim_seg_full">
+              <property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
+              <property name="text"><string>完整</string></property>
+              <property name="checkable"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="crim_reload">
+              <property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
+              <property name="text"><string>重載</string></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="toolTip"><string>強制重新載入此表全部資料</string></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QTableWidget" name="crim_table"/>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="crim_foot">
+          <item>
+           <widget class="QLabel" name="crim_count"><property name="text"><string/></property></widget>
+          </item>
+          <item>
+           <spacer name="crim_spacer">
+            <property name="orientation"><enum>Qt::Horizontal</enum></property>
+            <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="crim_hint"><property name="text"><string/></property></widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="page_gen">
+       <attribute name="title"><string>❏ 一般陳報</string></attribute>
+       <layout class="QVBoxLayout" name="gen_layout">
+        <property name="spacing"><number>8</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>8</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item>
+         <layout class="QHBoxLayout" name="gen_filter">
+          <property name="spacing"><number>8</number></property>
+          <item>
+           <widget class="QComboBox" name="gen_scope">
+            <property name="minimumSize"><size><width>120</width><height>34</height></size></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="gen_kw">
+            <property name="minimumHeight"><number>34</number></property>
+            <property name="placeholderText"><string>關鍵字</string></property>
+            <property name="clearButtonEnabled"><bool>true</bool></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="gen_search">
+            <property name="minimumSize"><size><width>80</width><height>34</height></size></property>
+            <property name="text"><string>查詢</string></property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="gen_seg_layout">
+            <property name="spacing"><number>6</number></property>
+            <item>
+             <widget class="QPushButton" name="gen_seg_full">
+              <property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
+              <property name="text"><string>完整</string></property>
+              <property name="checkable"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="gen_reload">
+              <property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
+              <property name="text"><string>重載</string></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="toolTip"><string>強制重新載入此表全部資料</string></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QTableWidget" name="gen_table"/>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="gen_foot">
+          <item>
+           <widget class="QLabel" name="gen_count"><property name="text"><string/></property></widget>
+          </item>
+          <item>
+           <spacer name="gen_spacer">
+            <property name="orientation"><enum>Qt::Horizontal</enum></property>
+            <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="gen_hint"><property name="text"><string/></property></widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="page_reward">
+       <attribute name="title"><string>☆ 敘獎登錄</string></attribute>
+       <layout class="QVBoxLayout" name="reward_layout">
+        <property name="spacing"><number>8</number></property>
+        <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>8</number></property>
+        <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+        <item><layout class="QHBoxLayout" name="reward_filter"><property name="spacing"><number>8</number></property>
+         <item><widget class="QComboBox" name="reward_scope"><property name="minimumSize"><size><width>120</width><height>34</height></size></property></widget></item>
+         <item><widget class="QLineEdit" name="reward_kw"><property name="minimumHeight"><number>34</number></property><property name="placeholderText"><string>關鍵字</string></property><property name="clearButtonEnabled"><bool>true</bool></property></widget></item>
+         <item><widget class="QPushButton" name="reward_search"><property name="minimumSize"><size><width>80</width><height>34</height></size></property><property name="text"><string>查詢</string></property></widget></item>
+         <item><widget class="QPushButton" name="reward_seg_full"><property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="text"><string>完整</string></property><property name="checkable"><bool>true</bool></property></widget></item>
+         <item><widget class="QPushButton" name="reward_reload"><property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="text"><string>重載</string></property><property name="toolTip"><string>強制重新載入此表全部資料</string></property></widget></item>
+        </layout></item>
+        <item><widget class="QTableWidget" name="reward_table"/></item>
+        <item><layout class="QHBoxLayout" name="reward_foot"><item><widget class="QLabel" name="reward_count"><property name="text"><string/></property></widget></item><item><spacer name="reward_spacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item><item><widget class="QLabel" name="reward_hint"><property name="text"><string/></property></widget></item></layout></item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+</ui>

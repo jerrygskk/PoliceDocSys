@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>1100</width><height>768</height></rect>
+  </property>
+  <property name="windowTitle"><string>公文管理系統 - 操作紀錄</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainVerticalLayout">
+    <property name="spacing"><number>0</number></property>
+    <property name="leftMargin"><number>0</number></property>
+    <property name="topMargin"><number>0</number></property>
+    <property name="rightMargin"><number>0</number></property>
+    <property name="bottomMargin"><number>0</number></property>
+
+    <item>
+     <widget class="QStackedWidget" name="outer_stack">
+
+      <!-- page 0：未登入遮罩 -->
+      <widget class="QWidget" name="page_lock">
+       <layout class="QVBoxLayout" name="lockLayout">
+        <property name="leftMargin"><number>40</number></property>
+        <property name="topMargin"><number>40</number></property>
+        <property name="rightMargin"><number>40</number></property>
+        <property name="bottomMargin"><number>40</number></property>
+        <item>
+         <spacer name="lockSpacerTop">
+          <property name="orientation"><enum>Qt::Vertical</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>0</width><height>120</height></size></property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="lbl_lock">
+          <property name="text"><string>本頁僅供管理者檢視操作紀錄。
+請至「資料庫設定」頁以管理者身分登入後再進入。</string></property>
+          <property name="alignment"><set>Qt::AlignCenter</set></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="lockSpacerBot">
+          <property name="orientation"><enum>Qt::Vertical</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>0</width><height>120</height></size></property>
+         </spacer>
+        </item>
+       </layout>
+      </widget>
+
+      <!-- page 1：紀錄檢視 -->
+      <widget class="QWidget" name="page_main">
+       <layout class="QVBoxLayout" name="mainLayout">
+        <property name="spacing"><number>10</number></property>
+        <property name="leftMargin"><number>16</number></property>
+        <property name="topMargin"><number>16</number></property>
+        <property name="rightMargin"><number>16</number></property>
+        <property name="bottomMargin"><number>12</number></property>
+
+        <!-- 篩選列 -->
+        <item>
+         <layout class="QHBoxLayout" name="filterLayout">
+          <property name="spacing"><number>8</number></property>
+
+          <item>
+           <widget class="QLabel" name="lbl_period">
+            <property name="text"><string>期間</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="NullableDateEdit" name="audit_from">
+            <property name="minimumWidth"><number>180</number></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lbl_tilde">
+            <property name="text"><string>～</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="NullableDateEdit" name="audit_to">
+            <property name="minimumWidth"><number>180</number></property>
+           </widget>
+          </item>
+
+          <item>
+           <widget class="QComboBox" name="audit_role">
+            <property name="minimumWidth"><number>170</number></property>
+           </widget>
+          </item>
+
+          <item>
+           <widget class="QComboBox" name="audit_cat">
+            <property name="minimumWidth"><number>155</number></property>
+           </widget>
+          </item>
+
+          <item>
+           <widget class="QLineEdit" name="audit_kw">
+            <property name="placeholderText"><string>搜尋內容或對象</string></property>
+            <property name="clearButtonEnabled"><bool>true</bool></property>
+           </widget>
+          </item>
+
+          <item>
+           <widget class="QPushButton" name="btn_reload">
+            <property name="text"><string>重整</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btn_export">
+            <property name="text"><string>CSV</string></property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+
+        <!-- 紀錄表 -->
+        <item>
+         <widget class="QTableWidget" name="audit_table">
+          <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+          <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+          <property name="alternatingRowColors"><bool>true</bool></property>
+         </widget>
+        </item>
+
+        <!-- footer 計數 -->
+        <item>
+         <widget class="QLabel" name="lbl_count">
+          <property name="text"><string></string></property>
+          <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+         </widget>
+        </item>
+
+       </layout>
+      </widget>
+
+     </widget>
+    </item>
+
+   </layout>
+  </widget>
+ </widget>
+</ui>

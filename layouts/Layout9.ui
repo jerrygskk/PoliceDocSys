@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>1000</width><height>700</height></rect></property>
+  <widget class="QWidget" name="centralwidget">
+   <property name="styleSheet"><string notr="true">QWidget#centralwidget { background-color: #ffffff; color: #000000; }</string></property>
+   <layout class="QHBoxLayout" name="mainLayout">
+    <property name="leftMargin"><number>20</number></property>
+    <property name="topMargin"><number>12</number></property>
+   <property name="rightMargin"><number>20</number></property>
+   <property name="bottomMargin"><number>16</number></property>
+   <property name="stretch"><string notr="true">1,0</string></property>
+    <item>
+     <layout class="QVBoxLayout" name="leftLayout">
+      <property name="stretch"><string notr="true">0,0,1</string></property>
+      <item>
+       <layout class="QGridLayout" name="formLayout">
+        <property name="horizontalSpacing"><number>8</number></property>
+        <property name="verticalSpacing"><number>8</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item row="0" column="2" rowspan="3"><spacer name="formStretch"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>0</width><height>0</height></size></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
+        <item row="0" column="0"><widget class="QLabel" name="label_date"><property name="text"><string>發文日期</string></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+        <item row="0" column="1"><widget class="QDateEdit" name="reward_date"><property name="minimumSize"><size><width>300</width><height>36</height></size></property><property name="maximumSize"><size><width>300</width><height>36</height></size></property><property name="calendarPopup"><bool>true</bool></property><property name="displayFormat"><string>yyyy-MM-dd</string></property></widget></item>
+        <item row="1" column="0"><widget class="QLabel" name="label_reason"><property name="text"><string>敘獎事由</string></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+        <item row="1" column="1"><widget class="QLineEdit" name="reward_reason"><property name="minimumSize"><size><width>500</width><height>36</height></size></property><property name="maximumSize"><size><width>500</width><height>36</height></size></property><property name="placeholderText"><string>請輸入敘獎事由</string></property></widget></item>
+        <item row="2" column="0"><widget class="QLabel" name="label_recipients"><property name="text"><string>敘獎人員</string></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+        <item row="2" column="1"><widget class="QLineEdit" name="reward_recipients"><property name="minimumSize"><size><width>500</width><height>36</height></size></property><property name="maximumSize"><size><width>500</width><height>36</height></size></property><property name="placeholderText"><string>請輸入或點選右側候選人員</string></property></widget></item>
+       </layout>
+      </item>
+      <item><widget class="QTableWidget" name="reward_tableWidget"><property name="columnCount"><number>5</number></property><column><property name="text"><string/></property></column><column><property name="text"><string>編號</string></property></column><column><property name="text"><string>發文日期</string></property></column><column><property name="text"><string>敘獎事由</string></property></column><column><property name="text"><string>敘獎人員</string></property></column></widget></item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QWidget" name="reward_side_panel">
+      <property name="minimumSize"><size><width>240</width><height>0</height></size></property>
+      <property name="maximumSize"><size><width>240</width><height>16777215</height></size></property>
+      <layout class="QVBoxLayout" name="rightLayout">
+      <property name="spacing"><number>8</number></property>
+      <property name="stretch"><string notr="true">0,1</string></property>
+      <property name="leftMargin"><number>0</number></property>
+      <property name="topMargin"><number>0</number></property>
+      <property name="rightMargin"><number>0</number></property>
+      <property name="bottomMargin"><number>0</number></property>
+      <item>
+       <layout class="QHBoxLayout" name="buttonLayout">
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item><widget class="QPushButton" name="btn_reward_clear"><property name="minimumSize"><size><width>110</width><height>36</height></size></property><property name="maximumSize"><size><width>110</width><height>36</height></size></property><property name="text"><string>清除表單</string></property></widget></item>
+        <item><widget class="QPushButton" name="btn_reward_submit"><property name="minimumSize"><size><width>110</width><height>36</height></size></property><property name="maximumSize"><size><width>110</width><height>36</height></size></property><property name="text"><string>確認送出</string></property></widget></item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="reward_people_box">
+        <property name="title"><string/></property>
+        <property name="minimumSize"><size><width>240</width><height>0</height></size></property>
+        <property name="maximumSize"><size><width>240</width><height>16777215</height></size></property>
+        <layout class="QVBoxLayout" name="reward_people_v">
+         <item><widget class="QLabel" name="reward_people_lbl"><property name="text"><string>候選人員</string></property><property name="minimumHeight"><number>24</number></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
+         <item><widget class="QListWidget" name="reward_personnel_list"/></item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/><connections/>
+</ui>

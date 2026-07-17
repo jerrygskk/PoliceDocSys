@@ -1,0 +1,33 @@
+# -*- coding: utf-8 -*-
+"""自動產生，請勿手改。由 gen_buttons.py 產出。
+label -> (qrc 路徑, 顯示寬 px, 顯示高 px)。"""
+BTN_IMG = {
+    '確認發文': (':/btn/confirm_send.svg', 82, 24),
+    '確認收文': (':/btn/confirm_recv.svg', 82, 24),
+    '確認陳報': (':/btn/confirm_report.svg', 82, 24),
+    '檔案歸檔': (':/btn/do_archive.svg', 82, 24),
+    '只歸紙本': (':/btn/paper_only.svg', 82, 24),
+    '✕': (':/btn/remove.svg', 28, 24),
+    '產生預覽': (':/btn/gen_preview.svg', 82, 24),
+    '列印表單': (':/btn/print_form.svg', 82, 24),
+    '下載 PDF': (':/btn/download_pdf.svg', 85, 24),
+    '完整': (':/btn/full.svg', 53, 24),
+    '重載': (':/btn/reload.svg', 53, 24),
+    '還原預設': (':/btn/reset.svg', 82, 24),
+    '歸檔資料夾': (':/btn/archive_folder.svg', 96, 24),
+    '＋ 新增': (':/btn/add.svg', 76, 24),
+    '✎ 修改': (':/btn/edit.svg', 76, 24),
+    '💾 儲存排序': (':/btn/save_order.svg', 105, 24),
+    'CSV': (':/btn/export_csv.svg', 48, 24),
+    '簽收表設定': (':/btn/print_titles.svg', 96, 24),
+    '資源回收筒': (':/btn/trash.svg', 96, 24),
+    '備份還原': (':/btn/backup_restore.svg', 82, 24),
+    '逾期未回': (':/btn/overdue.svg', 82, 24),
+    '⇄ 轉換類別': (':/btn/convert_type.svg', 104, 24),
+    '▤ 交辦單': (':/tab/task.svg', 80, 24),
+    '❐ 刑案陳報': (':/tab/crim_report.svg', 94, 24),
+    '❏ 一般陳報': (':/tab/gen_report.svg', 94, 24),
+    '☆ 敘獎登錄': (':/tab/reward.svg', 94, 24),
+    '❐ 刑案歸檔': (':/tab/crim_arch.svg', 94, 24),
+    '❏ 一般歸檔': (':/tab/gen_arch.svg', 94, 24),
+}

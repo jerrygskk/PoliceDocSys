@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>1100</width><height>768</height></rect></property>
+  <property name="windowTitle"><string>公文管理系統 - 檔案歸檔</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainV">
+    <property name="leftMargin"><number>16</number></property>
+    <property name="topMargin"><number>12</number></property>
+    <property name="rightMargin"><number>16</number></property>
+    <property name="bottomMargin"><number>12</number></property>
+    <item>
+     <widget class="QStackedWidget" name="outer_stack">
+      <property name="currentIndex"><number>0</number></property>
+      <widget class="QWidget" name="page_gate">
+       <layout class="QVBoxLayout" name="gateV">
+        <item><spacer name="gateTop"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>200</height></size></property></spacer></item>
+        <item><widget class="QLabel" name="lbl_gate"><property name="text"><string>此功能需管理者身分
+
+請至「資料庫設定」登入管理者帳號後再使用</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string>font-size:15pt;color:#6e6e73;</string></property></widget></item>
+        <item><spacer name="gateBot"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>200</height></size></property></spacer></item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="page_content">
+       <layout class="QVBoxLayout" name="contentV">
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item>
+         <widget class="QTabWidget" name="arch_subtabs">
+      <property name="currentIndex"><number>0</number></property>
+      <widget class="QWidget" name="page_crim">
+       <attribute name="title"><string>❐ 刑案歸檔</string></attribute>
+       <layout class="QVBoxLayout" name="crim_v">
+        <item>
+         <layout class="QHBoxLayout" name="crim_folder">
+          <item><widget class="QLineEdit" name="crim_path"><property name="readOnly"><bool>true</bool></property><property name="placeholderText"><string>尚未選擇資料夾</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+          <item><widget class="QPushButton" name="crim_pick"><property name="text"><string>選擇 PDF 資料夾</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="crim_body">
+          <item>
+           <widget class="QGroupBox" name="crim_doc_box">
+            <property name="title"><string/></property>
+            <layout class="QVBoxLayout" name="crim_doc_v">
+             <item>
+              <layout class="QHBoxLayout" name="crim_doc_hdr">
+               <item><widget class="QLabel" name="crim_doc_lbl"><property name="text"><string>待歸檔</string></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
+               <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
+               <item><widget class="QPushButton" name="crim_doc_reload"><property name="text"><string>重載</string></property><property name="maximumWidth"><number>120</number></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property><property name="toolTip"><string>重掃資料夾並重新載入待歸檔清單</string></property></widget></item>
+               <item><widget class="QPushButton" name="crim_toggle_full"><property name="text"><string>完整</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>188</number></property></widget></item>
+              </layout>
+             </item>
+             <item><widget class="QTableWidget" name="crim_doc_table"/></item>
+             <item>
+              <layout class="QHBoxLayout" name="crim_doc_foot">
+               <item><widget class="QLineEdit" name="crim_doc_search"><property name="placeholderText"><string>搜尋編號</string></property><property name="maximumWidth"><number>210</number></property><property name="clearButtonEnabled"><bool>true</bool></property></widget></item>
+               <item><spacer name="crim_doc_foot_sp"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+               <item><widget class="QPushButton" name="crim_paper_only"><property name="text"><string>只歸紙本</string></property><property name="maximumWidth"><number>188</number></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+              </layout>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="crim_pdf_box">
+            <property name="title"><string/></property>
+            <layout class="QVBoxLayout" name="crim_pdf_v">
+             <item>
+              <layout class="QHBoxLayout" name="crim_pdf_hdr">
+               <item><widget class="QLabel" name="crim_pdf_lbl"><property name="text"><string>候選檔案</string></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
+               <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
+               <item><widget class="QPushButton" name="crim_toggle_archived"><property name="text"><string>顯示已歸檔</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>231</number></property></widget></item>
+              </layout>
+             </item>
+             <item><widget class="QTableWidget" name="crim_pdf_table"/></item>
+             <item>
+              <layout class="QHBoxLayout" name="crim_kw_row">
+               <item><widget class="QLabel" name="crim_kw_lbl"><property name="text"><string>檔名過濾</string></property><property name="minimumWidth"><number>72</number></property></widget></item>
+               <item><widget class="QLineEdit" name="crim_kw"><property name="placeholderText"><string>輸入檔名片段，只留符合的 PDF</string></property><property name="minimumHeight"><number>32</number></property><property name="clearButtonEnabled"><bool>true</bool></property></widget></item>
+               <item><widget class="QPushButton" name="crim_match"><property name="text"><string>比對</string></property><property name="minimumHeight"><number>32</number></property><property name="minimumWidth"><number>56</number></property></widget></item>
+              </layout>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="crim_people_box">
+            <property name="title"><string/></property>
+            <property name="maximumWidth"><number>150</number></property>
+            <layout class="QVBoxLayout" name="crim_people_v">
+             <item><widget class="QLabel" name="crim_people_lbl"><property name="text"><string>承辦人、協辦</string></property><property name="minimumHeight"><number>24</number></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
+             <item><widget class="QListWidget" name="crim_people_list"/></item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="crim_preview_box">
+          <property name="title"><string>檔名預覽</string></property>
+          <layout class="QVBoxLayout" name="crim_pv_v">
+           <item>
+            <layout class="QHBoxLayout" name="crim_holes">
+             <item><widget class="QLineEdit" name="crim_h_pk"><property name="readOnly"><bool>true</bool></property><property name="maximumWidth"><number>70</number></property><property name="placeholderText"><string>編號</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+             <item><widget class="QLabel" name="crim_s1"><property name="text"><string>-</string></property></widget></item>
+             <item><widget class="QLineEdit" name="crim_h_date"><property name="maximumWidth"><number>100</number></property><property name="placeholderText"><string>日期</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+             <item><widget class="QLabel" name="crim_s2"><property name="text"><string>-</string></property></widget></item>
+             <item><widget class="QLineEdit" name="crim_h_subj"><property name="placeholderText"><string>案由</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+             <item><widget class="QLabel" name="crim_s3"><property name="text"><string>-</string></property></widget></item>
+             <item><widget class="QLineEdit" name="crim_h_proc"><property name="placeholderText"><string>承辦人、協辦</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="crim_pv_actions">
+             <item><widget class="QLabel" name="crim_final"><property name="text"><string>最終檔名：—</string></property></widget></item>
+             <item><widget class="QPushButton" name="crim_reset"><property name="text"><string>還原預設</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+             <item><widget class="QPushButton" name="crim_do_archive"><property name="text"><string>檔案歸檔</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="page_gen">
+       <attribute name="title"><string>❏ 一般歸檔</string></attribute>
+       <layout class="QVBoxLayout" name="gen_v">
+        <item>
+         <layout class="QHBoxLayout" name="gen_folder">
+          <item><widget class="QLineEdit" name="gen_path"><property name="readOnly"><bool>true</bool></property><property name="placeholderText"><string>尚未選擇資料夾</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+          <item><widget class="QPushButton" name="gen_pick"><property name="text"><string>選擇 PDF 資料夾</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="gen_body">
+          <item>
+           <widget class="QGroupBox" name="gen_doc_box">
+            <property name="title"><string/></property>
+            <layout class="QVBoxLayout" name="gen_doc_v">
+             <item>
+              <layout class="QHBoxLayout" name="gen_doc_hdr">
+               <item><widget class="QLabel" name="gen_doc_lbl"><property name="text"><string>待歸檔</string></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
+               <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
+               <item><widget class="QPushButton" name="gen_doc_reload"><property name="text"><string>重載</string></property><property name="maximumWidth"><number>120</number></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property><property name="toolTip"><string>重掃資料夾並重新載入待歸檔清單</string></property></widget></item>
+               <item><widget class="QPushButton" name="gen_toggle_full"><property name="text"><string>完整</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>188</number></property></widget></item>
+              </layout>
+             </item>
+             <item><widget class="QTableWidget" name="gen_doc_table"/></item>
+             <item>
+              <layout class="QHBoxLayout" name="gen_doc_foot">
+               <item><widget class="QLineEdit" name="gen_doc_search"><property name="placeholderText"><string>搜尋編號</string></property><property name="maximumWidth"><number>210</number></property><property name="clearButtonEnabled"><bool>true</bool></property></widget></item>
+               <item><spacer name="gen_doc_foot_sp"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+               <item><widget class="QPushButton" name="gen_paper_only"><property name="text"><string>只歸紙本</string></property><property name="maximumWidth"><number>188</number></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+              </layout>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="gen_pdf_box">
+            <property name="title"><string/></property>
+            <layout class="QVBoxLayout" name="gen_pdf_v">
+             <item>
+              <layout class="QHBoxLayout" name="gen_pdf_hdr">
+               <item><widget class="QLabel" name="gen_pdf_lbl"><property name="text"><string>候選檔案</string></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
+               <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
+               <item><widget class="QPushButton" name="gen_toggle_archived"><property name="text"><string>顯示已歸檔</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>231</number></property></widget></item>
+              </layout>
+             </item>
+             <item><widget class="QTableWidget" name="gen_pdf_table"/></item>
+             <item>
+              <layout class="QHBoxLayout" name="gen_kw_row">
+               <item><widget class="QLabel" name="gen_kw_lbl"><property name="text"><string>檔名過濾</string></property><property name="minimumWidth"><number>72</number></property></widget></item>
+               <item><widget class="QLineEdit" name="gen_kw"><property name="placeholderText"><string>輸入檔名片段，只留符合的 PDF</string></property><property name="minimumHeight"><number>32</number></property><property name="clearButtonEnabled"><bool>true</bool></property></widget></item>
+               <item><widget class="QPushButton" name="gen_match"><property name="text"><string>比對</string></property><property name="minimumHeight"><number>32</number></property><property name="minimumWidth"><number>56</number></property></widget></item>
+              </layout>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="gen_people_box">
+            <property name="title"><string/></property>
+            <property name="maximumWidth"><number>150</number></property>
+            <layout class="QVBoxLayout" name="gen_people_v">
+             <item><widget class="QLabel" name="gen_people_lbl"><property name="text"><string>承辦人、協辦</string></property><property name="minimumHeight"><number>24</number></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
+             <item><widget class="QListWidget" name="gen_people_list"/></item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="gen_preview_box">
+          <property name="title"><string>檔名預覽</string></property>
+          <layout class="QVBoxLayout" name="gen_pv_v">
+           <item>
+            <layout class="QHBoxLayout" name="gen_holes">
+             <item><widget class="QLineEdit" name="gen_h_pk"><property name="readOnly"><bool>true</bool></property><property name="maximumWidth"><number>70</number></property><property name="placeholderText"><string>編號</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+             <item><widget class="QLabel" name="gen_s1"><property name="text"><string>-</string></property></widget></item>
+             <item><widget class="QLineEdit" name="gen_h_date"><property name="maximumWidth"><number>100</number></property><property name="placeholderText"><string>日期</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+             <item><widget class="QLabel" name="gen_s2"><property name="text"><string>-</string></property></widget></item>
+             <item><widget class="QLineEdit" name="gen_h_subj"><property name="placeholderText"><string>主旨</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+             <item><widget class="QLabel" name="gen_s3"><property name="text"><string>-</string></property></widget></item>
+             <item><widget class="QLineEdit" name="gen_h_proc"><property name="placeholderText"><string>承辦人、協辦</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="gen_pv_actions">
+             <item><widget class="QLabel" name="gen_final"><property name="text"><string>最終檔名：—</string></property></widget></item>
+             <item><widget class="QPushButton" name="gen_reset"><property name="text"><string>還原預設</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+             <item><widget class="QPushButton" name="gen_do_archive"><property name="text"><string>檔案歸檔</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+</ui>
