@@ -867,10 +867,13 @@ class TabDBBrowse(BaseTab):
                     table.setItem(pos, c_idx, sit)
                 continue
 
-            # 刑案/一般「陳報日期」欄 NULL（自助取號模式尚未結算）→ 橘字「未發文」
-            if (key in ("crim", "gen")
-                    and c.get("header") == "陳報日期"
-                    and not text):
+            # 刑案/一般「陳報日期」、敘獎「登錄日期」為空（自助取號模式尚未結算）
+            # → 橘字「未發文」。敘獎哨兵為空字串 register_date=''（NULL＝軟刪除，
+            # 已被 active_where 排除，不會走到這裡）。
+            _unissued_date = (
+                (key in ("crim", "gen") and c.get("header") == "陳報日期")
+                or (key == "reward" and c.get("header") == "登錄日期"))
+            if _unissued_date and not text:
                 item = QTableWidgetItem("未發文")
                 item.setTextAlignment(Qt.AlignCenter)
                 item.setForeground(QColor("#e67e22"))

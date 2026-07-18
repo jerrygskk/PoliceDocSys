@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDateEdit, QLineEdit, QListWidget, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout,
@@ -7,7 +8,8 @@ from PySide6.QtWidgets import (
 from lib.auth_manager import AuthManager
 from lib.base_tab import BaseTab
 from lib.db_utils import (
-    getResourcePath, loadActivePersonnel, nextDocId, softDeleteDoc,
+    getResourcePath, isSelfServiceMode, loadActivePersonnel, nextDocId,
+    softDeleteDoc,
 )
 from ui_utils import (
     RewardEditDialog, attachStickyScroll, confirmBox, count_recipient_names,
@@ -59,6 +61,30 @@ class TabReward(BaseTab):
             lambda item: self.reward_recipients._recipient_controller.add_person(item.text()))
         self.tab_widget.currentChanged.connect(self._onShown)
         self.reward_reason.setFocus()
+        self._applySelfServiceMode()
+
+    def _applySelfServiceMode(self):
+        """自助取號模式：發文日期欄反灰，日期改由結算時自動填入；切回送文者模式
+        清哨兵並還原今天（照 tab_report._applySelfServiceMode 的哨兵處理精神）。
+
+        用 specialValueText 哨兵顯示空白：僅在反灰（不可互動）狀態下，無鍵盤／
+        滑鼠路徑，不踩 QDateEdit 可編輯空白欄的雷；widgets.setupDateEditToToday
+        已對此哨兵放行。送出值與此無關（自助模式 _submit 一律帶 register_date=''）。"""
+        if not getattr(self, "reward_date", None):
+            return
+        is_self = isSelfServiceMode(self.db_path)
+        tip = "自助取號模式：發文日期由結算時自動填入" if is_self else ""
+        self.reward_date.setToolTip(tip)
+        if is_self:
+            self.reward_date.setEnabled(False)
+            self.reward_date.setSpecialValueText(" ")
+            self.reward_date.setDate(self.reward_date.minimumDate())
+        else:
+            self.reward_date.setEnabled(True)
+            if self.reward_date.specialValueText():
+                # 從自助切回送文者模式：清哨兵、還原今天（僅切換當下做一次）
+                self.reward_date.setSpecialValueText("")
+                self.reward_date.setDate(QDate.currentDate())
 
     def _setup_table(self):
         setupPreviewTable(
@@ -104,6 +130,8 @@ class TabReward(BaseTab):
             # 人員改名／敘獎資料異動皆可能改變名條計數或姓名 → 重載一次計數。
             self._load_counts()
             self._rebuild_personnel_list()
+        # 無條件重套（模式可能於設定頁切換）：不受上方旗標 early-path 影響。
+        self._applySelfServiceMode()
 
     def _load_counts(self):
         """全表載入一次名條計數到 self._name_counts（開機／旗標刷新時呼叫）。"""
@@ -139,7 +167,11 @@ class TabReward(BaseTab):
         self.reward_reason.setFocus()
 
     def _submit(self):
-        date = self.reward_date.date().toString("yyyy-MM-dd")
+        # 自助取號模式：登錄日期留空哨兵（''），事後由列印頁結算補今日日期。
+        if isSelfServiceMode(self.db_path):
+            date = ""
+        else:
+            date = self.reward_date.date().toString("yyyy-MM-dd")
         reason = self.reward_reason.text().strip()
         names = parse_recipient_names(self.reward_recipients.text())
         missing = []
@@ -177,7 +209,17 @@ class TabReward(BaseTab):
         container, _ = makeDeleteBtn(lambda _=False, d=doc_id: self._deleteByDocId(d))
         self.reward_table.setCellWidget(row, 0, container)
         setDocIdLinkCell(self.reward_table, row, 1, doc_id, self._onEditRow, clickable=True)
-        for col, value in ((2, date), (3, reason), (4, recipients)):
+        # 發文日期（col2）：自助取號模式未結算時為空 → 橘字「未發文」置中。
+        if date:
+            date_item = QTableWidgetItem(date)
+            date_item.setToolTip(date)
+        else:
+            date_item = QTableWidgetItem("未發文")
+            date_item.setForeground(QColor("#e67e22"))
+            date_item.setToolTip("未發文")
+        date_item.setTextAlignment(Qt.AlignCenter)
+        self.reward_table.setItem(row, 2, date_item)
+        for col, value in ((3, reason), (4, recipients)):
             item = QTableWidgetItem(value or "")
             item.setTextAlignment(Qt.AlignCenter)
             item.setToolTip(value or "")

@@ -204,5 +204,94 @@ class TestArchiveQueryExcludesUnissued(unittest.TestCase):
         self.assertNotIn("C0010", ids)
 
 
+class TestRewardUnissuedSentinel(unittest.TestCase):
+    """敘獎未發文哨兵語意：register_date='' 為 active（未發文），NULL＝軟刪除。
+
+    敘獎軟刪除哨兵是 register_date=NULL（見 db_utils._DELETE_META），故「未發文」
+    必須用空字串 ''；全系統 active 判斷 register_date IS NOT NULL 對 '' 天然通過。
+    """
+
+    def setUp(self):
+        import tempfile
+        from lib.db_schema import applySchema
+        self._tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self._tmp, "reward.db")
+        conn = sqlite3.connect(self.path)
+        applySchema(conn)
+        conn.execute(
+            "INSERT OR IGNORE INTO Ref_Personnel "
+            "(staff_id, staff_name, is_active, sort_order) VALUES ('P001','王承辦',1,1)")
+        # 未發文（哨兵空字串）兩筆
+        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
+                     "VALUES ('1','','事由甲','王承辦')")
+        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
+                     "VALUES ('2','','事由乙','李虛構')")
+        # 已發文一筆
+        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
+                     "VALUES ('3','2026-07-05','事由丙','張虛構')")
+        # 軟刪除（register_date NULL）一筆
+        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
+                     "VALUES ('4',NULL,NULL,NULL)")
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_empty_sentinel_passes_active_filter(self):
+        conn = sqlite3.connect(self.path)
+        rows = conn.execute(
+            "SELECT doc_id FROM Document_Reward WHERE register_date IS NOT NULL"
+        ).fetchall()
+        conn.close()
+        ids = [r[0] for r in rows]
+        self.assertIn("1", ids)   # 未發文（''）仍為 active
+        self.assertIn("2", ids)
+        self.assertIn("3", ids)   # 已發文
+        self.assertNotIn("4", ids)  # NULL = 軟刪除，排除
+
+    def test_load_unissued_reward_only_empty(self):
+        from ui_utils.settle_dialog import _load_unissued
+        data = _load_unissued(self.path)
+        ids = sorted(r["doc_id"] for r in data["reward"])
+        self.assertEqual(ids, ["1", "2"])   # 只有 '' 哨兵列，排除已發文與軟刪除
+
+    def test_load_unissued_reward_subject_combines_reason_and_recipients(self):
+        from ui_utils.settle_dialog import _load_unissued
+        data = _load_unissued(self.path)
+        by_id = {r["doc_id"]: r for r in data["reward"]}
+        self.assertEqual(by_id["1"]["subject"], "事由甲：王承辦")
+        self.assertEqual(by_id["1"]["processor"], "")   # 敘獎無承辦人欄
+
+    def test_count_unissued_includes_reward(self):
+        from ui_utils.settle_dialog import count_unissued
+        counts = count_unissued(self.path)
+        self.assertIn("reward", counts)
+        self.assertEqual(counts["reward"], 2)
+        self.assertEqual(counts.get("crim", 0), 0)
+        self.assertEqual(counts.get("gen", 0), 0)
+
+    def test_reward_settle_update_roundtrip(self):
+        from ui_utils.settle_dialog import _META_BY_KEY
+        today = "2026-07-18"
+        conn = sqlite3.connect(self.path)
+        conn.execute(_META_BY_KEY["reward"]["update"], (today, "1"))
+        conn.commit()
+        settled = conn.execute(
+            "SELECT register_date FROM Document_Reward WHERE doc_id='1'").fetchone()[0]
+        excluded = conn.execute(
+            "SELECT register_date FROM Document_Reward WHERE doc_id='2'").fetchone()[0]
+        conn.close()
+        self.assertEqual(settled, today)   # 勾選列補上今日
+        self.assertEqual(excluded, "")     # 未勾選列維持未發文哨兵
+
+    def test_reward_update_has_no_sender_placeholder(self):
+        # 敘獎表無 sender 欄，update 只帶兩個佔位（today, doc_id）
+        from ui_utils.settle_dialog import _META_BY_KEY
+        self.assertEqual(_META_BY_KEY["reward"]["update"].count("?"), 2)
+        self.assertFalse(_META_BY_KEY["reward"]["with_sender"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,16 @@ QLabel {
     background-color: transparent;
 }
 
+/* ── 工具提示 ──
+   QToolTip 是 QLabel 子類，會吃到上面 QWidget/QLabel 的 transparent 背景；
+   tooltip 為獨立頂層視窗，透明背景在 Windows 會渲染成整塊黑，必須明確給底色。*/
+QToolTip {
+    background-color: #ffffff;
+    color: #1c1c1e;
+    border: 1px solid #c6c6c8;
+    padding: 4px 8px;
+}
+
 /* ── 輸入框 ── */
 QLineEdit {
     background-color: #ffffff;

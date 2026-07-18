@@ -13,6 +13,7 @@
 - **QSS-4**: **`setEnabled(False)` 按鈕沒變灰** → 該按鈕的 stylesheet 要含 `QPushButton:disabled { ... }`。
 - **QSS-5**: **設灰字連月曆／下拉清單也變灰** → 用型別選擇器 `QDateEdit { color: ... }` / `QComboBox { color: ... }`，避免裸 `color:` 繼承到子元件。
 - **QSS-6**: **表格滑過（mouseover）整格反白** → Windows 原生 style 對 item 的**預設行為**，刪 hover 規則無效；要明寫 `QTableWidget::item:hover { background-color: transparent; }` 壓掉（tab_archive／backup_restore_panel 皆如此處理）。
+- **QSS-7**: **tooltip 整塊黑（未解，勿再嘗試已證無效的招）** → Windows 系統深色模式下（PySide6 6.11／windows11 原生 style），QToolTip 底板整塊黑。**四招皆實測無效**：①theme.py QSS `QToolTip { … }`（規則保留但壓不掉）②app palette ToolTipBase/Text ③`QToolTip.setPalette` ④`app.styleHints().setColorScheme(Qt.ColorScheme.Light)`。2026-07 議定**迴避**：新功能勿依賴 tooltip 傳達資訊（已存在的 HELP_TIPS tooltip 同樣受影響，僅深色模式使用者看不到）。要再挑戰先查 Qt 上游 windows11 style tooltip 相關 bug 是否已修。
 
 #### QTW：Qt 元件行為
 - **QTW-1**: **`clicked` callback 首參變成 `False`** → lambda 吃掉 Qt 多塞的 `checked`：`lambda _=False, k=key: ...`（否則 `dict[False]` KeyError）。

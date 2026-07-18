@@ -224,6 +224,17 @@ class TestSettleDialog(_DialogBase):
         dlg = SettleDialog(self.db)
         dlg.deleteLater()
 
+    def test_builds_with_reward_unissued_row(self):
+        # 敘獎未發文列（register_date='' 哨兵）也要能建起含敘獎列的結算彈窗
+        conn = sqlite3.connect(self.db)
+        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
+                     "VALUES('5','','敘獎事由','王小明')")
+        conn.commit()
+        conn.close()
+        from ui_utils.settle_dialog import SettleDialog
+        dlg = SettleDialog(self.db)
+        dlg.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()
