@@ -42,6 +42,15 @@ class _DbTestBase(unittest.TestCase):
         os.remove(self.db_path)
 
 
+class TestIndexes(_DbTestBase):
+    def test_indexes_created(self):
+        names = {r[0] for r in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'").fetchall()}
+        for idx in ("idx_task_lastmod", "idx_crim_lastmod", "idx_gen_lastmod",
+                    "idx_reward_lastmod", "idx_audit_ts"):
+            self.assertIn(idx, names)
+
+
 class TestGetConn(_DbTestBase):
     def test_busy_timeout_applied(self):
         conn = db_utils.getConn(self.db_path)

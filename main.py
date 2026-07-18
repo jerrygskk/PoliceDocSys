@@ -499,7 +499,7 @@ if __name__ == "__main__":
     #   對話框讓使用者還原——「備份還原」子頁在程式內，DB 壞到開不了時進不去，故把
     #   還原路徑前移到此。不論還原與否都不繼續載入壞 DB（硬繼續只會在載入階段二次崩潰）。
     from lib import db_backup as _backup
-    if not _backup.quick_check(db_path):
+    if not _backup.quick_check(db_path) or not _backup.deep_check_if_due(db_path):
         from ui_utils.rescue_dialog import runStartupRescue
         runStartupRescue(db_path)   # 內部處理還原＋提示；不論結果都結束程式
         sys.exit(0)

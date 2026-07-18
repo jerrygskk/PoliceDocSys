@@ -5,7 +5,7 @@
   - 只放 CREATE ... IF NOT EXISTS 與「缺欄才加」的 ADD COLUMN——冪等、零資料風險。
   - 破壞性變更（改型別、改既有資料、改 View 定義）不放這裡，走一次性手動腳本
     （改 View 需 DROP VIEW 後重建，IF NOT EXISTS 不會更新既有 View）。
-  - 全部表/View/Trigger 在此登記＝唯一來源；`tools/gen_shell_db.py` 用本檔＋
+  - 全部表/View/Trigger/索引 在此登記＝唯一來源；`tools/gen_shell_db.py` 用本檔＋
     `db_seed` 產出乾淨空殼，測試也用本檔建表，三方共用同一份定義、不再走鐘。
   - 對既有現場庫：全 IF NOT EXISTS，已存在＝no-op，不動既有資料、免 migration。
   - 失敗只記 error.log，絕不拋例外、絕不擋開程式（同 db_backup / app_lock 哲學）。
@@ -216,9 +216,18 @@ BEGIN
 END""",
 )
 
+# 主表 last_modified 與稽核 ts 的索引（加速依時間排序／範圍查詢）。全 IF NOT EXISTS、冪等。
+_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_task_lastmod ON Document_Task(last_modified)",
+    "CREATE INDEX IF NOT EXISTS idx_crim_lastmod ON Document_Criminal(last_modified)",
+    "CREATE INDEX IF NOT EXISTS idx_gen_lastmod ON Document_General(last_modified)",
+    "CREATE INDEX IF NOT EXISTS idx_reward_lastmod ON Document_Reward(last_modified)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_ts ON Audit_Log(ts)",
+)
+
 
 def ensureSchema(db_path):
-    """逐句冪等套用 _TABLES / _COLUMNS / _VIEWS / _TRIGGERS。
+    """逐句冪等套用 _TABLES / _COLUMNS / _VIEWS / _TRIGGERS / _INDEXES。
 
     各語句獨立 try：單句失敗（如多機併發短暫 locked）不影響其餘，下次啟動再補。
     整體再包一層 try：任何意外都不阻擋程式開啟。
@@ -237,7 +246,7 @@ def ensureSchema(db_path):
 
 
 def applySchema(conn):
-    """對已開啟的連線套用全部結構（表→欄→View→Trigger）。
+    """對已開啟的連線套用全部結構（表→欄→View→Trigger→索引）。
     供 ensureSchema 與 tools/gen_shell_db.py、單元測試共用，確保三方同一份定義。"""
     for sql in _TABLES:
         _run(conn, sql)
@@ -246,6 +255,8 @@ def applySchema(conn):
     for sql in _VIEWS:
         _run(conn, sql)
     for sql in _TRIGGERS:
+        _run(conn, sql)
+    for sql in _INDEXES:
         _run(conn, sql)
 
 

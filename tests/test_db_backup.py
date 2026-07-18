@@ -191,6 +191,54 @@ class TestQuickCheck(unittest.TestCase):
         self.assertFalse(db_backup.quick_check(p))
 
 
+class TestDeepCheckIfDue(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self.tmp, "dbfile.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _good_db(self):
+        conn = sqlite3.connect(self.db)
+        conn.execute("CREATE TABLE t(id INTEGER)")
+        conn.commit(); conn.close()
+
+    def _corrupt_db(self):
+        with open(self.db, "wb") as f:
+            f.write(b"SQLite format 3\x00" + b"\xff" * 4000)
+
+    def _make_weekly_file(self, d):
+        bdir = db_backup.backup_dir(self.db)
+        os.makedirs(bdir, exist_ok=True)
+        open(os.path.join(bdir, db_backup.weekly_filename(d)), "w").close()
+
+    def test_not_due_skips_check_even_if_corrupt(self):
+        # 本週已有週檔＝未到期：壞檔也不跑檢查、直接放行（證明沒跑深層檢查）
+        self._corrupt_db()
+        self._make_weekly_file(date.today())
+        self.assertTrue(db_backup.deep_check_if_due(self.db))
+
+    def test_due_good_db_passes(self):
+        self._good_db()
+        self.assertTrue(db_backup.deep_check_if_due(self.db))
+
+    def test_due_corrupt_db_fails(self):
+        self._corrupt_db()
+        self.assertFalse(db_backup.deep_check_if_due(self.db))
+
+    def test_due_missing_file_passes(self):
+        self.assertTrue(
+            db_backup.deep_check_if_due(os.path.join(self.tmp, "nope.db")))
+
+    def test_missing_backup_dir_treated_as_due(self):
+        # backups/ 不存在＝視為到期照跑：好檔跑完回 True
+        self._good_db()
+        self.assertFalse(os.path.isdir(db_backup.backup_dir(self.db)))
+        self.assertTrue(db_backup.deep_check_if_due(self.db))
+
+
 class TestListVerifyRestore(unittest.TestCase):
     def setUp(self):
         from lib import db_schema

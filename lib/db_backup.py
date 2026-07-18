@@ -239,6 +239,55 @@ def quick_check(db_path):
     return ok
 
 
+def deep_check_if_due(db_path, now=None):
+    """每 ISO 週第一次開啟時多跑一次深層 PRAGMA integrity_check（比 quick_check 徹底）。
+
+    搭每週備份的到期訊號決定要不要跑：主備份資料夾（db 旁 backups/）的每週備份檔
+    （parse_weekly_dates＋is_weekly_due）若本週已存在＝未到期→放行不檢查；本週尚無週檔
+    ＝到期→跑深層檢查。**每週最多跑一次、不需另存狀態**——到期狀態的推進由同次啟動稍後
+    的 run_auto_backup 建出本週週檔自然完成（本函式只檢查、不建備份）。備份資料夾不存在／
+    listdir 失敗一律視為到期（保守跑檢查）。
+
+    回 True＝完好、或無法判定（未到期、鎖定／忙線、檔案不存在、其他例外）——不擋開程式；
+    回 False＝明確偵測到損毀（結果非單列 "ok"，或開啟／執行時 DatabaseError）。
+    錯誤分類完全比照 quick_check：OperationalError（鎖定／忙線）是 DatabaseError 子類，
+    須先攔並當「無法判定」放行，否則把「忙線中」誤判成損毀。
+    """
+    if not os.path.exists(db_path):
+        return True   # 新裝／空殼由建表流程處理，非損毀
+    today = (now or datetime.now()).date()
+    bdir = backup_dir(db_path)
+    try:
+        weekly = parse_weekly_dates(os.listdir(bdir))
+        due = is_weekly_due(weekly, today)
+    except OSError:
+        due = True    # 資料夾不存在／listdir 失敗＝保守視為到期
+    if not due:
+        return True   # 本週已檢查過（週檔已在），放行不重跑
+    try:
+        conn = sqlite3.connect(db_path, timeout=2)
+        try:
+            rows = conn.execute("PRAGMA integrity_check").fetchall()
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        logging.error("deep_check 無法執行（鎖定／忙線，非損毀判定）：%s",
+                      db_path, exc_info=True)
+        return True
+    except sqlite3.DatabaseError:
+        logging.error("deep_check 開啟／執行失敗（疑似損毀）：%s",
+                      db_path, exc_info=True)
+        return False
+    except Exception:
+        logging.error("deep_check 未預期例外（非損毀判定）：%s",
+                      db_path, exc_info=True)
+        return True
+    ok = (len(rows) == 1 and rows[0][0] == "ok")
+    if not ok:
+        logging.error("deep_check 偵測到資料庫異常：%s / %s", db_path, rows)
+    return ok
+
+
 # ── 備份還原（列舉候選／驗檔／筆數預覽／覆蓋還原）────────────────────
 # 重置留底：tab_settings._doReset 產於 db 同目錄 dbfile_backup_YYYYMMDD_HHMMSS.db
 # 還原前留底：restore_backup 覆蓋前另存 dbfile_prerestore_YYYYMMDD_HHMMSS.db
