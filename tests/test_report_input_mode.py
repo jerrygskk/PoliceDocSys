@@ -295,5 +295,106 @@ class TestRewardUnissuedSentinel(unittest.TestCase):
         self.assertTrue(_META_BY_KEY["reward"]["with_sender"])
 
 
+class TestSettleConcurrencyGuard(unittest.TestCase):
+    """結算視窗資料過期時，不覆寫他機異動或復活軟刪除列。"""
+
+    def setUp(self):
+        self.conn = _make_db()
+        self.conn.execute(
+            "INSERT OR IGNORE INTO Ref_Personnel "
+            "(staff_id, staff_name, is_active, sort_order) VALUES (?,?,1,2)",
+            ("P002", "李送文"))
+        from ui_utils.settle_dialog import SETTLE_META
+        self.meta = {meta["key"]: meta for meta in SETTLE_META}
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_settle_skips_already_issued_crim(self):
+        self.conn.execute(
+            "INSERT INTO Document_Criminal "
+            "(doc_id, report_date, sender_id, subject_summary) "
+            "VALUES ('C0091', NULL, NULL, '刑案併發測試')")
+        self.conn.execute(
+            "UPDATE Document_Criminal SET report_date=?, sender_id=? "
+            "WHERE doc_id=?", ("2026-07-01", "P001", "C0091"))
+
+        cur = self.conn.execute(
+            self.meta["crim"]["update"],
+            ("2026-07-20", "P002", "C0091"))
+        row = self.conn.execute(
+            "SELECT report_date, sender_id FROM Document_Criminal "
+            "WHERE doc_id='C0091'").fetchone()
+
+        self.assertEqual(cur.rowcount, 0)
+        self.assertEqual(tuple(row), ("2026-07-01", "P001"))
+
+    def test_settle_skips_already_issued_gen(self):
+        self.conn.execute(
+            "INSERT INTO Document_General "
+            "(doc_id, report_date, sender_id, subject) "
+            "VALUES ('G0091', NULL, NULL, '一般併發測試')")
+        self.conn.execute(
+            "UPDATE Document_General SET report_date=?, sender_id=? "
+            "WHERE doc_id=?", ("2026-07-01", "P001", "G0091"))
+
+        cur = self.conn.execute(
+            self.meta["gen"]["update"],
+            ("2026-07-20", "P002", "G0091"))
+        row = self.conn.execute(
+            "SELECT report_date, sender_id FROM Document_General "
+            "WHERE doc_id='G0091'").fetchone()
+
+        self.assertEqual(cur.rowcount, 0)
+        self.assertEqual(tuple(row), ("2026-07-01", "P001"))
+
+    def test_settle_does_not_resurrect_deleted_reward(self):
+        from lib.db_utils import _DELETE_CLEAR_SQL
+
+        self.conn.execute(
+            "INSERT INTO Document_Reward "
+            "(doc_id, register_date, sender_id, reason, recipients) "
+            "VALUES ('91', '', NULL, '敘獎併發測試', '王承辦')")
+        self.conn.execute(_DELETE_CLEAR_SQL["Document_Reward"], ("91",))
+
+        cur = self.conn.execute(
+            self.meta["reward"]["update"],
+            ("2026-07-20", "P002", "91"))
+        row = self.conn.execute(
+            "SELECT register_date, sender_id, reason, recipients "
+            "FROM Document_Reward WHERE doc_id='91'").fetchone()
+
+        self.assertEqual(cur.rowcount, 0)
+        self.assertEqual(tuple(row), (None, None, None, None))
+
+    def test_settle_still_updates_unissued(self):
+        self.conn.execute(
+            "INSERT INTO Document_Criminal "
+            "(doc_id, report_date, sender_id, subject_summary) "
+            "VALUES ('C0092', NULL, NULL, '正常刑案')")
+        self.conn.execute(
+            "INSERT INTO Document_Reward "
+            "(doc_id, register_date, sender_id, reason, recipients) "
+            "VALUES ('92', '', NULL, '正常敘獎', '王承辦')")
+
+        crim_cur = self.conn.execute(
+            self.meta["crim"]["update"],
+            ("2026-07-20", "P002", "C0092"))
+        reward_cur = self.conn.execute(
+            self.meta["reward"]["update"],
+            ("2026-07-20", "P002", "92"))
+        crim = self.conn.execute(
+            "SELECT report_date, sender_id FROM Document_Criminal "
+            "WHERE doc_id='C0092'").fetchone()
+        reward = self.conn.execute(
+            "SELECT register_date, sender_id FROM Document_Reward "
+            "WHERE doc_id='92'").fetchone()
+
+        self.assertEqual(crim_cur.rowcount, 1)
+        self.assertEqual(reward_cur.rowcount, 1)
+        self.assertEqual(tuple(crim), ("2026-07-20", "P002"))
+        self.assertEqual(tuple(reward), ("2026-07-20", "P002"))
+
+
 if __name__ == "__main__":
     unittest.main()

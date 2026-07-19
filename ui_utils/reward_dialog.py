@@ -16,6 +16,20 @@ _ROW_GONE_TITLE = "資料已刪除"
 _ROW_GONE_MSG = "本筆敘獎資料已被刪除，畫面將更新。"
 
 
+class _RecipientCombo(QComboBox):
+    """敘獎人員下拉：張開下拉瞬間快照當下欄位文字。
+
+    選取項目時 Qt 會先把整欄換成選中文字，處理器需還原張開當下的內容再附加
+    姓名；快照若靠 textEdited 維護會漏掉 completer/程式填字（textEdited 只在
+    使用者打字時發出），故一律以張開瞬間為準。
+    """
+    popup_snapshot = ""
+
+    def showPopup(self):
+        self.popup_snapshot = self.lineEdit().text()
+        super().showPopup()
+
+
 class RewardEditDialog(_BaseEditDialog):
     """敘獎修改對話框；entry 開放三角色，browse 僅管理角色。
 
@@ -73,7 +87,7 @@ class RewardEditDialog(_BaseEditDialog):
         form.addRow("敘獎事由：", self.w_reason)
         # 敘獎人員：可編輯下拉（比照發文人員可點選展開；彈窗無右側名條）。
         # 下拉選取＝附加姓名到清單（非取代整欄）；打字仍有候選 completer。
-        self.w_recipients = QComboBox()
+        self.w_recipients = _RecipientCombo()
         self.w_recipients.setEditable(True)
         self.w_recipients.setInsertPolicy(QComboBox.NoInsert)
         for _, sname, _ in personnel:
@@ -82,8 +96,6 @@ class RewardEditDialog(_BaseEditDialog):
         le = self.w_recipients.lineEdit()
         self._recipients_ctl = setupRecipientLineEdit(
             le, personnel, alias_map=alias_map)
-        self._recip_snapshot = ""
-        le.textEdited.connect(self._snap_recipients)
         self.w_recipients.activated.connect(self._on_recipient_picked)
         form.addRow("敘獎人員：", self.w_recipients)
 
@@ -106,16 +118,13 @@ class RewardEditDialog(_BaseEditDialog):
         self.btn_save.clicked.connect(self._on_save)
         self.btn_cancel.clicked.connect(self.reject)
 
-    def _snap_recipients(self, text):
-        self._recip_snapshot = text
-
     def _on_recipient_picked(self, index):
-        """下拉選取：Qt 會先把整欄文字換成選中項，先還原快照再附加該姓名。"""
+        """下拉選取：Qt 會先把整欄文字換成選中項，先還原張開下拉當下的快照
+        再附加該姓名。"""
         name = self.w_recipients.itemText(index)
         le = self.w_recipients.lineEdit()
-        le.setText(self._recip_snapshot)
+        le.setText(self.w_recipients.popup_snapshot)
         self._recipients_ctl.add_person(name)
-        self._recip_snapshot = le.text()
 
     def _load_data(self):
         conn = getConn(self.db_path)
@@ -139,7 +148,6 @@ class RewardEditDialog(_BaseEditDialog):
         self._set_combo(self.w_sender, row[1])
         self.w_reason.setText(row[2] or "")
         self.w_recipients.setCurrentText(row[3] or "")
-        self._recip_snapshot = row[3] or ""
 
     def _on_save(self):
         if self.source == "browse" and not AuthManager.instance().is_manager():
@@ -149,26 +157,21 @@ class RewardEditDialog(_BaseEditDialog):
         names = parse_recipient_names(self.w_recipients.currentText())
         # 日期：空白＝未發文（存 '' 哨兵、清 sender）；填有效日期＝發文，此時
         # 發文人員必填（不讓發出的單沒有送文者）。格式錯（非空非法）擋下亮紅框。
-        self.w_date.validateNow()
-        if self.w_date.hasError():
-            msgWarning("日期格式錯誤",
-                       "發文日期格式須為 yyyy-MM-dd，或留空表示未發文。")
+        ok, date, sender_id, issued = self._resolveReportDate(
+            self.w_date, self.w_sender, blank_value="", field_label="發文日期")
+        if not ok:
             return
-        qd = self.w_date.getDate()
-        issued = qd is not None
         missing = []
         if not reason:
             missing.append("敘獎事由")
         if not names:
             missing.append("敘獎人員")
-        if issued and not self.w_sender.currentData():
+        if issued and not sender_id:
             missing.append("發文人員")
         if missing:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(missing)}")
             return
         # 維持不變式：未發文 ⟺ (register_date='' 且 sender=NULL)
-        date = qd.toString("yyyy-MM-dd") if issued else ""
-        sender_id = self.w_sender.currentData() if issued else None
         recipients = ",".join(names)
         conn = None
         try:

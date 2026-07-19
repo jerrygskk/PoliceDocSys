@@ -164,7 +164,7 @@ class TabReward(BaseTab):
         ordered = sort_personnel_by_counts(self._personnel, self._name_counts)
         self.reward_personnel_list.clear()
         for row in ordered:
-            name = self._trimName(row[1])
+            name = row[1]
             if name:
                 self.reward_personnel_list.addItem(name)
 

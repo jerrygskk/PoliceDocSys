@@ -27,8 +27,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui     import QColor
 
-from lib.db_utils    import getConn
-from ui_utils.ui_common import msgWarning, confirmBox, reportError
+from lib.db_utils    import getConn, loadActivePersonnel
+from ui_utils.ui_common import msgInfo, msgWarning, confirmBox, reportError
 
 _ORANGE = QColor("#e67e22")
 _GRAY   = QColor("#aeaeb2")
@@ -41,7 +41,7 @@ _BLACK  = QColor("#000000")
 #   color       類型欄前景色
 #   query       查未發文列 SQL，回三欄 (doc_id, 承辦人, 主旨)
 #   update      結算補值 SQL（with_sender 帶 (today, sender_id, doc_id)，否則 (today, doc_id)）
-#   with_sender 是否有送文者欄（刑案／一般有，敘獎無）
+#   with_sender 結算時是否需選送文者（現行三型態皆需；False 分支留給日後不需送文者的型態，如罰單）
 SETTLE_META = (
     {
         "key": "crim",
@@ -57,7 +57,7 @@ SETTLE_META = (
             "ORDER BY c.doc_id"
         ),
         "update": ("UPDATE Document_Criminal SET report_date=?, sender_id=? "
-                   "WHERE doc_id=?"),
+                   "WHERE doc_id=? AND (report_date IS NULL OR report_date='')"),
         "with_sender": True,
     },
     {
@@ -74,7 +74,7 @@ SETTLE_META = (
             "ORDER BY g.doc_id"
         ),
         "update": ("UPDATE Document_General SET report_date=?, sender_id=? "
-                   "WHERE doc_id=?"),
+                   "WHERE doc_id=? AND (report_date IS NULL OR report_date='')"),
         "with_sender": True,
     },
     {
@@ -89,7 +89,7 @@ SETTLE_META = (
             "ORDER BY CAST(doc_id AS INTEGER)"
         ),
         "update": ("UPDATE Document_Reward SET register_date=?, sender_id=? "
-                   "WHERE doc_id=?"),
+                   "WHERE doc_id=? AND register_date=''"),
         "with_sender": True,
     },
 )
@@ -192,18 +192,6 @@ def _load_unissued(db_path):
     finally:
         conn.close()
     return result
-
-
-def _load_personnel(db_path):
-    """回傳在職人員清單 [(staff_id, staff_name), ...]，按 sort_order。"""
-    conn = getConn(db_path)
-    try:
-        return conn.execute(
-            "SELECT staff_id, staff_name FROM Ref_Personnel "
-            "WHERE is_active=1 ORDER BY sort_order"
-        ).fetchall()
-    finally:
-        conn.close()
 
 
 def count_unissued(db_path):
@@ -526,10 +514,10 @@ class SettleDialog(QDialog):
         self._tbl.populate(data)
         self._update_chip_labels()
 
-        personnel = _load_personnel(self.db_path)
+        personnel, _alias = loadActivePersonnel(self.db_path)
         self.cmb_sender.clear()
         self.cmb_sender.addItem("", None)
-        for sid, sname in personnel:
+        for sid, sname, _so in personnel:
             self.cmb_sender.addItem(sname, sid)
 
         self._apply_filters()
@@ -605,7 +593,7 @@ class SettleDialog(QDialog):
             msgWarning("無可結算項目", "沒有勾選任何公文，無法結算。", parent=self)
             return
 
-        # 送文者僅在勾選中含「需送文者」型態（刑案／一般）時才必填
+        # 送文者僅在勾選中含「需送文者」型態時才必填（現行三型態皆是）
         need_sender = any(counts[m["key"]] > 0
                           for m in SETTLE_META if m["with_sender"])
         sender_id = self.cmb_sender.currentData()
@@ -635,14 +623,16 @@ class SettleDialog(QDialog):
         try:
             conn = getConn(self.db_path)
             try:
+                settled_n = 0
                 for meta in SETTLE_META:
                     ids = by[meta["key"]]
                     for doc_id in ids:
                         if meta["with_sender"]:
-                            conn.execute(meta["update"],
-                                         (today_str, sender_id, doc_id))
+                            cur = conn.execute(meta["update"],
+                                               (today_str, sender_id, doc_id))
                         else:
-                            conn.execute(meta["update"], (today_str, doc_id))
+                            cur = conn.execute(meta["update"], (today_str, doc_id))
+                        settled_n += cur.rowcount
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -652,6 +642,12 @@ class SettleDialog(QDialog):
         except Exception as e:
             reportError("結算失敗", e, parent=self)
             return
+
+        skipped = total - settled_n
+        if skipped > 0:
+            msgInfo("部分公文未結算",
+                    f"有 {skipped} 筆公文在結算前已由其他電腦發文或刪除，本次未變動；"
+                    f"實際結算 {settled_n} 筆。")
 
         self._settled = True
         self.accept()

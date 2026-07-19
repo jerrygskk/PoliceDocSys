@@ -262,6 +262,29 @@ class _BaseEditDialog(QDialog):
     def _set_combo(self, combo, value):
         _set_combo_value(combo, value)
 
+    def _resolveReportDate(self, date_widget, sender_combo, blank_value=None,
+                           field_label="陳報日期"):
+        """驗證可空白日期欄並解析發文狀態。
+
+        回 (ok, report_date, sender_id, issued)：
+          ok=False        格式錯誤（已彈警告），呼叫端直接 return
+          issued=False    空白＝未發文 → report_date=blank_value、sender_id=None
+          issued=True     有效日期 → report_date='yyyy-MM-dd'、sender_id=下拉當前值
+        發文人員必填檢查（issued 且 sender 空）留在呼叫端，因三彈窗的錯誤呈現
+        方式不同（errors 清單 vs missing 清單）。
+        """
+        from .ui_common import msgWarning
+        date_widget.validateNow()
+        if date_widget.hasError():
+            msgWarning("日期格式錯誤",
+                       f"{field_label}格式須為 yyyy-MM-dd，或留空表示未發文。")
+            return False, None, None, False
+        qdate = date_widget.getDate()
+        issued = qdate is not None
+        report_date = qdate.toString("yyyy-MM-dd") if issued else blank_value
+        sender_id = sender_combo.currentData() if issued else None
+        return True, report_date, sender_id, issued
+
 
 class TaskEditDialog(_BaseEditDialog):
     """交辦單修改彈窗（Tab 0 / Tab 1 共用）"""
@@ -770,15 +793,10 @@ QRadioButton:checked {
         from .ui_common import msgWarning, msgCritical, reportError
         # 陳報日期：空白＝未發文（report_date/sender 皆存 NULL）；填有效日期＝發文，
         # 此時發文人員必填。格式錯（非空非法）先擋下亮紅框。
-        self.w_report_date.validateNow()
-        if self.w_report_date.hasError():
-            msgWarning("日期格式錯誤",
-                       "陳報日期格式須為 yyyy-MM-dd，或留空表示未發文。")
+        ok, report_date, sender_id, issued = self._resolveReportDate(
+            self.w_report_date, self.w_sender)
+        if not ok:
             return
-        rpt_d       = self.w_report_date.getDate()
-        issued      = rpt_d is not None
-        report_date = rpt_d.toString("yyyy-MM-dd") if issued else None
-        sender_id   = self.w_sender.currentData() if issued else None
         case_type   = self.w_casetype.currentData()
         proc_id     = self.w_processor.currentData()
         recv_id     = self.w_receiver.currentData()
@@ -1014,15 +1032,10 @@ class GeneralEditDialog(_BaseEditDialog):
         from .ui_common import msgWarning, msgCritical, reportError
         # 陳報日期：空白＝未發文（report_date/sender 皆存 NULL）；填有效日期＝發文，
         # 此時發文人員必填。格式錯（非空非法）先擋下亮紅框。
-        self.w_report_date.validateNow()
-        if self.w_report_date.hasError():
-            msgWarning("日期格式錯誤",
-                       "陳報日期格式須為 yyyy-MM-dd，或留空表示未發文。")
+        ok, report_date, sender_id, issued = self._resolveReportDate(
+            self.w_report_date, self.w_sender)
+        if not ok:
             return
-        rpt_d       = self.w_report_date.getDate()
-        issued      = rpt_d is not None
-        report_date = rpt_d.toString("yyyy-MM-dd") if issued else None
-        sender_id   = self.w_sender.currentData() if issued else None
         dept_id     = self.w_dept.currentData()
         subject     = self.w_subject.text().strip()
         proc_id     = self.w_processor.currentData()

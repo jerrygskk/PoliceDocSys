@@ -26,6 +26,7 @@
 - **QTW-8**: **completer 打字完全不彈候選（換自建 model 後）** → `QCompleter` 搭 `QStandardItemModel` 時 model **必須掛 parent**（如 `QStandardItemModel(combo)`）；區域變數無 parent 會被 PySide 端 GC 回收，completer 靜默啞掉。離線單測測不出（測試裡物件還活著），症狀只在真機出現。
 - **QTW-9**: **completer `activated[QModelIndex]` 讀 UserRole 拿到「別列」的資料（靜默選錯、不報錯）** → 自訂 handler 的 connect 必須在 `combo.setCompleter()` **之前**：setCompleter 內部也連了 activated，內部 slot 先跑會改 lineEdit → completionModel 重新過濾 → 傳進 handler 的 index 已過期、`data()` 讀到別列（實測選「私行拘禁 → 302妨害自由」回填成 319 案類）。同一 handler 若要 `findData` 回填，記得 combo 項目可能已被打字過濾濾掉目標，先重建完整清單再找（見 `widgets.setupFilterCombo` 內註解）。
 - **QTW-10**: **彈窗「可空白日期」用 `QDateEdit`＋`specialValueText`／`minimumDate` 哨兵硬撐 → 空白打不動／亂點冒 1752 殘值／fixup 還原，停用欄位又衍生流程限制** → 一律改用 `ui_utils.widgets.NullableDateEdit`（見 DEVELOPER「可空白日期框」；範例 reward_dialog 發文日期、crim／gen 編輯彈窗陳報日期）。
+- **QTW-11**: **editable combo「下拉選取＝附加而非取代」的欄位，混用 completer 選字後再點下拉，先前選的人名被洗掉** → Qt 選取下拉項時會先把整欄換成選中文字，handler 需先還原快照再附加；快照若靠 `textEdited` 維護會漏接 completer／程式 `setText`（`textEdited` 只在使用者打字時發出）。正解：覆寫 `showPopup()` 於**張開下拉瞬間**抓快照（那一刻欄位值必然最新），見 `reward_dialog._RecipientCombo`。
 
 #### LAY：版面／模式切換抖動（多見於 tab_report._switchFormType）
 - **LAY-1**: **隱藏列幽靈間距、兩模式下方表格高度不一** → `verticalSpacing=0`、列距改 `setRowMinimumHeight`；兩模式 form 總高設成相同固定值（如刑案 4×45、一般 3×60＝180）。
