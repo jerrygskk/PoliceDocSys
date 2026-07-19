@@ -181,7 +181,7 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertNotIn("七個分頁速查", source)
         reward_help = render_review_text(3)
         browse_help = render_review_text(6)
-        self.assertIn("本次預覽三種身分皆可修改、刪除", reward_help)
+        self.assertIn("發文日期留空將被認定為未發文狀態", reward_help)
         self.assertIn("一般使用者唯讀", browse_help)
         self.assertIn("歸檔管理可修改、不可刪除", browse_help)
         self.assertIn("管理者可修改、可刪除", browse_help)
