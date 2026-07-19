@@ -117,17 +117,53 @@ class TestRewardTab(unittest.TestCase):
         tab = self._make_tab()
         tab.reward_reason.setText("  協助查緝  ")
         tab.reward_recipients.setText("測試甲、測試乙，測試甲")
+        tab.reward_sender.setCurrentIndex(tab.reward_sender.findData("P01"))
         tab._submit()
         conn = sqlite3.connect(self.db)
         row = conn.execute(
-            "SELECT doc_id,register_date,reason,recipients FROM Document_Reward"
+            "SELECT doc_id,register_date,sender_id,reason,recipients FROM Document_Reward"
         ).fetchone()
         conn.close()
-        self.assertEqual(row[2:], ("協助查緝", "測試甲,測試乙"))
+        self.assertEqual(row[2:], ("P01", "協助查緝", "測試甲,測試乙"))
         self.assertEqual(tab._session_doc_ids, [row[0]])
         self.assertEqual(tab.reward_table.rowCount(), 1)
         self.assertEqual(tab.reward_reason.text(), "")
         self.assertEqual(tab.reward_recipients.text(), "")
+
+    def test_submit_requires_sender_in_sender_mode(self):
+        tab = self._make_tab()
+        tab.reward_reason.setText("協助查緝")
+        tab.reward_recipients.setText("測試甲")
+        # 未選發文人員 → 送文者模式必填擋下，不寫入
+        from unittest.mock import patch
+        with patch("tabs.tab_reward.msgWarning") as warn:
+            tab._submit()
+            warn.assert_called_once()
+        conn = sqlite3.connect(self.db)
+        count = conn.execute("SELECT COUNT(*) FROM Document_Reward").fetchone()[0]
+        conn.close()
+        self.assertEqual(count, 0)
+
+    def test_self_service_submit_omits_sender_and_leaves_empty_date(self):
+        tab = self._make_tab()
+        conn = sqlite3.connect(self.db)
+        conn.execute("INSERT OR REPLACE INTO App_Settings(key,value) "
+                     "VALUES('report_input_mode','1')")
+        conn.commit()
+        conn.close()
+        tab._applySelfServiceMode()
+        # 自助模式：日期與發文人員兩欄反灰
+        self.assertFalse(tab.reward_date.isEnabled())
+        self.assertFalse(tab.reward_sender.isEnabled())
+        tab.reward_reason.setText("協助查緝")
+        tab.reward_recipients.setText("測試甲")
+        tab._submit()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute(
+            "SELECT register_date,sender_id FROM Document_Reward").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "")       # 未發文哨兵
+        self.assertIsNone(row[1])          # 送文者待結算補填
 
     def test_dirty_refresh_updates_active_rows_and_removes_deleted_rows(self):
         tab = self._make_tab()
@@ -174,6 +210,7 @@ class TestRewardTab(unittest.TestCase):
         tab = self._make_tab()
         tab.reward_reason.setText("協助查緝")
         tab.reward_recipients.setText("測試甲、測試乙")
+        tab.reward_sender.setCurrentIndex(tab.reward_sender.findData("P01"))
         tab._submit()
         self.assertEqual(tab._name_counts.get("測試甲"), 1)
         self.assertEqual(tab._name_counts.get("測試乙"), 1)

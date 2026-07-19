@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
-    QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QDateEdit,
+    QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QVBoxLayout,
 )
 
@@ -8,7 +8,7 @@ from lib.auth_manager import AuthManager
 from lib.db_utils import getConn, loadActivePersonnel
 from .ui_common import BTN_CONFIRM, BTN_CANCEL, msgWarning, reportError
 from .edit_dialog import _BaseEditDialog, _CRIMGEN_QSS
-from .widgets import parse_recipient_names, setupRecipientLineEdit
+from .widgets import NullableDateEdit, parse_recipient_names, setupRecipientLineEdit
 
 
 # 併發刪除白話提示（開啟時列已不存在／儲存時 0 列受影響共用）
@@ -55,16 +55,36 @@ class RewardEditDialog(_BaseEditDialog):
         self.lbl_doc_id = QLabel(self.doc_id)
         self.lbl_doc_id.setStyleSheet("font-weight: bold;")
         form.addRow("編號：", self.lbl_doc_id)
-        self.w_date = QDateEdit()
-        self.w_date.setCalendarPopup(True)
-        self.w_date.setDisplayFormat("yyyy-MM-dd")
+        # 發文日期：可空白（未發文＝''）又要能手打／挑月曆，故用 NullableDateEdit，
+        # 不用 QDateEdit（後者當可空白欄會冒 1752 殘值／fixup 還原，見 DEVELOPER
+        # 『可空白日期框』）。空白＝維持未發文；填日期＝管理者在此直接補發單筆。
+        self.w_date = NullableDateEdit()
+        self.w_date.setPlaceholderText("未發文")
         form.addRow("發文日期：", self.w_date)
+        # 發文人員（比照刑案／一般編輯彈窗；保留空白項忠實顯示自助未結算的 NULL）
+        self.w_sender = QComboBox()
+        self.w_sender.addItem("", None)
+        personnel, alias_map = loadActivePersonnel(self.db_path)
+        for sid, sname, _ in personnel:
+            self.w_sender.addItem(sname, sid)
+        form.addRow("發文人員：", self.w_sender)
         self.w_reason = QLineEdit()
         self.w_reason.setPlaceholderText("請輸入敘獎原因")
         form.addRow("敘獎事由：", self.w_reason)
-        self.w_recipients = QLineEdit()
-        personnel, alias_map = loadActivePersonnel(self.db_path)
-        setupRecipientLineEdit(self.w_recipients, personnel, alias_map=alias_map)
+        # 敘獎人員：可編輯下拉（比照發文人員可點選展開；彈窗無右側名條）。
+        # 下拉選取＝附加姓名到清單（非取代整欄）；打字仍有候選 completer。
+        self.w_recipients = QComboBox()
+        self.w_recipients.setEditable(True)
+        self.w_recipients.setInsertPolicy(QComboBox.NoInsert)
+        for _, sname, _ in personnel:
+            self.w_recipients.addItem(sname)
+        self.w_recipients.setCurrentIndex(-1)
+        le = self.w_recipients.lineEdit()
+        self._recipients_ctl = setupRecipientLineEdit(
+            le, personnel, alias_map=alias_map)
+        self._recip_snapshot = ""
+        le.textEdited.connect(self._snap_recipients)
+        self.w_recipients.activated.connect(self._on_recipient_picked)
         form.addRow("敘獎人員：", self.w_recipients)
 
         self.btn_save = QPushButton("儲存")
@@ -86,11 +106,22 @@ class RewardEditDialog(_BaseEditDialog):
         self.btn_save.clicked.connect(self._on_save)
         self.btn_cancel.clicked.connect(self.reject)
 
+    def _snap_recipients(self, text):
+        self._recip_snapshot = text
+
+    def _on_recipient_picked(self, index):
+        """下拉選取：Qt 會先把整欄文字換成選中項，先還原快照再附加該姓名。"""
+        name = self.w_recipients.itemText(index)
+        le = self.w_recipients.lineEdit()
+        le.setText(self._recip_snapshot)
+        self._recipients_ctl.add_person(name)
+        self._recip_snapshot = le.text()
+
     def _load_data(self):
         conn = getConn(self.db_path)
         try:
             row = conn.execute(
-                "SELECT register_date,reason,recipients FROM Document_Reward "
+                "SELECT register_date,sender_id,reason,recipients FROM Document_Reward "
                 "WHERE doc_id=? AND register_date IS NOT NULL", (self.doc_id,)).fetchone()
         finally:
             conn.close()
@@ -99,36 +130,53 @@ class RewardEditDialog(_BaseEditDialog):
             # 讓瀏覽頁既有 `if dlg.exec():` 呼叫點不改字也安全。
             self._row_missing = True
             return
-        qd = QDate.fromString(str(row[0]), "yyyy-MM-dd")
-        self.w_date.setDate(qd)
-        self.w_reason.setText(row[1] or "")
-        self.w_recipients.setText(row[2] or "")
+        # register_date=''（未發文哨兵）→ 日期框留空；有日期＝已發文。
+        # 管理者可在此填日期直接補發單筆、或清空回未發文（不必跳結算）。
+        if row[0]:
+            self.w_date.setDate(QDate.fromString(str(row[0]), "yyyy-MM-dd"))
+        else:
+            self.w_date.clear()
+        self._set_combo(self.w_sender, row[1])
+        self.w_reason.setText(row[2] or "")
+        self.w_recipients.setCurrentText(row[3] or "")
+        self._recip_snapshot = row[3] or ""
 
     def _on_save(self):
         if self.source == "browse" and not AuthManager.instance().is_manager():
             msgWarning("權限不足", "目前身分無法修改資料庫瀏覽中的敘獎資料。")
             return
         reason = self.w_reason.text().strip()
-        names = parse_recipient_names(self.w_recipients.text())
+        names = parse_recipient_names(self.w_recipients.currentText())
+        # 日期：空白＝未發文（存 '' 哨兵、清 sender）；填有效日期＝發文，此時
+        # 發文人員必填（不讓發出的單沒有送文者）。格式錯（非空非法）擋下亮紅框。
+        self.w_date.validateNow()
+        if self.w_date.hasError():
+            msgWarning("日期格式錯誤",
+                       "發文日期格式須為 yyyy-MM-dd，或留空表示未發文。")
+            return
+        qd = self.w_date.getDate()
+        issued = qd is not None
         missing = []
-        if not self.w_date.date().isValid():
-            missing.append("發文日期")
         if not reason:
             missing.append("敘獎事由")
         if not names:
             missing.append("敘獎人員")
+        if issued and not self.w_sender.currentData():
+            missing.append("發文人員")
         if missing:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(missing)}")
             return
-        date = self.w_date.date().toString("yyyy-MM-dd")
+        # 維持不變式：未發文 ⟺ (register_date='' 且 sender=NULL)
+        date = qd.toString("yyyy-MM-dd") if issued else ""
+        sender_id = self.w_sender.currentData() if issued else None
         recipients = ",".join(names)
         conn = None
         try:
             conn = getConn(self.db_path)
             cur = conn.execute(
-                "UPDATE Document_Reward SET register_date=?,reason=?,recipients=? "
+                "UPDATE Document_Reward SET register_date=?,sender_id=?,reason=?,recipients=? "
                 "WHERE doc_id=? AND register_date IS NOT NULL",
-                (date, reason, recipients, self.doc_id))
+                (date, sender_id, reason, recipients, self.doc_id))
             conn.commit()
             if cur.rowcount == 0:
                 # 併發刪除：無列受影響 → 非成功，彈提示、不 accept，

@@ -211,8 +211,8 @@ _DELETE_CLEAR_SQL = {
         "dept_id=NULL, gen_cat_id=NULL, subject=NULL, processor_id=NULL, "
         "is_reported=0, is_electronic='' WHERE doc_id=?"),
     "Document_Reward": (
-        "UPDATE Document_Reward SET register_date=NULL, reason=NULL, "
-        "recipients=NULL WHERE doc_id=?"),
+        "UPDATE Document_Reward SET register_date=NULL, sender_id=NULL, "
+        "reason=NULL, recipients=NULL WHERE doc_id=?"),
 }
 
 # 各主表稽核取值：

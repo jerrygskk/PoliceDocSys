@@ -42,8 +42,10 @@ def _make_db_file():
         INSERT INTO Document_Task(doc_id,receive_date,receive_id,subject,processor_id)
             VALUES('1','2026-07-01','P01','交辦主旨','P02');
         INSERT INTO Document_Criminal(doc_id,report_date,sender_id,case_type,
-            case_status,processor_id,subject_summary,is_reported,is_electronic)
-            VALUES('2','2026-07-01','P01','CT01','CS01','P02','刑案主旨',0,'');
+            case_status,processor_id,subject_summary,occurrence_date,
+            is_reported,is_electronic)
+            VALUES('2','2026-07-01','P01','CT01','CS01','P02','刑案主旨',
+                   '2026-06-01',0,'');
         INSERT INTO Document_General(doc_id,report_date,sender_id,dept_id,
             gen_cat_id,subject,processor_id,is_reported,is_electronic)
             VALUES('3','2026-07-01','P01','D01','GC01','一般主旨','P02',0,'');
@@ -120,7 +122,7 @@ class TestEditDialogs(_DialogBase):
                 dlg = RewardEditDialog(self.db, "4", source=source)
                 self.assertEqual(dlg.minimumWidth(), expected_w)
                 self.assertEqual(dlg.w_reason.text(), "協助查緝")
-                self.assertEqual(dlg.w_recipients.text(), "王小明, 名單外甲")
+                self.assertEqual(dlg.w_recipients.currentText(), "王小明, 名單外甲")
                 self.assertFalse(dlg.btn_save.isDefault())
                 self.assertFalse(dlg.btn_save.autoDefault())
                 dlg.deleteLater()
@@ -129,19 +131,21 @@ class TestEditDialogs(_DialogBase):
         from PySide6.QtCore import Qt, QModelIndex
         from ui_utils.reward_dialog import RewardEditDialog
         dlg = RewardEditDialog(self.db, "4", source="entry")
-        controller = dlg.w_recipients._recipient_controller
+        # 敘獎人員改為可編輯 QComboBox：controller 掛在其 lineEdit 上
+        line = dlg.w_recipients.lineEdit()
+        controller = line._recipient_controller
         roles = [controller.model.item(i).data(Qt.UserRole)
                  for i in range(controller.model.rowCount())]
         labels = [controller.model.item(i).text()
                   for i in range(controller.model.rowCount())]
         self.assertIn("小明 → 王小明", labels)
         self.assertEqual(roles[labels.index("小明 → 王小明")], "王小明")
-        dlg.w_recipients.setText("名單外甲, 小明")
-        dlg.w_recipients.setCursorPosition(len(dlg.w_recipients.text()))
+        line.setText("名單外甲, 小明")
+        line.setCursorPosition(len(line.text()))
         controller.completer.activated[QModelIndex].emit(
             controller.model.index(labels.index("小明 → 王小明"), 0))
         _app.processEvents()
-        self.assertEqual(dlg.w_recipients.text(), "名單外甲, 王小明")
+        self.assertEqual(dlg.w_recipients.currentText(), "名單外甲, 王小明")
         dlg.deleteLater()
 
     def test_reward_edit_supports_legacy_personnel_table_without_alias(self):
@@ -183,12 +187,192 @@ class TestEditDialogs(_DialogBase):
         conn.commit()
         conn.close()
         dlg.w_reason.setText("改後事由")
+        # 已發文列（有日期）儲存需發文人員，先選好才走得到併發刪除的 UPDATE
+        dlg.w_sender.setCurrentIndex(dlg.w_sender.findData("P01"))
         with patch("ui_utils.reward_dialog.msgWarning") as warn:
             dlg._on_save()
             warn.assert_called_once()
         self.assertIsNone(dlg.get_updated())
         self.assertTrue(dlg._row_missing)
         from PySide6.QtWidgets import QDialog
+        self.assertNotEqual(dlg.result(), QDialog.Accepted)
+        dlg.deleteLater()
+
+
+class TestReportDateNullable(_DialogBase):
+    """刑案／一般編輯彈窗陳報日期改用 NullableDateEdit 的 round-trip。
+
+    未發文 ⟺ report_date NULL 且 sender_id NULL；填日期＝發文、發文人員必填。
+    offscreen 下任何會彈 QMessageBox 的路徑都必須 patch，否則測試永久卡死。
+    """
+
+    def _insert_unissued(self, conn, kind):
+        if kind == "crim":
+            conn.execute(
+                "INSERT INTO Document_Criminal(doc_id,report_date,sender_id,"
+                "case_type,case_status,processor_id,subject_summary,"
+                "occurrence_date,is_reported,is_electronic) "
+                "VALUES('6',NULL,NULL,'CT01','CS01','P02','未發文刑案',"
+                "'2026-06-01',0,'')")
+        else:
+            conn.execute(
+                "INSERT INTO Document_General(doc_id,report_date,sender_id,"
+                "dept_id,gen_cat_id,subject,processor_id,is_reported,is_electronic) "
+                "VALUES('7',NULL,NULL,'D01','GC01','未發文一般','P02',0,'')")
+        conn.commit()
+
+    def _open_criminal(self, doc_id):
+        from ui_utils.edit_dialog import CriminalEditDialog
+        return CriminalEditDialog(self.db, doc_id)
+
+    def _open_general(self, doc_id):
+        from ui_utils.edit_dialog import GeneralEditDialog
+        return GeneralEditDialog(self.db, doc_id)
+
+    def _select_sender(self, dlg, staff_id):
+        dlg.w_sender.setCurrentIndex(dlg.w_sender.findData(staff_id))
+
+    # ── 未發文列開啟：日期空白、發文人員空白 ──────────────────
+    def test_unissued_opens_blank(self):
+        conn = sqlite3.connect(self.db)
+        self._insert_unissued(conn, "crim")
+        conn.close()
+        dlg = self._open_criminal("6")
+        self.assertTrue(dlg.w_report_date.isBlank())
+        self.assertIsNone(dlg.w_sender.currentData())
+        dlg.deleteLater()
+
+    # ── 未發文列留空存回 → report_date NULL 且 sender NULL ───
+    def test_unissued_save_blank_keeps_null(self):
+        conn = sqlite3.connect(self.db)
+        self._insert_unissued(conn, "crim")
+        conn.close()
+        dlg = self._open_criminal("6")
+        dlg._on_save()   # 不填日期直接存
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT report_date,sender_id FROM Document_Criminal "
+                           "WHERE doc_id='6'").fetchone()
+        conn.close()
+        self.assertIsNone(row[0])
+        self.assertIsNone(row[1])
+        from PySide6.QtWidgets import QDialog
+        self.assertEqual(dlg.result(), QDialog.Accepted)
+        dlg.deleteLater()
+
+    # ── 未發文列填日期＋發文人員 → 補發（寫入日期與 sender）──
+    def test_unissued_fill_date_and_sender_issues(self):
+        from PySide6.QtCore import QDate
+        conn = sqlite3.connect(self.db)
+        self._insert_unissued(conn, "crim")
+        conn.close()
+        dlg = self._open_criminal("6")
+        dlg.w_report_date.setDate(QDate(2026, 7, 20))
+        self._select_sender(dlg, "P01")
+        dlg._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT report_date,sender_id FROM Document_Criminal "
+                           "WHERE doc_id='6'").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "2026-07-20")
+        self.assertEqual(row[1], "P01")
+        dlg.deleteLater()
+
+    # ── 已發文列清空日期 → 退回未發文（NULL＋NULL）─────────
+    def test_issued_clear_reverts_to_null(self):
+        # fixture doc '2' 已發文（report_date 2026-07-01, sender P01）
+        dlg = self._open_criminal("2")
+        self.assertFalse(dlg.w_report_date.isBlank())
+        dlg.w_report_date.clear()
+        dlg._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT report_date,sender_id FROM Document_Criminal "
+                           "WHERE doc_id='2'").fetchone()
+        conn.close()
+        self.assertIsNone(row[0])
+        self.assertIsNone(row[1])
+        dlg.deleteLater()
+
+    # ── 填日期但缺發文人員 → 必填擋下、不 accept ───────────
+    def test_issued_missing_sender_blocked(self):
+        from unittest.mock import patch
+        from PySide6.QtCore import QDate
+        from PySide6.QtWidgets import QDialog
+        conn = sqlite3.connect(self.db)
+        self._insert_unissued(conn, "crim")
+        conn.close()
+        dlg = self._open_criminal("6")
+        dlg.w_report_date.setDate(QDate(2026, 7, 20))
+        dlg.w_sender.setCurrentIndex(0)   # 空白項＝未選發文人員
+        with patch("ui_utils.ui_common.msgWarning") as warn:
+            dlg._on_save()
+            warn.assert_called_once()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT report_date,sender_id FROM Document_Criminal "
+                           "WHERE doc_id='6'").fetchone()
+        conn.close()
+        self.assertIsNone(row[0])   # 被擋下 → DB 未變
+        self.assertNotEqual(dlg.result(), QDialog.Accepted)
+        dlg.deleteLater()
+
+    # ── 非法日期格式擋下 ─────────────────────────────────────
+    def test_invalid_date_blocked(self):
+        from unittest.mock import patch
+        from PySide6.QtWidgets import QDialog
+        conn = sqlite3.connect(self.db)
+        self._insert_unissued(conn, "crim")
+        conn.close()
+        dlg = self._open_criminal("6")
+        dlg.w_report_date.setText("2026-13-99")
+        with patch("ui_utils.ui_common.msgWarning") as warn:
+            dlg._on_save()
+            warn.assert_called_once()
+        self.assertNotEqual(dlg.result(), QDialog.Accepted)
+        dlg.deleteLater()
+
+    # ── 一般彈窗同款 round-trip（挑核心兩情境）──────────────
+    def test_general_unissued_blank_and_issue(self):
+        from PySide6.QtCore import QDate
+        conn = sqlite3.connect(self.db)
+        self._insert_unissued(conn, "gen")
+        conn.close()
+        dlg = self._open_general("7")
+        self.assertTrue(dlg.w_report_date.isBlank())
+        self.assertIsNone(dlg.w_sender.currentData())
+        # 留空存 → NULL＋NULL
+        dlg._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT report_date,sender_id FROM Document_General "
+                           "WHERE doc_id='7'").fetchone()
+        conn.close()
+        self.assertIsNone(row[0])
+        self.assertIsNone(row[1])
+        dlg.deleteLater()
+        # 再開一次填日期＋sender 補發
+        dlg2 = self._open_general("7")
+        dlg2.w_report_date.setDate(QDate(2026, 7, 20))
+        dlg2.w_sender.setCurrentIndex(dlg2.w_sender.findData("P01"))
+        dlg2._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT report_date,sender_id FROM Document_General "
+                           "WHERE doc_id='7'").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "2026-07-20")
+        self.assertEqual(row[1], "P01")
+        dlg2.deleteLater()
+
+    def test_general_missing_sender_blocked(self):
+        from unittest.mock import patch
+        from PySide6.QtCore import QDate
+        from PySide6.QtWidgets import QDialog
+        conn = sqlite3.connect(self.db)
+        self._insert_unissued(conn, "gen")
+        conn.close()
+        dlg = self._open_general("7")
+        dlg.w_report_date.setDate(QDate(2026, 7, 20))
+        dlg.w_sender.setCurrentIndex(0)
+        with patch("ui_utils.ui_common.msgWarning") as warn:
+            dlg._on_save()
+            warn.assert_called_once()
         self.assertNotEqual(dlg.result(), QDialog.Accepted)
         dlg.deleteLater()
 

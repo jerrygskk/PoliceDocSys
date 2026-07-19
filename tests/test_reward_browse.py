@@ -45,19 +45,33 @@ class TestRewardBrowse(unittest.TestCase):
         self.assertEqual(PRELOAD_KEYS, ("task", "crim", "gen"))
         meta = TABLE_META["reward"]
         self.assertTrue(meta["raw"])
-        self.assertTrue(meta["sort_numeric_desc"])
+        self.assertTrue(meta["sort_numeric"])
         self.assertNotIn("view", meta)
         self.assertNotIn("proc_fk", meta)
-        self.assertFalse(any(TABLE_META[key].get("sort_numeric_desc")
+        self.assertFalse(any(TABLE_META[key].get("sort_numeric")
                              for key in PRELOAD_KEYS))
 
-    def test_query_is_active_only_numeric_desc_and_searchable_snapshots(self):
+    def test_query_is_active_only_numeric_asc_and_searchable_snapshots(self):
         conn = sqlite3.connect(self.db)
         rows = queryBrowseRows(conn, "reward")
         conn.close()
-        self.assertEqual([r["doc_id"] for r in rows], ["10", "2"])
-        self.assertIn("有功", rows[0]["reason"])
-        self.assertIn("測試乙", rows[1]["recipients"])
+        self.assertEqual([r["doc_id"] for r in rows], ["2", "10"])
+        self.assertIn("有功", rows[1]["reason"])
+        self.assertIn("測試乙", rows[0]["recipients"])
+
+    def test_query_joins_sender_name_from_ref_personnel(self):
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "INSERT OR IGNORE INTO Ref_Personnel"
+            "(staff_id,staff_name,is_active,sort_order) VALUES('P009','趙發文',1,1)")
+        conn.execute(
+            "UPDATE Document_Reward SET sender_id='P009' WHERE doc_id='10'")
+        conn.commit()
+        rows = queryBrowseRows(conn, "reward")
+        conn.close()
+        by_id = {r["doc_id"]: r for r in rows}
+        self.assertEqual(by_id["10"]["sender_name"], "趙發文")
+        self.assertIsNone(by_id["2"]["sender_name"])   # 無 sender → JOIN 回 NULL
 
     def test_reward_is_lazy_loaded(self):
         tab = self._tab()
@@ -66,7 +80,7 @@ class TestRewardBrowse(unittest.TestCase):
         tab.subtabs.setCurrentIndex(3)
         _app.processEvents()
         self.assertIn("reward", tab._loaded_keys)
-        self.assertEqual(tab._docorder["reward"], ["10", "2"])
+        self.assertEqual(tab._docorder["reward"], ["2", "10"])
 
     def test_handlers_and_actual_operations_both_gate_permissions(self):
         tab = self._tab()
@@ -102,7 +116,7 @@ class TestRewardBrowse(unittest.TestCase):
         self.assertEqual([r["doc_id"] for r in tab._allRows["reward"]], ["2"])
         self.assertEqual(tab._ui["reward"]["table"].rowCount(), 1)
 
-    def test_diff_catches_same_timestamp_insert_and_places_it_at_top(self):
+    def test_diff_catches_same_timestamp_insert_and_places_it_in_order(self):
         tab = self._tab()
         tab.buildInitial("reward")
         boundary = tab._lastLoad["reward"]
@@ -113,9 +127,9 @@ class TestRewardBrowse(unittest.TestCase):
         conn.commit()
         conn.close()
         tab._diffUpdate("reward")
-        self.assertEqual(tab._docorder["reward"], ["20", "10", "2"])
-        self.assertEqual([r["doc_id"] for r in tab._allRows["reward"]], ["20", "10", "2"])
-        self.assertEqual(tab._ui["reward"]["table"].item(0, 1).text(), "20")
+        self.assertEqual(tab._docorder["reward"], ["2", "10", "20"])
+        self.assertEqual([r["doc_id"] for r in tab._allRows["reward"]], ["2", "10", "20"])
+        self.assertEqual(tab._ui["reward"]["table"].item(2, 1).text(), "20")
 
     def test_diff_catches_same_timestamp_update_in_place(self):
         tab = self._tab()
@@ -128,9 +142,10 @@ class TestRewardBrowse(unittest.TestCase):
         conn.commit()
         conn.close()
         tab._diffUpdate("reward")
-        self.assertEqual(tab._docorder["reward"], ["10", "2"])
-        self.assertEqual([r["doc_id"] for r in tab._allRows["reward"]], ["10", "2"])
-        self.assertEqual(tab._ui["reward"]["table"].item(1, 3).text(), "同秒修改")
+        self.assertEqual(tab._docorder["reward"], ["2", "10"])
+        self.assertEqual([r["doc_id"] for r in tab._allRows["reward"]], ["2", "10"])
+        # 敘獎事由欄插入「發文人員」後移到 col 4（col 3 為發文人員）。
+        self.assertEqual(tab._ui["reward"]["table"].item(0, 4).text(), "同秒修改")
 
     def test_real_soft_delete_sql_lands_in_no_active_filter_changed_ids(self):
         # SQL round-trip：以真實清空式 UPDATE（_DELETE_CLEAR_SQL）軟刪一列，

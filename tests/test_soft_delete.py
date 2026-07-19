@@ -36,6 +36,9 @@ def _make_db():
             doc_id TEXT PRIMARY KEY, report_date TEXT, sender_id TEXT,
             dept_id TEXT, gen_cat_id TEXT, subject TEXT, processor_id TEXT,
             is_reported INTEGER DEFAULT 0, is_electronic TEXT DEFAULT '');
+        CREATE TABLE Document_Reward (
+            doc_id TEXT PRIMARY KEY, register_date TEXT, sender_id TEXT,
+            reason TEXT, recipients TEXT);
     """)
     for sql in db_schema._TABLES:        # Audit_Log + Trash_Documents 走正式 DDL
         conn.execute(sql)
@@ -119,6 +122,21 @@ class TestSoftDelete(unittest.TestCase):
         self.conn.commit()
         self.assertIsNone(self._audit()[0])
         self.assertEqual(self._trash()[0], "陳報事項")
+
+    def test_reward_delete_clears_sender(self):
+        self.conn.execute(
+            "INSERT INTO Document_Reward(doc_id, register_date, sender_id, reason,"
+            " recipients) VALUES('R1','2026-07-05','P03','協助破案','李承辦')")
+        subj = db_utils.softDeleteDoc(
+            self.conn, table="Document_Reward", doc_id="R1",
+            role="user", is_admin=False)
+        self.conn.commit()
+        self.assertEqual(subj, "協助破案")
+        # 清空：所有內容欄（含 sender_id）皆 NULL，保留 doc_id
+        row = self.conn.execute(
+            "SELECT register_date, sender_id, reason, recipients FROM Document_Reward"
+            " WHERE doc_id='R1'").fetchone()
+        self.assertEqual(row, (None, None, None, None))
 
     def test_bad_table_noop(self):
         self.assertEqual(

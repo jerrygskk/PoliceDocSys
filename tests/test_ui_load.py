@@ -13,8 +13,8 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QDateEdit, QLabel, QLineEdit, QPushButton, QListWidget,
-    QTableWidget,
+    QApplication, QWidget, QComboBox, QDateEdit, QLabel, QLineEdit, QPushButton,
+    QListWidget, QTableWidget,
 )
 import res.resources_rc          # 註冊 qrc（.ui 內引用 :/ 資源），勿刪
 from ui_utils import loadUi
@@ -61,6 +61,7 @@ class TestUiLoad(unittest.TestCase):
         self.assertIsNotNone(w)
         required = (
             (QDateEdit, "reward_date"),
+            (QComboBox, "reward_sender"),
             (QLineEdit, "reward_reason"),
             (QLineEdit, "reward_recipients"),
             (QPushButton, "btn_reward_submit"),
@@ -73,15 +74,21 @@ class TestUiLoad(unittest.TestCase):
                 self.assertIsNotNone(w.findChild(cls, name))
         table = w.findChild(QTableWidget, "reward_tableWidget")
         self.assertEqual(table.columnCount(), 5)
-        reward_date = w.findChild(QDateEdit, "reward_date")
-        self.assertEqual(reward_date.minimumWidth(), 300)
-        self.assertEqual(reward_date.maximumWidth(), 300)
-        self.assertEqual(reward_date.minimumHeight(), 36)
-        self.assertEqual(reward_date.maximumHeight(), 36)
+        # 發文日期／發文人員規格比照交辦單發文頁（220x36）
+        for cls, name in ((QDateEdit, "reward_date"), (QComboBox, "reward_sender")):
+            field = w.findChild(cls, name)
+            self.assertEqual(field.minimumWidth(), 220)
+            self.assertEqual(field.maximumWidth(), 220)
+            self.assertEqual(field.minimumHeight(), 36)
+            self.assertEqual(field.maximumHeight(), 36)
+        self.assertTrue(w.findChild(QComboBox, "reward_sender").isEditable())
+        # 事由／人員欄橫跨 col1-3、右緣對齊發文人員下拉（寬度隨欄距、不鎖 max）
         for name in ("reward_reason", "reward_recipients"):
             field = w.findChild(QLineEdit, name)
-            self.assertEqual(field.minimumWidth(), 500)
-            self.assertEqual(field.maximumWidth(), 500)
+            self.assertEqual(field.minimumWidth(), 220)
+            self.assertEqual(field.maximumWidth(), 16777215)
+            self.assertEqual(field.minimumHeight(), 36)
+            self.assertEqual(field.maximumHeight(), 36)
         self.assertEqual(w.findChild(QLineEdit, "reward_reason").placeholderText(),
                          "請輸入敘獎事由")
         self.assertEqual(w.findChild(QLineEdit, "reward_recipients").placeholderText(),

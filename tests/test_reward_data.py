@@ -27,9 +27,32 @@ class TestRewardSchema(RewardDbTestCase):
         columns = [r[1] for r in self.conn.execute(
             "PRAGMA table_info(Document_Reward)")]
         self.assertEqual(columns, [
-            "doc_id", "register_date", "reason", "recipients",
+            "doc_id", "register_date", "sender_id", "reason", "recipients",
             "last_modified",
         ])
+
+    def test_sender_id_roundtrips(self):
+        self.conn.execute(
+            "INSERT INTO Document_Reward"
+            "(doc_id,register_date,sender_id,reason,recipients) VALUES(?,?,?,?,?)",
+            ("1", "2026-07-18", "P007", "協助偵辦", "甲員"))
+        self.conn.commit()
+        row = self.conn.execute(
+            "SELECT sender_id FROM Document_Reward WHERE doc_id='1'").fetchone()
+        self.assertEqual(row[0], "P007")
+
+    def test_self_service_submit_leaves_empty_date_and_null_sender(self):
+        # 自助取號模式送出：register_date='' 哨兵、sender_id NULL（結算時補）。
+        self.conn.execute(
+            "INSERT INTO Document_Reward"
+            "(doc_id,register_date,sender_id,reason,recipients) VALUES(?,?,?,?,?)",
+            ("1", "", None, "協助偵辦", "甲員"))
+        self.conn.commit()
+        row = self.conn.execute(
+            "SELECT register_date,sender_id FROM Document_Reward "
+            "WHERE doc_id='1'").fetchone()
+        self.assertEqual(row[0], "")      # 未發文哨兵，非 NULL（NULL＝軟刪除）
+        self.assertIsNone(row[1])         # 送文者待結算補填
 
     def test_reward_insert_and_update_triggers_maintain_last_modified(self):
         names = {r[0] for r in self.conn.execute(

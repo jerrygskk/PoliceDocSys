@@ -120,7 +120,7 @@ class TestDiffUpdateAlignment(_BrowseBase):
         conn.commit()
         conn.close()
         self.tab._diffUpdate("task")
-        # 交辦無 sort_numeric_desc → 新列 append 於末端
+        # 交辦無 sort_numeric → 新列 append 於末端
         self._assert_aligned("task", ["1", "2", "3", "4"])
         subj_col = _col_idx("task", "交辦事由")
         table = self.tab._ui["task"]["table"]

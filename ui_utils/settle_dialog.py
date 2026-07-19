@@ -8,8 +8,8 @@ settle_dialog.py — 自助取號模式「結算發文」彈窗
   - 全選核取方塊：三態顯示「顯示中列」全勾/部分/全不勾，點擊只勾/取消顯示中列
   - 底部即時計數（將結算 N 筆｜排除 m 筆）
   - 確認後同一 transaction 逐類別批次 UPDATE：刑案／一般補 report_date=今日+sender_id，
-    敘獎補 register_date=今日（無 sender 欄）；任一步失敗則 rollback
-  - 送文者僅在勾選中含「需送文者」型態（刑案／一般）時才必填
+    敘獎補 register_date=今日+sender_id；任一步失敗則 rollback
+  - 送文者僅在勾選中含「需送文者」型態（刑案／一般／敘獎）時才必填
   - 開放擴充（open-closed）：日後新增類別（如罰單）只需再加一筆 SETTLE_META
 
 ⚠️ 敘獎未發文哨兵為空字串 register_date=''（不可用 NULL——NULL 是敘獎的軟刪除
@@ -88,8 +88,9 @@ SETTLE_META = (
             "FROM Document_Reward WHERE register_date='' "
             "ORDER BY CAST(doc_id AS INTEGER)"
         ),
-        "update": "UPDATE Document_Reward SET register_date=? WHERE doc_id=?",
-        "with_sender": False,
+        "update": ("UPDATE Document_Reward SET register_date=?, sender_id=? "
+                   "WHERE doc_id=?"),
+        "with_sender": True,
     },
 )
 

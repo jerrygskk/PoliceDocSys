@@ -276,21 +276,23 @@ class TestRewardUnissuedSentinel(unittest.TestCase):
         from ui_utils.settle_dialog import _META_BY_KEY
         today = "2026-07-18"
         conn = sqlite3.connect(self.path)
-        conn.execute(_META_BY_KEY["reward"]["update"], (today, "1"))
+        conn.execute(_META_BY_KEY["reward"]["update"], (today, "P001", "1"))
         conn.commit()
         settled = conn.execute(
-            "SELECT register_date FROM Document_Reward WHERE doc_id='1'").fetchone()[0]
+            "SELECT register_date, sender_id FROM Document_Reward "
+            "WHERE doc_id='1'").fetchone()
         excluded = conn.execute(
             "SELECT register_date FROM Document_Reward WHERE doc_id='2'").fetchone()[0]
         conn.close()
-        self.assertEqual(settled, today)   # 勾選列補上今日
-        self.assertEqual(excluded, "")     # 未勾選列維持未發文哨兵
+        self.assertEqual(settled[0], today)   # 勾選列補上今日
+        self.assertEqual(settled[1], "P001")  # 勾選列補上送文者
+        self.assertEqual(excluded, "")        # 未勾選列維持未發文哨兵
 
-    def test_reward_update_has_no_sender_placeholder(self):
-        # 敘獎表無 sender 欄，update 只帶兩個佔位（today, doc_id）
+    def test_reward_update_has_sender_placeholder(self):
+        # 敘獎接入發文人員：update 帶三個佔位（today, sender_id, doc_id）
         from ui_utils.settle_dialog import _META_BY_KEY
-        self.assertEqual(_META_BY_KEY["reward"]["update"].count("?"), 2)
-        self.assertFalse(_META_BY_KEY["reward"]["with_sender"])
+        self.assertEqual(_META_BY_KEY["reward"]["update"].count("?"), 3)
+        self.assertTrue(_META_BY_KEY["reward"]["with_sender"])
 
 
 if __name__ == "__main__":

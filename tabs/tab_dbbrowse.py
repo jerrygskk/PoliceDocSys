@@ -103,6 +103,7 @@ REWARD_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號", "view_col": "doc_id", "slim": True, "link": True, "search": True, "w": 64},
     {"header": "登錄日期", "view_col": "register_date", "slim": True, "search": True, "w": 140},
+    {"header": "發文人員", "view_col": "sender_name", "slim": True, "search": True, "w": 120, "ref_col": True},
     {"header": "敘獎事由", "view_col": "reason", "slim": True, "search": True, "stretch": True, "w": 300},
     {"header": "敘獎人員", "view_col": "recipients", "slim": True, "search": True, "w": 240},
 ]
@@ -130,7 +131,7 @@ TABLE_META = {
     "reward": {
         "cols": REWARD_COLS, "base": "Document_Reward", "id_col": "doc_id",
         "dialog": RewardEditDialog, "raw": True,
-        "active_where": "register_date IS NOT NULL", "sort_numeric_desc": True,
+        "active_where": "register_date IS NOT NULL", "sort_numeric": True,
     },
 }
 
@@ -142,9 +143,12 @@ def queryBrowseRows(conn, key):
     meta = TABLE_META[key]
     if meta.get("raw"):
         cur = conn.execute(
-            "SELECT doc_id, register_date, reason, recipients, last_modified, "
-            "1 AS _proc_active FROM Document_Reward "
-            "WHERE register_date IS NOT NULL ORDER BY CAST(doc_id AS INTEGER) DESC")
+            "SELECT r.doc_id, r.register_date, p.staff_name AS sender_name, "
+            "r.reason, r.recipients, r.last_modified, 1 AS _proc_active "
+            "FROM Document_Reward r "
+            "LEFT JOIN Ref_Personnel p ON r.sender_id = p.staff_id "
+            "WHERE r.register_date IS NOT NULL "
+            "ORDER BY CAST(r.doc_id AS INTEGER)")
         names = [d[0] for d in cur.description]
         return [dict(zip(names, row)) for row in cur.fetchall()]
     arch_sel = ", b.is_electronic AS _arch_fname" if meta.get("archive") else ""
@@ -733,15 +737,16 @@ class TabDBBrowse(BaseTab):
                 exists = (r is not None) and (not emptied)
 
                 if exists and not in_table:
-                    # reward 的 raw query 採數字 DESC；舊三表維持既有 append 行為。
-                    if meta.get("sort_numeric_desc"):
+                    # reward 的 raw query 採數字升冪（與舊三表一致）；
+                    # diff 插入依數字序找位置（還原舊號時不可一律 append）。
+                    if meta.get("sort_numeric"):
                         def _num(value):
                             try:
                                 return int(value)
                             except (TypeError, ValueError):
                                 return -1
                         pos = next((i for i, old in enumerate(order)
-                                    if _num(did) > _num(old)), len(order))
+                                    if _num(did) < _num(old)), len(order))
                     else:
                         pos = len(order)
                     table.insertRow(pos)
@@ -1131,8 +1136,10 @@ class TabDBBrowse(BaseTab):
                 if self._ui.get(k, {}).get("table"):
                     self._forceReload(k)
         # 參照表改名（設定頁改過）→ 就地輕量刷新 ref_col 欄，不重建列（零頓）。
+        # 涵蓋 reward（發文人員欄亦為 ref_col）；未載入的表 _refreshRefCells 內部
+        # 會因 _docorder 無該 key 而 early-return，安全。
         if getattr(self, "_ref_changed", False):
-            for key in PRELOAD_KEYS:
+            for key in BROWSE_KEYS:
                 self._refreshRefCells(key)
             self._ref_changed = False
         self._ensureCurrentLoaded()

@@ -618,14 +618,15 @@ QRadioButton:checked {
         lbl_id.setStyleSheet("font-weight: bold;")
         form.addRow("陳報編號：", lbl_id)
 
-        # 陳報日期
-        self.w_report_date = QDateEdit()
-        self.w_report_date.setCalendarPopup(True)
-        self.w_report_date.setDisplayFormat("yyyy-MM-dd")
+        # 陳報日期（可空白＝未發文哨兵；填日期＝發文，此時發文人員必填）
+        self.w_report_date = NullableDateEdit()
+        self.w_report_date.setPlaceholderText("未發文")
         form.addRow("陳報日期：", self.w_report_date)
 
-        # 發文人員
+        # 發文人員（保留空白項：未發文列 sender=NULL 忠實顯示「未設定」，
+        # 且填日期發文時可由必填檢查擋下未選發文人員）
         self.w_sender = QComboBox()
+        self.w_sender.addItem("", None)
         for sid, sname in self._personnel:
             self.w_sender.addItem(sname, sid)
         form.addRow("發文人員：", self.w_sender)
@@ -732,10 +733,11 @@ QRadioButton:checked {
             proc_id, recv_id, subject, occ_date, reporter, \
             is_reported, is_electronic = row
 
+        # 有值＝已發文；NULL＝未發文（自助取號未結算列）→ 留空，不填今日
         if report_date:
             self.w_report_date.setDate(QDate.fromString(str(report_date), "yyyy-MM-dd"))
         else:
-            self.w_report_date.setDate(QDate.currentDate())
+            self.w_report_date.clear()
 
         self._set_combo(self.w_sender,    sender_id)
         self._set_combo(self.w_casetype,  case_type)
@@ -766,8 +768,17 @@ QRadioButton:checked {
 
     def _on_save(self):
         from .ui_common import msgWarning, msgCritical, reportError
-        report_date = self.w_report_date.date().toString("yyyy-MM-dd")
-        sender_id   = self.w_sender.currentData()
+        # 陳報日期：空白＝未發文（report_date/sender 皆存 NULL）；填有效日期＝發文，
+        # 此時發文人員必填。格式錯（非空非法）先擋下亮紅框。
+        self.w_report_date.validateNow()
+        if self.w_report_date.hasError():
+            msgWarning("日期格式錯誤",
+                       "陳報日期格式須為 yyyy-MM-dd，或留空表示未發文。")
+            return
+        rpt_d       = self.w_report_date.getDate()
+        issued      = rpt_d is not None
+        report_date = rpt_d.toString("yyyy-MM-dd") if issued else None
+        sender_id   = self.w_sender.currentData() if issued else None
         case_type   = self.w_casetype.currentData()
         proc_id     = self.w_processor.currentData()
         recv_id     = self.w_receiver.currentData()
@@ -786,7 +797,7 @@ QRadioButton:checked {
                 break
 
         errors = []
-        if not sender_id: errors.append("發文人員")
+        if issued and not sender_id: errors.append("發文人員")
         if not case_type: errors.append("案類")
         if not proc_id:   errors.append("承辦人員")
         if not subject:   errors.append("陳報主旨")
@@ -881,14 +892,15 @@ class GeneralEditDialog(_BaseEditDialog):
         lbl_id.setStyleSheet("font-weight: bold;")
         form.addRow("陳報編號：", lbl_id)
 
-        # 陳報日期
-        self.w_report_date = QDateEdit()
-        self.w_report_date.setCalendarPopup(True)
-        self.w_report_date.setDisplayFormat("yyyy-MM-dd")
+        # 陳報日期（可空白＝未發文哨兵；填日期＝發文，此時發文人員必填）
+        self.w_report_date = NullableDateEdit()
+        self.w_report_date.setPlaceholderText("未發文")
         form.addRow("陳報日期：", self.w_report_date)
 
-        # 發文人員
+        # 發文人員（保留空白項：未發文列 sender=NULL 忠實顯示「未設定」，
+        # 且填日期發文時可由必填檢查擋下未選發文人員）
         self.w_sender = QComboBox()
+        self.w_sender.addItem("", None)
         for sid, sname in self._personnel:
             self.w_sender.addItem(sname, sid)
         form.addRow("發文人員：", self.w_sender)
@@ -975,10 +987,11 @@ class GeneralEditDialog(_BaseEditDialog):
         report_date, sender_id, dept_id, gen_cat_id, subject, proc_id, \
             is_reported, is_electronic = row
 
+        # 有值＝已發文；NULL＝未發文（自助取號未結算列）→ 留空，不填今日
         if report_date:
             self.w_report_date.setDate(QDate.fromString(str(report_date), "yyyy-MM-dd"))
         else:
-            self.w_report_date.setDate(QDate.currentDate())
+            self.w_report_date.clear()
 
         self._set_combo(self.w_sender,    sender_id)
         self._set_combo(self.w_dept,      dept_id)
@@ -999,8 +1012,17 @@ class GeneralEditDialog(_BaseEditDialog):
 
     def _on_save(self):
         from .ui_common import msgWarning, msgCritical, reportError
-        report_date = self.w_report_date.date().toString("yyyy-MM-dd")
-        sender_id   = self.w_sender.currentData()
+        # 陳報日期：空白＝未發文（report_date/sender 皆存 NULL）；填有效日期＝發文，
+        # 此時發文人員必填。格式錯（非空非法）先擋下亮紅框。
+        self.w_report_date.validateNow()
+        if self.w_report_date.hasError():
+            msgWarning("日期格式錯誤",
+                       "陳報日期格式須為 yyyy-MM-dd，或留空表示未發文。")
+            return
+        rpt_d       = self.w_report_date.getDate()
+        issued      = rpt_d is not None
+        report_date = rpt_d.toString("yyyy-MM-dd") if issued else None
+        sender_id   = self.w_sender.currentData() if issued else None
         dept_id     = self.w_dept.currentData()
         subject     = self.w_subject.text().strip()
         proc_id     = self.w_processor.currentData()
@@ -1012,7 +1034,7 @@ class GeneralEditDialog(_BaseEditDialog):
                 break
 
         errors = []
-        if not sender_id: errors.append("發文人員")
+        if issued and not sender_id: errors.append("發文人員")
         if not proc_id:   errors.append("陳報人")
         if not subject:   errors.append("陳報主旨")
         if errors:

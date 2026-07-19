@@ -152,7 +152,8 @@ class ConvertDialog(QDialog):
         subject = r.get("subject_summary") if self.src_kind == "crim" else r.get("subject")
         proc_lbl = "承辦人：" if self.dst_kind == "crim" else "陳報人："
         return [
-            ("陳報日期：", str(r.get("report_date") or "")),
+            # 未發文列（自助取號未結算）：顯示「未發文」而非空白，比照瀏覽頁
+            ("陳報日期：", str(r.get("report_date") or "未發文")),
             ("發文人員：", self._staff_name(r.get("sender_id"))),
             (proc_lbl,     self._staff_name(r.get("processor_id"))),
             ("陳報主旨：", str(subject or "")),

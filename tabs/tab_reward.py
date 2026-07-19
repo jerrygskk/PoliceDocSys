@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDateEdit, QLineEdit, QListWidget, QPushButton,
+    QComboBox, QDateEdit, QLineEdit, QListWidget, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
@@ -13,9 +13,9 @@ from lib.db_utils import (
 )
 from ui_utils import (
     RewardEditDialog, attachStickyScroll, confirmBox, count_recipient_names,
-    loadUi, makeDeleteBtn, msgWarning, parse_recipient_names, reportError,
-    setDocIdLinkCell, setupDateEditToToday, setupPreviewTable,
-    setupRecipientLineEdit, sort_personnel_by_counts,
+    loadUi, makeDeleteBtn, msgWarning, parse_recipient_names, refreshFilterCombo,
+    reportError, setDocIdLinkCell, setupDateEditToToday, setupFilterCombo,
+    setupPreviewTable, setupRecipientLineEdit, sort_personnel_by_counts,
 )
 
 
@@ -41,6 +41,7 @@ class TabReward(BaseTab):
         layout.addWidget(inner)
         self._tab_index = tab_index
         self.reward_date = inner.findChild(QDateEdit, "reward_date")
+        self.reward_sender = inner.findChild(QComboBox, "reward_sender")
         self.reward_reason = inner.findChild(QLineEdit, "reward_reason")
         self.reward_recipients = inner.findChild(QLineEdit, "reward_recipients")
         self.reward_personnel_list = inner.findChild(QListWidget, "reward_personnel_list")
@@ -50,6 +51,9 @@ class TabReward(BaseTab):
         self.reward_date.setDate(QDate.currentDate())
         setupDateEditToToday(self.reward_date)
         self._personnel, self._personnel_alias_map = loadActivePersonnel(self.db_path)
+        if self.reward_sender:
+            setupFilterCombo(self.reward_sender, self._senderChoices(),
+                             alias_map=self._personnel_alias_map)
         setupRecipientLineEdit(self.reward_recipients, self._personnel,
                                alias_map=self._personnel_alias_map)
         self._setup_table()
@@ -63,18 +67,27 @@ class TabReward(BaseTab):
         self.reward_reason.setFocus()
         self._applySelfServiceMode()
 
-    def _applySelfServiceMode(self):
-        """自助取號模式：發文日期欄反灰，日期改由結算時自動填入；切回送文者模式
-        清哨兵並還原今天（照 tab_report._applySelfServiceMode 的哨兵處理精神）。
+    def _senderChoices(self):
+        """把 loadActivePersonnel 的 (staff_id, name, sort_order) 三元組轉成
+        setupFilterCombo 需要的 (id, name) 二元組（姓名已去後綴）。"""
+        return [(sid, name) for sid, name, _ in self._personnel]
 
-        用 specialValueText 哨兵顯示空白：僅在反灰（不可互動）狀態下，無鍵盤／
+    def _applySelfServiceMode(self):
+        """自助取號模式：發文日期與發文人員兩欄一起反灰，改由結算時自動填入；
+        切回送文者模式清哨兵並還原今天（照 tab_report._applySelfServiceMode 精神）。
+
+        日期用 specialValueText 哨兵顯示空白：僅在反灰（不可互動）狀態下，無鍵盤／
         滑鼠路徑，不踩 QDateEdit 可編輯空白欄的雷；widgets.setupDateEditToToday
-        已對此哨兵放行。送出值與此無關（自助模式 _submit 一律帶 register_date=''）。"""
+        已對此哨兵放行。送出值與此無關（自助模式 _submit 一律帶 register_date=''、
+        sender_id NULL）。"""
         if not getattr(self, "reward_date", None):
             return
         is_self = isSelfServiceMode(self.db_path)
-        tip = "自助取號模式：發文日期由結算時自動填入" if is_self else ""
+        tip = "自助取號模式：發文日期與送文者由結算時自動填入" if is_self else ""
         self.reward_date.setToolTip(tip)
+        if getattr(self, "reward_sender", None):
+            self.reward_sender.setToolTip(tip)
+            self.reward_sender.setEnabled(not is_self)
         if is_self:
             self.reward_date.setEnabled(False)
             self.reward_date.setSpecialValueText(" ")
@@ -122,6 +135,9 @@ class TabReward(BaseTab):
                 loadActivePersonnel(self.db_path)
             self.reward_recipients._recipient_controller.update_personnel(
                 self._personnel, alias_map=self._personnel_alias_map)
+            if getattr(self, "reward_sender", None):
+                refreshFilterCombo(self.reward_sender, self._senderChoices(),
+                                   alias_map=self._personnel_alias_map)
             self._ref_changed = False
         if data_dirty:
             self._refresh_session_rows()
@@ -167,11 +183,15 @@ class TabReward(BaseTab):
         self.reward_reason.setFocus()
 
     def _submit(self):
-        # 自助取號模式：登錄日期留空哨兵（''），事後由列印頁結算補今日日期。
-        if isSelfServiceMode(self.db_path):
+        # 自助取號模式：登錄日期留空哨兵（''）、發文人員 NULL，事後由列印頁結算
+        # 補今日日期與送文者；送文者模式則兩者當下填入（發文人員必填）。
+        is_self = isSelfServiceMode(self.db_path)
+        if is_self:
             date = ""
+            sender_id = None
         else:
             date = self.reward_date.date().toString("yyyy-MM-dd")
+            sender_id = self.reward_sender.currentData() if self.reward_sender else None
         reason = self.reward_reason.text().strip()
         names = parse_recipient_names(self.reward_recipients.text())
         missing = []
@@ -182,13 +202,18 @@ class TabReward(BaseTab):
         if missing:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(missing)}")
             return
+        # 發文人員必填（僅送文者模式；自助模式由結算補填），比照 tab_dispatch。
+        if not is_self and not sender_id:
+            msgWarning("欄位未填", "請選擇發文人員。")
+            return
         recipients = ",".join(names)
         conn = None
         try:
             conn = self._getConn()
             doc_id = nextDocId(conn, "Document_Reward")
-            conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
-                         "VALUES(?,?,?,?)", (doc_id, date, reason, recipients))
+            conn.execute(
+                "INSERT INTO Document_Reward(doc_id,register_date,sender_id,reason,recipients) "
+                "VALUES(?,?,?,?,?)", (doc_id, date, sender_id, reason, recipients))
             conn.commit()
         except Exception as exc:
             reportError("寫入失敗", exc)
