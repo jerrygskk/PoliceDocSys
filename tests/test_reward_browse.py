@@ -55,6 +55,11 @@ class TestRewardBrowse(unittest.TestCase):
         self.assertFalse(any(TABLE_META[key].get("sort_numeric")
                              for key in PRELOAD_KEYS))
 
+    def test_metadata_declares_each_unissued_date_column(self):
+        self.assertEqual(TABLE_META["crim"]["pending_date_col"], "陳報日期")
+        self.assertEqual(TABLE_META["gen"]["pending_date_col"], "陳報日期")
+        self.assertEqual(TABLE_META["reward"]["pending_date_col"], "register_date")
+
     def test_query_is_active_only_numeric_asc_and_searchable_snapshots(self):
         conn = sqlite3.connect(self.db)
         rows = queryBrowseRows(conn, "reward")

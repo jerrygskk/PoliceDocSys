@@ -28,7 +28,7 @@ from lib.db_backup import formatDocCounts
 from lib.db_utils import (
     getResourcePath,
     performYearEndReset, getSetting, ARCHIVE_ROOT_KEY,
-    getConn, writeAudit, writeAuditSafe, buildDetail,
+    getConn, REWARD_ACTIVE_SQL, writeAudit, writeAuditSafe, buildDetail,
 )
 from ui_utils import (
     msgInfo, msgWarning, msgCritical, confirmBox, reportError,
@@ -183,7 +183,7 @@ def _resetDocCounts(conn):
         "task": "SELECT COUNT(*) FROM Document_Task WHERE receive_date IS NOT NULL",
         "crim": "SELECT COUNT(*) FROM Document_Criminal WHERE report_date IS NOT NULL",
         "gen": "SELECT COUNT(*) FROM Document_General WHERE report_date IS NOT NULL",
-        "reward": "SELECT COUNT(*) FROM Document_Reward WHERE register_date IS NOT NULL",
+        "reward": f"SELECT COUNT(*) FROM Document_Reward WHERE {REWARD_ACTIVE_SQL}",
     }
     return {key: conn.execute(sql).fetchone()[0] for key, sql in queries.items()}
 

@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 )
 
 from lib.auth_manager import AuthManager
-from lib.db_utils import getConn, loadActivePersonnel
+from lib.db_utils import REWARD_ACTIVE_SQL, getConn, loadActivePersonnel
 from .ui_common import BTN_CONFIRM, BTN_CANCEL, msgWarning, reportError
 from .edit_dialog import _BaseEditDialog, _CRIMGEN_QSS
 from .widgets import (
@@ -111,7 +111,7 @@ class RewardEditDialog(_BaseEditDialog):
             row = conn.execute(
                 "SELECT create_date,register_date,sender_id,reason,recipients "
                 "FROM Document_Reward "
-                "WHERE doc_id=? AND register_date IS NOT NULL", (self.doc_id,)).fetchone()
+                f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}", (self.doc_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -164,14 +164,14 @@ class RewardEditDialog(_BaseEditDialog):
                 # 維持不變式：未發文 ⟺ (register_date='' 且 sender=NULL)
                 cur = conn.execute(
                     "UPDATE Document_Reward SET register_date=?,sender_id=?,reason=?,recipients=? "
-                    "WHERE doc_id=? AND register_date IS NOT NULL",
+                    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}",
                     (date, sender_id, reason, recipients, self.doc_id))
             else:
                 # 敘獎登錄頁：只改事由與人員，發文欄位（register_date/sender_id）不動。
                 date = self._orig_register_date
                 cur = conn.execute(
                     "UPDATE Document_Reward SET reason=?,recipients=? "
-                    "WHERE doc_id=? AND register_date IS NOT NULL",
+                    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}",
                     (reason, recipients, self.doc_id))
             conn.commit()
             if cur.rowcount == 0:

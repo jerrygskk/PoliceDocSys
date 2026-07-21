@@ -25,6 +25,8 @@ import re
 import sqlite3
 from datetime import datetime
 
+from lib.db_utils import REWARD_ACTIVE_SQL
+
 BACKUP_DIR_NAME = "backups"
 DAILY_PREFIX    = "dbfile_backup_day_"
 WEEKLY_PREFIX   = "dbfile_backup_week_"
@@ -420,7 +422,7 @@ def backup_doc_counts(path):
                 "gen":  cnt("SELECT COUNT(*) FROM Document_General "
                             "WHERE report_date IS NOT NULL"),
                 "reward": cnt("SELECT COUNT(*) FROM Document_Reward "
-                              "WHERE register_date IS NOT NULL"),
+                              f"WHERE {REWARD_ACTIVE_SQL}"),
             }
         finally:
             conn.close()

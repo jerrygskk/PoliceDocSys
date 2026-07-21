@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QIcon, QDesktopServices
 
 from lib.base_tab import BaseTab
 from lib.db_utils import (
-    getResourcePath,
+    REWARD_ACTIVE_SQL, getResourcePath, rewardActiveSql,
     resolveArchivedPdf, getSetting, ARCHIVE_ROOT_KEY, softDeleteDoc,
 )
 from ui_utils import loadUi, msgInfo, msgWarning, msgCritical, confirmBox, reportError
@@ -122,17 +122,18 @@ TABLE_META = {
     "crim": {
         "cols": CRIM_COLS, "view": "View_Criminal_Full",
         "base": "Document_Criminal", "proc_fk": "processor_id", "id_col": "送文編號",
-        "dialog": CriminalEditDialog, "archive": True,
+        "dialog": CriminalEditDialog, "archive": True, "pending_date_col": "陳報日期",
     },
     "gen": {
         "cols": GEN_COLS, "view": "View_General_Full",
         "base": "Document_General", "proc_fk": "processor_id", "id_col": "送文編號",
-        "dialog": GeneralEditDialog, "archive": True,
+        "dialog": GeneralEditDialog, "archive": True, "pending_date_col": "陳報日期",
     },
     "reward": {
         "cols": REWARD_COLS, "base": "Document_Reward", "id_col": "doc_id",
         "dialog": RewardEditDialog, "raw": True,
-        "active_where": "register_date IS NOT NULL", "sort_numeric": True,
+        "active_where": REWARD_ACTIVE_SQL, "sort_numeric": True,
+        "pending_date_col": "register_date",
     },
 }
 
@@ -149,7 +150,7 @@ def queryBrowseRows(conn, key):
             "r.reason, r.recipients, r.last_modified, 1 AS _proc_active "
             "FROM Document_Reward r "
             "LEFT JOIN Ref_Personnel p ON r.sender_id = p.staff_id "
-            "WHERE r.register_date IS NOT NULL "
+            f"WHERE {rewardActiveSql('r.register_date')} "
             "ORDER BY CAST(r.doc_id AS INTEGER)")
         names = [d[0] for d in cur.description]
         return [dict(zip(names, row)) for row in cur.fetchall()]
@@ -885,11 +886,8 @@ class TabDBBrowse(BaseTab):
                     table.setItem(pos, c_idx, sit)
                 continue
 
-            # 刑案/一般「陳報日期」、敘獎「發文日期」為空
-            # → 橘字「未發文」。
-            _unissued_date = (
-                (key in ("crim", "gen") and c.get("header") == "陳報日期")
-                or (key == "reward" and c.get("header") == "發文日期"))
+            # 各表 metadata 指定的待發日期欄空白 → 橘字「未發文」。
+            _unissued_date = c.get("view_col") == TABLE_META[key].get("pending_date_col")
             if _unissued_date and not text:
                 item = QTableWidgetItem("未發文")
                 item.setTextAlignment(Qt.AlignCenter)

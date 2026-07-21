@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath
+from lib.db_utils import REWARD_ACTIVE_SQL, getResourcePath, rewardState
 from ui_utils import (
     attachStickyScroll, autoResizeTable, confirmBox, loadUi, makeDeleteBtn,
     msgInfo, msgWarning, refreshFilterCombo, reportError, setupDateEditToToday,
@@ -155,7 +155,7 @@ class TabRewardIssue(BaseTab):
 
         if row is None:
             msgWarning("查無資料", f"找不到編號「{serial}」")
-        elif row[2] is None:
+        elif rewardState(row[2]) == "deleted":
             msgWarning("查無資料", f"編號「{serial}」已被刪除")
         elif self._rowExists(str(row[0])):
             msgInfo("提示", f"「{serial}」已在清單中")
@@ -255,10 +255,11 @@ class TabRewardIssue(BaseTab):
                     "SELECT register_date FROM Document_Reward WHERE doc_id=?",
                     (doc_id,),
                 ).fetchone()
-                if row and row[0]:
+                if row and rewardState(row[0]) == "issued":
                     already += 1
-        except Exception:
-            already = 0
+        except Exception as exc:
+            reportError("預查失敗", exc)
+            return
         finally:
             if conn:
                 conn.close()
@@ -279,7 +280,7 @@ class TabRewardIssue(BaseTab):
             for row_index, doc_id in pending:
                 cursor = conn.execute(
                     "UPDATE Document_Reward SET register_date=?, sender_id=? "
-                    "WHERE doc_id=? AND register_date IS NOT NULL",
+                    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}",
                     (issue_day, sender_id, doc_id),
                 )
                 settled += cursor.rowcount

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from lib.auth_manager import AuthManager
 from lib.base_tab import BaseTab
 from lib.db_utils import (
-    getResourcePath, loadActivePersonnel, nextDocId,
+    REWARD_ACTIVE_SQL, getResourcePath, loadActivePersonnel, nextDocId,
     softDeleteDoc,
 )
 from ui_utils import (
@@ -115,7 +115,7 @@ class TabReward(BaseTab):
         conn = self._getConn()
         try:
             texts = [r[0] for r in conn.execute(
-                "SELECT recipients FROM Document_Reward WHERE register_date IS NOT NULL")]
+                f"SELECT recipients FROM Document_Reward WHERE {REWARD_ACTIVE_SQL}")]
         finally:
             conn.close()
         self._name_counts = count_recipient_names(texts)
@@ -208,7 +208,7 @@ class TabReward(BaseTab):
             marks = ",".join("?" for _ in self._session_doc_ids)
             rows = conn.execute(
                 f"SELECT doc_id,register_date,reason,recipients FROM Document_Reward "
-                f"WHERE doc_id IN ({marks}) AND register_date IS NOT NULL",
+                f"WHERE doc_id IN ({marks}) AND {REWARD_ACTIVE_SQL}",
                 self._session_doc_ids).fetchall()
         finally:
             conn.close()

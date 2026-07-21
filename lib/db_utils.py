@@ -5,6 +5,27 @@ import json
 import unicodedata
 
 
+# 敘獎 register_date 是三態欄位：NULL 表示軟刪除、空字串表示有效未發文、
+# 非空日期表示有效已發文。集中在此，避免各頁把三種業務語意寫成魔法條件。
+REWARD_ACTIVE_SQL = "register_date IS NOT NULL"
+REWARD_PENDING_SQL = "register_date = ''"
+REWARD_DELETED_SQL = "register_date IS NULL"
+
+
+def rewardActiveSql(column="register_date"):
+    """回傳指定欄位的敘獎有效列條件（NULL 僅代表軟刪除）。"""
+    return REWARD_ACTIVE_SQL if column == "register_date" else f"{column} IS NOT NULL"
+
+
+def rewardState(register_date):
+    """回傳敘獎登錄狀態：deleted、pending 或 issued。"""
+    if register_date is None:
+        return "deleted"
+    if register_date == "":
+        return "pending"
+    return "issued"
+
+
 def getConn(db_path):
     """sqlite3 連線單一來源；呼叫端負責 commit/close。
     後續若要統一加 PRAGMA / timeout / row_factory，集中改這一處即可。

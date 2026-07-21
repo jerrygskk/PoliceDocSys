@@ -181,6 +181,37 @@ class TestRewardIssue(unittest.TestCase):
             warning.assert_called_once_with("欄位未填", "請選擇發文人員。")
             confirm.assert_not_called()
 
+    def test_issue_precheck_sql_failure_reports_and_stops_before_confirmation(self):
+        self._insert("OLD", "2026-06-30")
+        self._query("OLD")
+
+        class FailingPrecheckConnection:
+            def __init__(self):
+                self.closed = False
+
+            def execute(self, *_args, **_kwargs):
+                raise sqlite3.OperationalError("busy")
+
+            def close(self):
+                self.closed = True
+
+        conn = FailingPrecheckConnection()
+
+        with patch.object(self.tab, "_getConn", return_value=conn), \
+                patch("tabs.tab_reward_issue.confirmBox") as confirm, \
+                patch("tabs.tab_reward_issue.reportError") as error:
+            self.tab.handleIssue()
+
+        confirm.assert_not_called()
+        error.assert_called_once()
+        self.assertTrue(conn.closed)
+        db_conn = sqlite3.connect(self.db_path)
+        row = db_conn.execute(
+            "SELECT register_date, sender_id FROM Document_Reward WHERE doc_id='OLD'"
+        ).fetchone()
+        db_conn.close()
+        self.assertEqual(row, ("2026-06-30", None))
+
     def test_delete_one_row_only_removes_queue_state_and_hides_banner(self):
         self._insert("NEW", "")
         self._query("NEW")
