@@ -1,13 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" stroke="#4977b1" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
   <g id="reward-glyph">
-    <path d="M128 64h171l85 85v277a21 21 0 0 1-21 21H128a21 21 0 0 1-21-21V85a21 21 0 0 1 21-21z"/>
-    <path d="M299 64v85h85"/>
-    <path d="m245 192 22 45 50 7-36 36 9 50-45-23-45 23 9-50-36-36 50-7 22-45z"/>
-    <path d="M171 395h149"/>
+    <path d="M100 100H276a24 24 0 0 1 24 24V408a24 24 0 0 1-24 24H100a24 24 0 0 1-24-24V124a24 24 0 0 1 24-24z"/>
+    <path d="M188 166 203 209 249 210 213 238 226 282 188 256 150 282 163 238 127 210 173 209z"/>
+    <path d="M130 360H246"/>
   </g>
   <g id="outbound-arrow">
-    <path d="M420 320c31 9 47 38 47 75"/>
-    <path d="m467 395-30-24"/>
-    <path d="m467 395-25 30"/>
+    <path d="M384 250V80"/>
+    <path d="M384 80 348 130"/>
+    <path d="M384 80 420 130"/>
   </g>
 </svg>
