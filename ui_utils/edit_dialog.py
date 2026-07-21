@@ -286,10 +286,12 @@ class _BaseEditDialog(QDialog):
         return True, report_date, sender_id, issued
 
     def _lockReportFieldsIfSelfService(self):
-        """自助取號模式：陳報日期／發文人員由結算統一補填，編輯彈窗一律反灰不可改
-        （比照 tab_report 主表單 _applySelfServiceMode）。停用後 _on_save 讀回原載入
-        值寫回、對這兩欄為 no-op，維持未發文哨兵不變式。載入資料後呼叫。"""
+        """自助取號模式下，一般使用者不可手動編輯陳報日期／發文人員（避免繞過結算）；
+        管理者／歸檔管理者仍可手動補正，不擋。停用後 _on_save 讀回原載入值寫回、
+        對這兩欄為 no-op，維持未發文哨兵不變式。載入資料後呼叫。"""
         if not isSelfServiceMode(self.db_path):
+            return
+        if AuthManager.instance().is_manager():   # admin／歸檔管理者不擋
             return
         tip = "自助取號模式：陳報日期與發文人員由結算時自動填入"
         for w in (getattr(self, "w_report_date", None),

@@ -112,34 +112,58 @@ class TestEditDialogs(_DialogBase):
         conn.commit()
         conn.close()
 
-    def test_report_edit_locks_date_and_sender_in_self_service_mode(self):
-        # 自助取號模式：陳報日期／發文人員由結算補填，編輯彈窗這兩欄反灰不可改。
+    def test_report_edit_locks_fields_for_regular_user_in_self_service(self):
+        # 自助取號模式＋一般使用者：陳報日期／發文人員反灰（避免繞過結算）。
+        from unittest.mock import patch
         from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
         self._set_self_service(True)
         for cls, doc in ((CriminalEditDialog, "2"), (GeneralEditDialog, "3")):
             with self.subTest(dialog=cls.__name__):
-                dlg = cls(self.db, doc)
+                with patch("ui_utils.edit_dialog.AuthManager.instance") as inst:
+                    inst.return_value.is_manager.return_value = False
+                    dlg = cls(self.db, doc)
                 self.assertFalse(dlg.w_report_date.isEnabled())
                 self.assertFalse(dlg.w_sender.isEnabled())
                 dlg.deleteLater()
 
-    def test_report_edit_fields_editable_when_not_self_service(self):
+    def test_report_edit_manager_not_locked_in_self_service(self):
+        # 自助取號模式＋管理者／歸檔管理者：不擋，仍可手動補正。
+        from unittest.mock import patch
         from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
-        self._set_self_service(False)
+        self._set_self_service(True)
         for cls, doc in ((CriminalEditDialog, "2"), (GeneralEditDialog, "3")):
             with self.subTest(dialog=cls.__name__):
-                dlg = cls(self.db, doc)
+                with patch("ui_utils.edit_dialog.AuthManager.instance") as inst:
+                    inst.return_value.is_manager.return_value = True
+                    dlg = cls(self.db, doc)
                 self.assertTrue(dlg.w_report_date.isEnabled())
                 self.assertTrue(dlg.w_sender.isEnabled())
                 dlg.deleteLater()
 
-    def test_report_edit_self_service_save_preserves_date_and_sender(self):
-        # 反灰欄位儲存時讀回原值寫回，report_date／sender 不變、其他欄照改。
+    def test_report_edit_fields_editable_when_not_self_service(self):
+        # 非自助模式：任何身分皆可編輯。
+        from unittest.mock import patch
+        from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
+        self._set_self_service(False)
+        for cls, doc in ((CriminalEditDialog, "2"), (GeneralEditDialog, "3")):
+            with self.subTest(dialog=cls.__name__):
+                with patch("ui_utils.edit_dialog.AuthManager.instance") as inst:
+                    inst.return_value.is_manager.return_value = False
+                    dlg = cls(self.db, doc)
+                self.assertTrue(dlg.w_report_date.isEnabled())
+                self.assertTrue(dlg.w_sender.isEnabled())
+                dlg.deleteLater()
+
+    def test_report_edit_self_service_locked_save_preserves_date_and_sender(self):
+        # 一般使用者反灰欄位儲存時讀回原值寫回，report_date／sender 不變、其他欄照改。
+        from unittest.mock import patch
         from ui_utils.edit_dialog import CriminalEditDialog
         self._set_self_service(True)
-        dlg = CriminalEditDialog(self.db, "2")
+        with patch("ui_utils.edit_dialog.AuthManager.instance") as inst:
+            inst.return_value.is_manager.return_value = False
+            dlg = CriminalEditDialog(self.db, "2")   # 建構時套用反灰
         dlg.w_subject.setText("改後主旨")
-        dlg._on_save()
+        dlg._on_save()                                # 儲存走真實環境
         conn = sqlite3.connect(self.db)
         row = conn.execute(
             "SELECT report_date,sender_id,subject_summary "
