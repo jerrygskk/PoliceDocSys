@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFontMetrics
 
-from lib.db_utils import (getConn,
+from lib.db_utils import (getConn, isSelfServiceMode,
                           writeAudit, buildDetail, auditStaffName)
 from .ui_common import BTN_CONFIRM, BTN_CANCEL, confirmBox
 from lib.auth_manager import AuthManager
@@ -284,6 +284,19 @@ class _BaseEditDialog(QDialog):
         report_date = qdate.toString("yyyy-MM-dd") if issued else blank_value
         sender_id = sender_combo.currentData() if issued else None
         return True, report_date, sender_id, issued
+
+    def _lockReportFieldsIfSelfService(self):
+        """自助取號模式：陳報日期／發文人員由結算統一補填，編輯彈窗一律反灰不可改
+        （比照 tab_report 主表單 _applySelfServiceMode）。停用後 _on_save 讀回原載入
+        值寫回、對這兩欄為 no-op，維持未發文哨兵不變式。載入資料後呼叫。"""
+        if not isSelfServiceMode(self.db_path):
+            return
+        tip = "自助取號模式：陳報日期與發文人員由結算時自動填入"
+        for w in (getattr(self, "w_report_date", None),
+                  getattr(self, "w_sender", None)):
+            if w is not None:
+                w.setEnabled(False)
+                w.setToolTip(tip)
 
 
 class TaskEditDialog(_BaseEditDialog):
@@ -615,6 +628,7 @@ QRadioButton:checked {
         self.setStyleSheet(_CRIMGEN_QSS)
         self._build_ui()
         self._load_data()
+        self._lockReportFieldsIfSelfService()
 
     def _build_ui(self):
         from PySide6.QtWidgets import QButtonGroup
@@ -891,6 +905,7 @@ class GeneralEditDialog(_BaseEditDialog):
         self.setStyleSheet(_CRIMGEN_QSS)
         self._build_ui()
         self._load_data()
+        self._lockReportFieldsIfSelfService()
 
     def _build_ui(self):
         from PySide6.QtWidgets import QButtonGroup

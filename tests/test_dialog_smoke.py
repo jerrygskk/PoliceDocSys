@@ -105,6 +105,49 @@ class TestEditDialogs(_DialogBase):
         self.assertEqual(dlg.w_subject.text(), "刑案主旨")
         dlg.deleteLater()
 
+    def _set_self_service(self, on):
+        conn = sqlite3.connect(self.db)
+        conn.execute("INSERT OR REPLACE INTO App_Settings(key,value) "
+                     "VALUES('report_input_mode',?)", ("1" if on else "0",))
+        conn.commit()
+        conn.close()
+
+    def test_report_edit_locks_date_and_sender_in_self_service_mode(self):
+        # 自助取號模式：陳報日期／發文人員由結算補填，編輯彈窗這兩欄反灰不可改。
+        from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
+        self._set_self_service(True)
+        for cls, doc in ((CriminalEditDialog, "2"), (GeneralEditDialog, "3")):
+            with self.subTest(dialog=cls.__name__):
+                dlg = cls(self.db, doc)
+                self.assertFalse(dlg.w_report_date.isEnabled())
+                self.assertFalse(dlg.w_sender.isEnabled())
+                dlg.deleteLater()
+
+    def test_report_edit_fields_editable_when_not_self_service(self):
+        from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
+        self._set_self_service(False)
+        for cls, doc in ((CriminalEditDialog, "2"), (GeneralEditDialog, "3")):
+            with self.subTest(dialog=cls.__name__):
+                dlg = cls(self.db, doc)
+                self.assertTrue(dlg.w_report_date.isEnabled())
+                self.assertTrue(dlg.w_sender.isEnabled())
+                dlg.deleteLater()
+
+    def test_report_edit_self_service_save_preserves_date_and_sender(self):
+        # 反灰欄位儲存時讀回原值寫回，report_date／sender 不變、其他欄照改。
+        from ui_utils.edit_dialog import CriminalEditDialog
+        self._set_self_service(True)
+        dlg = CriminalEditDialog(self.db, "2")
+        dlg.w_subject.setText("改後主旨")
+        dlg._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute(
+            "SELECT report_date,sender_id,subject_summary "
+            "FROM Document_Criminal WHERE doc_id='2'").fetchone()
+        conn.close()
+        self.assertEqual(row, ("2026-07-01", "P01", "改後主旨"))
+        dlg.deleteLater()
+
     def test_general_edit_prefills_subject(self):
         from ui_utils.edit_dialog import GeneralEditDialog
         dlg = GeneralEditDialog(self.db, "3")
