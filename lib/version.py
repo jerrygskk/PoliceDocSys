@@ -8,4 +8,4 @@
   1. README 第 9 節版本記錄補一列
   2. git tag 打 v{__version__}
 """
-__version__ = "1.2.2"
+__version__ = "1.2.3"

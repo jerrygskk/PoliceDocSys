@@ -100,6 +100,7 @@ graph LR
 - 詞彙：人員「在職／離職」，部門／案類「啟用／停用」
 - 設定 Tab 列表顯示停用項目（**灰字 `#aeaeb2`**），下拉排除（`WHERE is_active=1`）
 - 停用／啟用一律進「修改」Dialog 勾 checkbox 切換，無獨立停用按鈕
+- **敘獎主表為三態，不用 `is_active`**：`Document_Reward.register_date` 一欄承載三種業務語意——`NULL`＝軟刪除哨兵、`''`＝有效未發文、非空日期＝有效已發文。因此發文／瀏覽的「有效列」條件是 `register_date IS NOT NULL`（**不可寫成 `IS NOT NULL AND != ''` 之類**，否則把未發文濾掉），這同時是並行刪除保護（他機刪除後 rowcount=0 自然跳過）。⚠️ 三態條件集中在 `lib/db_utils.py`：`REWARD_ACTIVE_SQL`／`REWARD_PENDING_SQL`／`REWARD_DELETED_SQL` 與 `rewardState()`／`rewardActiveSql(col)`，**勿再各頁寫魔法字串**；判斷單筆狀態用 `rewardState()`，勿寫 `if not register_date`（會把未發文與已刪除混為一談）。
 
 ### 排序（sort_order）
 
@@ -551,6 +552,7 @@ CLAUDE.md 發布流程第 7 步的執行細節。4 個 asset：
 
 | 版本 | 摘要 |
 |------|------|
+| v1.2.3 | **敘獎三態語意集中＋發文預查失敗改為停止（重構／穩定性）**。①敘獎發文頁預查原發文日期時，若 SQL 例外原本被吞掉（`already=0` 後照樣彈確認視窗），改為 `reportError` 後 `return`：DB 讀失敗不再進確認／更新，避免使用者在少了「將覆蓋原發文日期」提示的情況下誤覆蓋（`tab_reward_issue.py`）。②敘獎 `register_date` 三態語意集中定義於 `lib/db_utils.py`：`REWARD_ACTIVE_SQL`（`IS NOT NULL`，有效＝含已發文）／`REWARD_PENDING_SQL`（`= ''`，有效未發文）／`REWARD_DELETED_SQL`（`IS NULL`，軟刪除哨兵）＋ `rewardState()`／`rewardActiveSql()`；生產碼（`tab_reward`／`tab_reward_issue`／`tab_dbbrowse`／`tab_settings`／`db_backup`／`reward_dialog`）逐處以常數替換散落的魔法條件，語意與 `register_date IS NOT NULL` 並行刪除保護完全不變。③瀏覽頁「未發文」橘字顯示改由 `TABLE_META` 的 `pending_date_col` 宣告（刑案／一般＝`陳報日期`、敘獎＝`register_date`），移除散在 `_fillRow` 的類型判斷 if；新增公文型態只需在 meta 補欄。④新增預查 SQL 失敗測試（不彈確認、資料不變、走 reportError）與三態純邏輯測試。無 schema／文件面向使用者改動。 |
 | v1.2.2 | **結算併發防護＋敘獎彈窗選人快照修正＋日期驗證抽共用**。①結算 UPDATE 加「仍未發文」防護條件（刑案/一般 `AND (report_date IS NULL OR report_date='')`、敘獎 `AND register_date=''`，不可用 `IS NULL`——NULL 是敘獎軟刪除哨兵）：彈窗開啟期間他機已補發或刪除的列 rowcount=0 自然跳過、不蓋寫；實結筆數＜勾選數時提示「N 筆已由其他電腦處理」，不 rollback、流程照走（`TestSettleConcurrencyGuard` 四測）。②敘獎修改彈窗敘獎人員欄：快照改 `showPopup` 張開瞬間抓取，修 completer 與下拉混用時洗掉已選人名（PITFALLS QTW-11）。③三編輯彈窗日期驗證收斂 `_BaseEditDialog._resolveReportDate`；結算彈窗送文者改 `loadActivePersonnel`（去後綴姓名，與敘獎頁一致）；tab_print 去多餘 try/except。 |
 | v1.2.1 | **敘獎接入自助取號＋發文人員欄、結算彈窗重構、未發文日期治本、穩定性三項**。①敘獎登錄接入自助取號模式：`register_date` 未發文哨兵用 `''`（**不可用 NULL**，NULL 是敘獎軟刪除哨兵），自助模式下發文日期＋發文人員兩欄反灰；預覽／瀏覽空日期橘字「未發文」。②`Document_Reward` 加 `sender_id`（發文人員欄，登錄頁與發文日期同列，格式比照交辦發文頁）；瀏覽頁敘獎子頁加發文人員欄（JOIN `Ref_Personnel`）、排序改升冪（`TABLE_META` 旗標 `sort_numeric`，diff 依數字序插入）；軟刪除同步清 `sender_id`。③結算彈窗重構：單一表格＋`SETTLE_META` registry（新公文型態接結算＝加一筆 meta），類型 chip 過濾＋表頭三態全選（只作用顯示中列），勾選含刑案／一般或敘獎時送文者必填。④三編輯彈窗（敘獎／刑案／一般）發文日期改 `NullableDateEdit`（PITFALLS QTW-10）：空白＝未發文哨兵（敘獎 `''`、刑案／一般 NULL）、補填日期須一併選發文人員、清空退回未發文；刑案／一般不再開啟即填今日蓋哨兵。⑤敘獎彈窗敘獎人員改可編輯下拉（選取＝附加）；案類互轉沿用區未發文顯示「未發文」，轉換哨兵原樣帶到新單。⑥穩定性三項：三主表 `last_modified` 索引、每週深度完整性檢查（`PRAGMA integrity_check`）、瀏覽頁列同步測試。⑦HELP／QUICKSTART 同步（敘獎／陳報／列印／設定四頁）並重產速查卡 PDF。已知迴避：Windows 深色模式 tooltip 黑底無解（PITFALLS QSS-7），議定新功能不依賴 tooltip。 |
 | v1.2.0 | **全新 repo 起點（`PoliceDocSys`）**：內容延續 v1.1.12，功能無變動；為徹底清除舊 git 歷史中殘留的真實人名，改以單一初始 commit 建立全新公開 repo（舊 `project_police` 轉私有封存）。版號自 1.2.0 起、第三碼歸零。以下 v1.1.x 及更早為文件保留的歷史技術記錄（該版 git 歷史已不在本 repo）。 |
