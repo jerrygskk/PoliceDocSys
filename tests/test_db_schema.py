@@ -97,6 +97,33 @@ class TestEnsureSchema(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_upgrades_legacy_reward_table_with_create_date(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute(
+                "CREATE TABLE Document_Reward ("
+                "doc_id TEXT PRIMARY KEY, register_date DATE, sender_id TEXT, "
+                "reason TEXT, recipients TEXT, last_modified DATETIME)")
+            conn.execute(
+                "INSERT INTO Document_Reward(doc_id, register_date) VALUES(?, ?)",
+                ("legacy-unissued", ""))
+            conn.commit()
+        finally:
+            conn.close()
+
+        db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertIn("create_date", _cols(conn, "Document_Reward"))
+            self.assertEqual(
+                conn.execute(
+                    "SELECT create_date, register_date FROM Document_Reward "
+                    "WHERE doc_id=?", ("legacy-unissued",)).fetchone(),
+                (None, ""))
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

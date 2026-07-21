@@ -22,10 +22,11 @@ class TestRewardBrowse(unittest.TestCase):
         conn = sqlite3.connect(self.db)
         applySchema(conn)
         conn.executemany(
-            "INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) VALUES(?,?,?,?)",
-            [("2", "2026-07-17", "協助查緝", "測試甲,測試乙"),
-             ("10", "2026-07-18", "專案有功", "測試丙"),
-             ("11", None, None, None)])
+            "INSERT INTO Document_Reward"
+            "(doc_id,create_date,register_date,reason,recipients) VALUES(?,?,?,?,?)",
+            [("2", "2026-07-16", "", "協助查緝", "測試甲,測試乙"),
+             ("10", "2026-07-17", "2026-07-18", "專案有功", "測試丙"),
+             ("11", None, None, None, None)])
         conn.commit()
         conn.close()
 
@@ -48,6 +49,9 @@ class TestRewardBrowse(unittest.TestCase):
         self.assertTrue(meta["sort_numeric"])
         self.assertNotIn("view", meta)
         self.assertNotIn("proc_fk", meta)
+        self.assertEqual(
+            [col["header"] for col in meta["cols"]],
+            ["", "編號", "登錄日期", "發文日期", "發文人員", "敘獎事由", "敘獎人員"])
         self.assertFalse(any(TABLE_META[key].get("sort_numeric")
                              for key in PRELOAD_KEYS))
 
@@ -56,6 +60,8 @@ class TestRewardBrowse(unittest.TestCase):
         rows = queryBrowseRows(conn, "reward")
         conn.close()
         self.assertEqual([r["doc_id"] for r in rows], ["2", "10"])
+        self.assertEqual(rows[0]["create_date"], "2026-07-16")
+        self.assertEqual(rows[0]["register_date"], "")
         self.assertIn("有功", rows[1]["reason"])
         self.assertIn("測試乙", rows[0]["recipients"])
 
@@ -82,6 +88,14 @@ class TestRewardBrowse(unittest.TestCase):
         self.assertIn("reward", tab._loaded_keys)
         self.assertEqual(tab._docorder["reward"], ["2", "10"])
 
+    def test_only_empty_issue_date_shows_unissued_orange(self):
+        tab = self._tab()
+        tab.buildInitial("reward")
+        table = tab._ui["reward"]["table"]
+        self.assertEqual(table.item(0, 2).text(), "2026-07-16")
+        self.assertEqual(table.item(0, 3).text(), "未發文")
+        self.assertEqual(table.item(0, 3).foreground().color().name(), "#e67e22")
+
     def test_handlers_and_actual_operations_both_gate_permissions(self):
         tab = self._tab()
         tab._docorder = {"reward": ["10"]}
@@ -98,6 +112,34 @@ class TestRewardBrowse(unittest.TestCase):
                 confirm.assert_not_called()
             with patch("tabs.tab_dbbrowse.RewardEditDialog") as dialog:
                 tab._onEdit("reward", 0, "10")
+                dialog.assert_not_called()
+
+    def test_archive_manager_edit_matrix_blocks_task_and_reward_only(self):
+        # 歸檔管理者：交辦單(task)／敘獎(reward)不可改；刑案／一般仍可。
+        tab = self._tab()
+        with patch("tabs.tab_dbbrowse.AuthManager.instance") as auth:
+            auth.return_value.is_admin.return_value = False
+            auth.return_value.is_manager.return_value = True
+            self.assertFalse(tab._canEditKey("task"))
+            self.assertFalse(tab._canEditKey("reward"))
+            self.assertTrue(tab._canEditKey("crim"))
+            self.assertTrue(tab._canEditKey("gen"))
+        # 最高權限管理者：四表皆可
+        with patch("tabs.tab_dbbrowse.AuthManager.instance") as auth:
+            auth.return_value.is_admin.return_value = True
+            auth.return_value.is_manager.return_value = True
+            for k in ("task", "reward", "crim", "gen"):
+                self.assertTrue(tab._canEditKey(k))
+
+    def test_archive_manager_cannot_open_reward_edit_dialog(self):
+        tab = self._tab()
+        tab._docorder = {"reward": ["10"]}
+        with patch("tabs.tab_dbbrowse.AuthManager.instance") as auth:
+            auth.return_value.is_admin.return_value = False
+            auth.return_value.is_manager.return_value = True   # 歸檔管理
+            with patch("tabs.tab_dbbrowse.RewardEditDialog") as dialog:
+                tab._onEdit("reward", 0, "10")
+                tab._onLinkCell("reward", 0, 1, 1)
                 dialog.assert_not_called()
 
     def test_signature_excludes_soft_deleted_rows(self):
@@ -122,8 +164,9 @@ class TestRewardBrowse(unittest.TestCase):
         boundary = tab._lastLoad["reward"]
         conn = sqlite3.connect(self.db)
         conn.execute(
-            "INSERT INTO Document_Reward(doc_id,register_date,reason,recipients,last_modified) "
-            "VALUES('20','2026-07-19','同秒新增','測試丁',?)", (boundary,))
+            "INSERT INTO Document_Reward"
+            "(doc_id,create_date,register_date,reason,recipients,last_modified) "
+            "VALUES('20','2026-07-19','2026-07-20','同秒新增','測試丁',?)", (boundary,))
         conn.commit()
         conn.close()
         tab._diffUpdate("reward")
@@ -144,8 +187,7 @@ class TestRewardBrowse(unittest.TestCase):
         tab._diffUpdate("reward")
         self.assertEqual(tab._docorder["reward"], ["2", "10"])
         self.assertEqual([r["doc_id"] for r in tab._allRows["reward"]], ["2", "10"])
-        # 敘獎事由欄插入「發文人員」後移到 col 4（col 3 為發文人員）。
-        self.assertEqual(tab._ui["reward"]["table"].item(0, 4).text(), "同秒修改")
+        self.assertEqual(tab._ui["reward"]["table"].item(0, 5).text(), "同秒修改")
 
     def test_real_soft_delete_sql_lands_in_no_active_filter_changed_ids(self):
         # SQL round-trip：以真實清空式 UPDATE（_DELETE_CLEAR_SQL）軟刪一列，

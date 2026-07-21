@@ -211,7 +211,7 @@ _DELETE_CLEAR_SQL = {
         "dept_id=NULL, gen_cat_id=NULL, subject=NULL, processor_id=NULL, "
         "is_reported=0, is_electronic='' WHERE doc_id=?"),
     "Document_Reward": (
-        "UPDATE Document_Reward SET register_date=NULL, sender_id=NULL, "
+        "UPDATE Document_Reward SET create_date=NULL, register_date=NULL, sender_id=NULL, "
         "reason=NULL, recipients=NULL WHERE doc_id=?"),
 }
 
@@ -258,7 +258,8 @@ def softDeleteDoc(conn, *, table, doc_id, role, is_admin, audit_operator=True):
     conn.execute(_DELETE_CLEAR_SQL[table], (doc_id,))
     if table == "Document_Reward":
         detail_text = (
-            f"編號：{doc_id}；登錄日期：{(snap or {}).get('register_date') or ''}；"
+            f"編號：{doc_id}；登錄日期：{(snap or {}).get('create_date') or ''}；"
+            f"發文日期：{(snap or {}).get('register_date') or ''}；"
             f"事由：{subject}；敘獎人員：{(snap or {}).get('recipients') or ''}"
         )
     else:

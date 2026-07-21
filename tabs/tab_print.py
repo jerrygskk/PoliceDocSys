@@ -648,10 +648,9 @@ class TabPrint(BaseTab):
             counts = count_unissued(self.db_path)
             a = counts.get("crim", 0)
             b = counts.get("gen", 0)
-            c = counts.get("reward", 0)
-            total = a + b + c
+            total = a + b
             self.lbl_unissued.setText(
-                f"未發文：{total} 筆（刑案 {a}／一般 {b}／敘獎 {c}）")
+                f"未發文：{total} 筆（刑案 {a}／一般 {b}）")
         except Exception:
             self.lbl_unissued.setText("未發文：—")
 
@@ -662,12 +661,6 @@ class TabPrint(BaseTab):
         dlg.exec()
         if dlg.settled():
             self._refresh_unissued()
-            # 敘獎登錄頁本次 session 清單可能含剛結算的未發文列 → 標記 dirty，
-            # 讓其下次顯示時重讀補上結算日期（比照 tab_settings._flagSiblingReload）。
-            mgr = getattr(self, "_manager", None)
-            for t in getattr(mgr, "tabs", {}).values():
-                if hasattr(t, "reward_data_dirty"):
-                    t.reward_data_dirty = True
             # 結算後自動設今日日期並產生簽收表（一條龍動線）
             if self.date_edit:
                 self.date_edit.setDate(QDate.currentDate())

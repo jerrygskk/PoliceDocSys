@@ -79,7 +79,7 @@ from lib.db_utils import getResourcePath
 from ui_utils import loadUi, msgInfo
 from lib.auth_manager import AuthManager
 from tabs import (TabDispatch, TabReceive, TabReport, TabReward,
-                  TabTicketPlaceholder, TabPrint, TabDBBrowse, TabArchive,
+                  TabRewardIssue, TabPrint, TabDBBrowse, TabArchive,
                   TabSettings, TabAudit)
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）
 
@@ -99,7 +99,7 @@ class DocumentManager:
         1: TabReceive,
         2: TabReport,
         3: TabReward,
-        4: TabTicketPlaceholder,
+        4: TabRewardIssue,
         5: TabPrint,
         6: TabDBBrowse,
         7: TabArchive,
@@ -379,7 +379,7 @@ class MainMenu:
         'btn_receive_assignment': ':/menu/receive.svg',
         'btn_report_case':        ':/menu/report.svg',
         'btn_reward':             ':/menu/reward.svg',
-        'btn_ticket':             ':/menu/ticket.svg',
+        'btn_ticket':             ':/menu/reward_issue.svg',
         'btn_generate_receipt':   ':/menu/print.svg',
         'btn_dbbrowse':           ':/menu/browse.svg',
         'btn_archive':            ':/menu/archive.svg',

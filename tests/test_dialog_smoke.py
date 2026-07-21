@@ -49,8 +49,8 @@ def _make_db_file():
         INSERT INTO Document_General(doc_id,report_date,sender_id,dept_id,
             gen_cat_id,subject,processor_id,is_reported,is_electronic)
             VALUES('3','2026-07-01','P01','D01','GC01','一般主旨','P02',0,'');
-        INSERT INTO Document_Reward(doc_id,register_date,reason,recipients)
-            VALUES('4','2026-07-17','協助查緝','王小明, 名單外甲');
+        INSERT INTO Document_Reward(doc_id,create_date,register_date,reason,recipients)
+            VALUES('4','2026-07-16','2026-07-17','協助查緝','王小明, 名單外甲');
     """)
     conn.commit()
     conn.close()
@@ -112,6 +112,7 @@ class TestEditDialogs(_DialogBase):
         dlg.deleteLater()
 
     def test_reward_edit_builds_for_entry_and_browse(self):
+        from PySide6.QtWidgets import QLabel
         from ui_utils.reward_dialog import RewardEditDialog
         from ui_utils.edit_dialog import _BaseEditDialog
         # 寬度沿用 _BaseEditDialog 版面常數，與交辦／刑案／一般三彈窗一致
@@ -121,6 +122,8 @@ class TestEditDialogs(_DialogBase):
             with self.subTest(source=source):
                 dlg = RewardEditDialog(self.db, "4", source=source)
                 self.assertEqual(dlg.minimumWidth(), expected_w)
+                self.assertIsInstance(dlg.w_create_date, QLabel)
+                self.assertEqual(dlg.w_create_date.text(), "2026-07-16")
                 self.assertEqual(dlg.w_reason.text(), "協助查緝")
                 self.assertEqual(dlg.w_recipients.currentText(), "王小明, 名單外甲")
                 self.assertFalse(dlg.btn_save.isDefault())
@@ -146,6 +149,60 @@ class TestEditDialogs(_DialogBase):
             controller.model.index(labels.index("小明 → 王小明"), 0))
         _app.processEvents()
         self.assertEqual(dlg.w_recipients.currentText(), "名單外甲, 王小明")
+        dlg.deleteLater()
+
+    def test_reward_edit_save_preserves_create_date(self):
+        # 瀏覽頁改發文欄位為最高權限管理者專屬，故 patch 身分為 admin。
+        from unittest.mock import patch
+        from ui_utils.reward_dialog import RewardEditDialog
+        dlg = RewardEditDialog(self.db, "4", source="browse")
+        dlg.w_sender.setCurrentIndex(dlg.w_sender.findData("P01"))
+        dlg.w_reason.setText("更新後事由")
+        with patch("ui_utils.reward_dialog.AuthManager.instance") as inst:
+            inst.return_value.is_admin.return_value = True
+            dlg._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute(
+            "SELECT create_date,register_date,sender_id,reason "
+            "FROM Document_Reward WHERE doc_id='4'").fetchone()
+        conn.close()
+        self.assertEqual(row, ("2026-07-16", "2026-07-17", "P01", "更新後事由"))
+        dlg.deleteLater()
+
+    def test_reward_entry_save_only_touches_reason_and_recipients(self):
+        # 敘獎登錄頁（entry）：無發文日期／發文人員欄，儲存只改事由與人員，
+        # register_date／sender_id 一律不動。
+        from ui_utils.reward_dialog import RewardEditDialog
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Reward SET sender_id='P02' WHERE doc_id='4'")
+        conn.commit()
+        conn.close()
+        dlg = RewardEditDialog(self.db, "4", source="entry")
+        self.assertFalse(hasattr(dlg, "w_date"))
+        self.assertFalse(hasattr(dlg, "w_sender"))
+        dlg.w_reason.setText("登錄者改事由")
+        dlg._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute(
+            "SELECT create_date,register_date,sender_id,reason "
+            "FROM Document_Reward WHERE doc_id='4'").fetchone()
+        conn.close()
+        # 發文日期／發文人員原封不動，只有事由更新
+        self.assertEqual(row, ("2026-07-16", "2026-07-17", "P02", "登錄者改事由"))
+        dlg.deleteLater()
+
+    def test_reward_edit_shows_blank_label_for_missing_create_date(self):
+        from PySide6.QtWidgets import QLabel
+        from ui_utils.reward_dialog import RewardEditDialog
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "UPDATE Document_Reward SET create_date=NULL WHERE doc_id='4'")
+        conn.commit()
+        conn.close()
+
+        dlg = RewardEditDialog(self.db, "4", source="entry")
+        self.assertIsInstance(dlg.w_create_date, QLabel)
+        self.assertEqual(dlg.w_create_date.text(), "")
         dlg.deleteLater()
 
     def test_reward_edit_supports_legacy_personnel_table_without_alias(self):
@@ -187,8 +244,6 @@ class TestEditDialogs(_DialogBase):
         conn.commit()
         conn.close()
         dlg.w_reason.setText("改後事由")
-        # 已發文列（有日期）儲存需發文人員，先選好才走得到併發刪除的 UPDATE
-        dlg.w_sender.setCurrentIndex(dlg.w_sender.findData("P01"))
         with patch("ui_utils.reward_dialog.msgWarning") as warn:
             dlg._on_save()
             warn.assert_called_once()
@@ -407,18 +462,6 @@ class TestSettleDialog(_DialogBase):
         from ui_utils.settle_dialog import SettleDialog
         dlg = SettleDialog(self.db)
         dlg.deleteLater()
-
-    def test_builds_with_reward_unissued_row(self):
-        # 敘獎未發文列（register_date='' 哨兵）也要能建起含敘獎列的結算彈窗
-        conn = sqlite3.connect(self.db)
-        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
-                     "VALUES('5','','敘獎事由','王小明')")
-        conn.commit()
-        conn.close()
-        from ui_utils.settle_dialog import SettleDialog
-        dlg = SettleDialog(self.db)
-        dlg.deleteLater()
-
 
 if __name__ == "__main__":
     unittest.main()

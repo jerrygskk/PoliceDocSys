@@ -57,6 +57,7 @@ _TABLES = (
     # Document_Reward
     """CREATE TABLE IF NOT EXISTS Document_Reward (
     doc_id VARCHAR(50) PRIMARY KEY,
+    create_date DATE,
     register_date DATE,
     sender_id VARCHAR(10),
     reason TEXT,
@@ -95,6 +96,7 @@ _TABLES = (
 _COLUMNS = (
     ("Ref_CaseTypes", "alias", "TEXT"),
     ("Document_Reward", "sender_id", "VARCHAR(10)"),
+    ("Document_Reward", "create_date", "DATE"),
 )
 
 # 三個顯示用 View（JOIN 參照表＋算狀態）。改定義須手動 DROP 重建（見上界線）。

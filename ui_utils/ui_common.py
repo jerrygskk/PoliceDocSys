@@ -113,9 +113,10 @@ def loadUi(path):
         return None
     f.open(QFile.ReadOnly)
     loader = QUiLoader()
-    # 註冊自訂元件，讓 .ui 內 class="NullableDateEdit" 的可空白日期框被正確建立
-    from .widgets import NullableDateEdit
+    # 註冊自訂元件，讓 .ui 內 class="NullableDateEdit"／"RecipientCombo" 被正確建立
+    from .widgets import NullableDateEdit, RecipientCombo
     loader.registerCustomWidget(NullableDateEdit)
+    loader.registerCustomWidget(RecipientCombo)
     widget = loader.load(f)
     f.close()
     return widget

@@ -204,12 +204,8 @@ class TestArchiveQueryExcludesUnissued(unittest.TestCase):
         self.assertNotIn("C0010", ids)
 
 
-class TestRewardUnissuedSentinel(unittest.TestCase):
-    """敘獎未發文哨兵語意：register_date='' 為 active（未發文），NULL＝軟刪除。
-
-    敘獎軟刪除哨兵是 register_date=NULL（見 db_utils._DELETE_META），故「未發文」
-    必須用空字串 ''；全系統 active 判斷 register_date IS NOT NULL 對 '' 天然通過。
-    """
+class TestSettleDocumentTypes(unittest.TestCase):
+    """結算發文只處理刑案與一般陳報；敘獎改由獨立發文頁處理。"""
 
     def setUp(self):
         import tempfile
@@ -221,17 +217,10 @@ class TestRewardUnissuedSentinel(unittest.TestCase):
         conn.execute(
             "INSERT OR IGNORE INTO Ref_Personnel "
             "(staff_id, staff_name, is_active, sort_order) VALUES ('P001','王承辦',1,1)")
-        # 未發文（哨兵空字串）兩筆
-        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
-                     "VALUES ('1','','事由甲','王承辦')")
-        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
-                     "VALUES ('2','','事由乙','李虛構')")
-        # 已發文一筆
-        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
-                     "VALUES ('3','2026-07-05','事由丙','張虛構')")
-        # 軟刪除（register_date NULL）一筆
-        conn.execute("INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
-                     "VALUES ('4',NULL,NULL,NULL)")
+        conn.execute(
+            "INSERT INTO Document_Reward"
+            "(doc_id,create_date,register_date,reason,recipients) "
+            "VALUES ('1','2026-07-01','','事由甲','王承辦')")
         conn.commit()
         conn.close()
 
@@ -239,60 +228,11 @@ class TestRewardUnissuedSentinel(unittest.TestCase):
         import shutil
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    def test_empty_sentinel_passes_active_filter(self):
-        conn = sqlite3.connect(self.path)
-        rows = conn.execute(
-            "SELECT doc_id FROM Document_Reward WHERE register_date IS NOT NULL"
-        ).fetchall()
-        conn.close()
-        ids = [r[0] for r in rows]
-        self.assertIn("1", ids)   # 未發文（''）仍為 active
-        self.assertIn("2", ids)
-        self.assertIn("3", ids)   # 已發文
-        self.assertNotIn("4", ids)  # NULL = 軟刪除，排除
-
-    def test_load_unissued_reward_only_empty(self):
-        from ui_utils.settle_dialog import _load_unissued
-        data = _load_unissued(self.path)
-        ids = sorted(r["doc_id"] for r in data["reward"])
-        self.assertEqual(ids, ["1", "2"])   # 只有 '' 哨兵列，排除已發文與軟刪除
-
-    def test_load_unissued_reward_subject_combines_reason_and_recipients(self):
-        from ui_utils.settle_dialog import _load_unissued
-        data = _load_unissued(self.path)
-        by_id = {r["doc_id"]: r for r in data["reward"]}
-        self.assertEqual(by_id["1"]["subject"], "事由甲：王承辦")
-        self.assertEqual(by_id["1"]["processor"], "")   # 敘獎無承辦人欄
-
-    def test_count_unissued_includes_reward(self):
-        from ui_utils.settle_dialog import count_unissued
+    def test_settle_registry_and_counts_exclude_reward(self):
+        from ui_utils.settle_dialog import SETTLE_META, count_unissued
+        self.assertEqual([meta["key"] for meta in SETTLE_META], ["crim", "gen"])
         counts = count_unissued(self.path)
-        self.assertIn("reward", counts)
-        self.assertEqual(counts["reward"], 2)
-        self.assertEqual(counts.get("crim", 0), 0)
-        self.assertEqual(counts.get("gen", 0), 0)
-
-    def test_reward_settle_update_roundtrip(self):
-        from ui_utils.settle_dialog import _META_BY_KEY
-        today = "2026-07-18"
-        conn = sqlite3.connect(self.path)
-        conn.execute(_META_BY_KEY["reward"]["update"], (today, "P001", "1"))
-        conn.commit()
-        settled = conn.execute(
-            "SELECT register_date, sender_id FROM Document_Reward "
-            "WHERE doc_id='1'").fetchone()
-        excluded = conn.execute(
-            "SELECT register_date FROM Document_Reward WHERE doc_id='2'").fetchone()[0]
-        conn.close()
-        self.assertEqual(settled[0], today)   # 勾選列補上今日
-        self.assertEqual(settled[1], "P001")  # 勾選列補上送文者
-        self.assertEqual(excluded, "")        # 未勾選列維持未發文哨兵
-
-    def test_reward_update_has_sender_placeholder(self):
-        # 敘獎接入發文人員：update 帶三個佔位（today, sender_id, doc_id）
-        from ui_utils.settle_dialog import _META_BY_KEY
-        self.assertEqual(_META_BY_KEY["reward"]["update"].count("?"), 3)
-        self.assertTrue(_META_BY_KEY["reward"]["with_sender"])
+        self.assertEqual(counts, {"crim": 0, "gen": 0})
 
 
 class TestSettleConcurrencyGuard(unittest.TestCase):
@@ -348,52 +288,20 @@ class TestSettleConcurrencyGuard(unittest.TestCase):
         self.assertEqual(cur.rowcount, 0)
         self.assertEqual(tuple(row), ("2026-07-01", "P001"))
 
-    def test_settle_does_not_resurrect_deleted_reward(self):
-        from lib.db_utils import _DELETE_CLEAR_SQL
-
-        self.conn.execute(
-            "INSERT INTO Document_Reward "
-            "(doc_id, register_date, sender_id, reason, recipients) "
-            "VALUES ('91', '', NULL, '敘獎併發測試', '王承辦')")
-        self.conn.execute(_DELETE_CLEAR_SQL["Document_Reward"], ("91",))
-
-        cur = self.conn.execute(
-            self.meta["reward"]["update"],
-            ("2026-07-20", "P002", "91"))
-        row = self.conn.execute(
-            "SELECT register_date, sender_id, reason, recipients "
-            "FROM Document_Reward WHERE doc_id='91'").fetchone()
-
-        self.assertEqual(cur.rowcount, 0)
-        self.assertEqual(tuple(row), (None, None, None, None))
-
     def test_settle_still_updates_unissued(self):
         self.conn.execute(
             "INSERT INTO Document_Criminal "
             "(doc_id, report_date, sender_id, subject_summary) "
             "VALUES ('C0092', NULL, NULL, '正常刑案')")
-        self.conn.execute(
-            "INSERT INTO Document_Reward "
-            "(doc_id, register_date, sender_id, reason, recipients) "
-            "VALUES ('92', '', NULL, '正常敘獎', '王承辦')")
-
         crim_cur = self.conn.execute(
             self.meta["crim"]["update"],
             ("2026-07-20", "P002", "C0092"))
-        reward_cur = self.conn.execute(
-            self.meta["reward"]["update"],
-            ("2026-07-20", "P002", "92"))
         crim = self.conn.execute(
             "SELECT report_date, sender_id FROM Document_Criminal "
             "WHERE doc_id='C0092'").fetchone()
-        reward = self.conn.execute(
-            "SELECT register_date, sender_id FROM Document_Reward "
-            "WHERE doc_id='92'").fetchone()
 
         self.assertEqual(crim_cur.rowcount, 1)
-        self.assertEqual(reward_cur.rowcount, 1)
         self.assertEqual(tuple(crim), ("2026-07-20", "P002"))
-        self.assertEqual(tuple(reward), ("2026-07-20", "P002"))
 
 
 if __name__ == "__main__":

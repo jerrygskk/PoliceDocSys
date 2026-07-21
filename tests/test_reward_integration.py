@@ -68,18 +68,18 @@ def _document_manager_tab_width_violations(source):
 class RewardIntegrationTests(unittest.TestCase):
     def test_document_tab_and_menu_mappings_are_complete(self):
         from main import DocumentManager, MainMenu
-        from tabs import TabReward, TabTicketPlaceholder
+        from tabs import TabReward, TabRewardIssue
 
         self.assertEqual(list(DocumentManager.TAB_CLASSES), list(range(10)))
         self.assertIs(DocumentManager.TAB_CLASSES[3], TabReward)
-        self.assertIs(DocumentManager.TAB_CLASSES[4], TabTicketPlaceholder)
+        self.assertIs(DocumentManager.TAB_CLASSES[4], TabRewardIssue)
         self.assertEqual(DocumentManager._IDX_DBBROWSE, 6)
         self.assertEqual(DocumentManager._IDX_SETTINGS, 8)
         self.assertEqual(set(MainMenu.BTN_MAP.values()), set(range(10)))
         self.assertEqual(MainMenu.BTN_MAP["btn_reward"], 3)
         self.assertEqual(MainMenu.BTN_MAP["btn_ticket"], 4)
         self.assertEqual(MainMenu.ICON_MAP["btn_reward"], ":/menu/reward.svg")
-        self.assertEqual(MainMenu.ICON_MAP["btn_ticket"], ":/menu/ticket.svg")
+        self.assertEqual(MainMenu.ICON_MAP["btn_ticket"], ":/menu/reward_issue.svg")
 
     def test_ui_order_and_menu_grid(self):
         layout = (ROOT / "layouts" / "Layout1.ui").read_text(encoding="utf-8")
@@ -105,13 +105,6 @@ class RewardIntegrationTests(unittest.TestCase):
                 'd="M11.5 9l1.05 2.12 2.34.34-1.7 1.66.4 2.35-2.09-1.1-2.1 1.1.4-2.35-1.7-1.66 2.35-.34L11.5 9z"',
                 'd="M8 18.5h7"',
             ],
-            "menu_ticket.svg": [
-                'd="M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"',
-                'd="M3 12.7h18"', 'd="M7 9.8h10l-1.2-3H8.2L7 9.8z"',
-                '<circle cx="8.5" cy="10.9" r="0.7" fill="#4977b1" stroke="none"/>',
-                '<circle cx="15.5" cy="10.9" r="0.7" fill="#4977b1" stroke="none"/>',
-                'd="M5.5 14.9v1.8"', 'd="M5.5 18.2h.01"', 'd="M9 15.4h9"', 'd="M9 17.9h7"',
-            ],
         }
         for filename, fragments in expected.items():
             svg = (ROOT / "res" / "buttons" / filename).read_text(encoding="utf-8")
@@ -125,8 +118,16 @@ class RewardIntegrationTests(unittest.TestCase):
             for fragment in fragments:
                 self.assertIn(fragment, svg)
 
+        ticket_svg = (ROOT / "res" / "buttons" / "menu_reward_issue.svg").read_text(
+            encoding="utf-8")
+        self.assertIn('width="512" height="512" viewBox="0 0 512 512"', ticket_svg)
+        self.assertIn('stroke="#4977b1"', ticket_svg)
+        self.assertIn('stroke-width="36"', ticket_svg)
+        self.assertIn('id="reward-glyph"', ticket_svg)
+        self.assertIn('id="outbound-arrow"', ticket_svg)
+
         from res import resources_rc  # noqa: F401
-        for path in (":/menu/reward.svg", ":/menu/ticket.svg", ":/tab/reward.svg"):
+        for path in (":/menu/reward.svg", ":/menu/reward_issue.svg", ":/tab/reward.svg"):
             f = QFile(path)
             self.assertTrue(f.exists(), path)
             self.assertTrue(f.open(QFile.ReadOnly), path)
@@ -173,21 +174,60 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertEqual(set(HELP_TITLES), set(range(10)))
         self.assertEqual(set(HELP_PAGES), set(range(10)))
         self.assertEqual(set(HELP_TIPS), set(range(10)))
-        self.assertEqual(set(QUICKSTART), {0, 1, 2, 3, 5, 6, 7, 8})
+        self.assertEqual(HELP_TITLES[4], "敘獎發文")
+        self.assertEqual(set(QUICKSTART), set(range(9)))
         source = (ROOT / "tools" / "gen_quickstart.py").read_text(encoding="utf-8")
-        self.assertIn("PAGE1 = [0, 1, 2, 3]", source)
-        self.assertIn("PAGE2 = [5, 6, 7, 8]", source)
-        self.assertIn("八個分頁速查", source)
-        self.assertNotIn("七個分頁速查", source)
+        self.assertIn("PAGE1 = [0, 1, 2]", source)
+        self.assertIn("PAGE2 = [3, 4, 5]", source)
+        self.assertIn("PAGE3 = [6, 7, 8]", source)
+        self.assertIn("九個分頁速查", source)
         reward_help = render_review_text(3)
+        issue_help = render_review_text(4)
+        print_help = render_review_text(5)
         browse_help = render_review_text(6)
-        self.assertIn("發文日期留空將被認定為未發文狀態", reward_help)
+        settings_help = render_review_text(8)
+        self.assertIn("登錄日期由系統自動填入今天", reward_help)
+        self.assertNotIn("選擇發文日期", reward_help)
+        self.assertNotIn("自助取號模式", reward_help)
+        self.assertIn("請由「敘獎發文」頁", reward_help)
+        self.assertIn("文號輸入框輸入編號", issue_help)
+        self.assertIn("Enter", issue_help)
+        self.assertIn("或按「輸入」", issue_help)
+        self.assertNotIn("加入清單", issue_help)
+        self.assertIn("輸入不存在的編號時，系統會提示找不到編號", issue_help)
+        self.assertIn("輸入已刪除的編號時，系統會提示已被刪除", issue_help)
+        self.assertIn("已發文", issue_help)
+        self.assertIn("覆蓋", issue_help)
+        self.assertIn("發文前已被刪除", issue_help)
+        reward_issue_quickstart = "\n".join(QUICKSTART[4][1])
+        self.assertIn("或「輸入」", reward_issue_quickstart)
+        self.assertNotIn("加入清單", reward_issue_quickstart)
+        self.assertIn("未發文的刑案／一般案件", print_help)
+        self.assertNotIn("未發文的刑案／一般／敘獎案件", print_help)
+        self.assertEqual(set(HELP_TIPS[3]), {
+            "btn_reward_submit", "btn_reward_clear", "reward_personnel_list",
+        })
+        self.assertNotIn("日期", HELP_TIPS[3]["btn_reward_submit"])
+        self.assertEqual(set(HELP_TIPS[4]), {
+            "btn_reward_input", "btn_reward_issue", "btn_reward_issue_clear",
+        })
+        self.assertIn("自助取號模式只影響刑案與一般陳報", settings_help)
+        self.assertIn("敘獎登錄與敘獎發文不受陳報模式影響", settings_help)
+        self.assertNotIn("此模式同時涵蓋敘獎登錄", settings_help)
+        self.assertNotIn("一併於結算時補齊", settings_help)
         self.assertIn("一般使用者唯讀", browse_help)
         self.assertIn("歸檔管理可修改、不可刪除", browse_help)
         self.assertIn("管理者可修改、可刪除", browse_help)
 
         from pypdf import PdfReader
-        self.assertEqual(len(PdfReader(ROOT / "docs" / "Quick_Start.pdf").pages), 2)
+        self.assertEqual(len(PdfReader(ROOT / "docs" / "Quick_Start.pdf").pages), 3)
+
+        developer = (ROOT / "DEVELOPER.md").read_text(encoding="utf-8")
+        self.assertNotIn("新 Tab 若有日期／發文欄位要接自助取號模式", developer)
+        self.assertIn("只有陳報類輸入頁才依需求接 `report_input_mode`", developer)
+        self.assertNotIn("SETTLE_META` reward", developer)
+        self.assertNotIn("並對有 `reward_data_dirty` 屬性的 tab 設 True", developer)
+        self.assertIn("`SETTLE_META` 僅含刑案與一般", developer)
 
     def test_quickstart_build_renders_only_approved_indexes(self):
         from reportlab.platypus import Spacer
@@ -210,8 +250,7 @@ class RewardIntegrationTests(unittest.TestCase):
               patch.object(gen_quickstart, "SimpleDocTemplate", FakeDocument)):
             gen_quickstart.build(str(ROOT / "docs" / "_test_quick_start.pdf"))
 
-        self.assertEqual(rendered, [0, 1, 2, 3, 5, 6, 7, 8])
-        self.assertNotIn(4, rendered)
+        self.assertEqual(rendered, [0, 1, 2, 3, 4, 5, 6, 7, 8])
         self.assertNotIn(9, rendered)
 
 

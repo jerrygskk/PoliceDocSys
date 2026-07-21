@@ -2,19 +2,15 @@
 settle_dialog.py — 自助取號模式「結算發文」彈窗
 
 功能：
-  - 單一表格列出所有「已取號、未發文」公文（刑案／一般／敘獎），依 SETTLE_META
+  - 單一表格列出所有「已取號、未發文」公文（刑案／一般），依 SETTLE_META
     順序分組，組內編號升冪；預設全勾，點整列切換勾選、取消勾選列整行灰掉
   - 類型 chip 過濾（互斥）＋關鍵字過濾（AND 疊加）；兩者只影響顯示、不動勾選
   - 全選核取方塊：三態顯示「顯示中列」全勾/部分/全不勾，點擊只勾/取消顯示中列
   - 底部即時計數（將結算 N 筆｜排除 m 筆）
-  - 確認後同一 transaction 逐類別批次 UPDATE：刑案／一般補 report_date=今日+sender_id，
-    敘獎補 register_date=今日+sender_id；任一步失敗則 rollback
-  - 送文者僅在勾選中含「需送文者」型態（刑案／一般／敘獎）時才必填
-  - 開放擴充（open-closed）：日後新增類別（如罰單）只需再加一筆 SETTLE_META
-
-⚠️ 敘獎未發文哨兵為空字串 register_date=''（不可用 NULL——NULL 是敘獎的軟刪除
-   哨兵，見 lib/db_utils._DELETE_META）。全系統 active 判斷 register_date IS NOT
-   NULL 對 '' 天然通過，故既有查詢零改動。
+  - 確認後同一 transaction 逐類別批次 UPDATE：刑案／一般補
+    report_date=今日+sender_id；任一步失敗則 rollback
+  - 送文者僅在勾選中含「需送文者」型態時才必填
+  - 開放擴充（open-closed）：日後新增類別只需再加一筆 SETTLE_META
 """
 from datetime import date
 
@@ -41,7 +37,7 @@ _BLACK  = QColor("#000000")
 #   color       類型欄前景色
 #   query       查未發文列 SQL，回三欄 (doc_id, 承辦人, 主旨)
 #   update      結算補值 SQL（with_sender 帶 (today, sender_id, doc_id)，否則 (today, doc_id)）
-#   with_sender 結算時是否需選送文者（現行三型態皆需；False 分支留給日後不需送文者的型態，如罰單）
+#   with_sender 結算時是否需選送文者（現行兩型態皆需；False 分支留給日後不需送文者的型態）
 SETTLE_META = (
     {
         "key": "crim",
@@ -75,21 +71,6 @@ SETTLE_META = (
         ),
         "update": ("UPDATE Document_General SET report_date=?, sender_id=? "
                    "WHERE doc_id=? AND (report_date IS NULL OR report_date='')"),
-        "with_sender": True,
-    },
-    {
-        "key": "reward",
-        "label": "敘獎",
-        "color": "#0f6e56",
-        # 敘獎無承辦人欄（第二欄回空字串）；主旨欄放「事由：人員」。
-        "query": (
-            "SELECT doc_id, '', "
-            "       (COALESCE(reason,'') || '：' || COALESCE(recipients,'')) "
-            "FROM Document_Reward WHERE register_date='' "
-            "ORDER BY CAST(doc_id AS INTEGER)"
-        ),
-        "update": ("UPDATE Document_Reward SET register_date=?, sender_id=? "
-                   "WHERE doc_id=? AND register_date=''"),
         "with_sender": True,
     },
 )
@@ -200,7 +181,7 @@ def count_unissued(db_path):
 
 
 class _DocTable(QTableWidget):
-    """單一結算清單表格（刑案／一般／敘獎混列，依 SETTLE_META 分組）。"""
+    """單一結算清單表格（刑案／一般混列，依 SETTLE_META 分組）。"""
 
     HEADERS = ["", "類型", "編號", "承辦人", "主旨"]
     COL_CHK, COL_TYPE, COL_ID, COL_PROC, COL_SUBJ = 0, 1, 2, 3, 4
@@ -291,7 +272,7 @@ class _DocTable(QTableWidget):
                 id_item.setTextAlignment(Qt.AlignCenter)
                 id_item.setData(Qt.UserRole, key)
                 self.setItem(pos, self.COL_ID, id_item)
-                # 承辦人（敘獎為空）
+                # 承辦人
                 proc_item = QTableWidgetItem(str(r["processor"]))
                 proc_item.setTextAlignment(Qt.AlignCenter)
                 self.setItem(pos, self.COL_PROC, proc_item)

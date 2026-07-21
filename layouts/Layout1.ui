@@ -128,7 +128,7 @@
        <attribute name="title"><string>敘獎登錄</string></attribute>
       </widget>
       <widget class="QWidget" name="tab_ticket">
-       <attribute name="title"><string>罰單登錄</string></attribute>
+       <attribute name="title"><string>敘獎發文</string></attribute>
       </widget>
       <widget class="QWidget" name="tab_print">
        <attribute name="title"><string>簽收單列印</string></attribute>

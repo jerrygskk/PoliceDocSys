@@ -27,7 +27,7 @@ class TestRewardSchema(RewardDbTestCase):
         columns = [r[1] for r in self.conn.execute(
             "PRAGMA table_info(Document_Reward)")]
         self.assertEqual(columns, [
-            "doc_id", "register_date", "sender_id", "reason", "recipients",
+            "doc_id", "create_date", "register_date", "sender_id", "reason", "recipients",
             "last_modified",
         ])
 
@@ -41,18 +41,19 @@ class TestRewardSchema(RewardDbTestCase):
             "SELECT sender_id FROM Document_Reward WHERE doc_id='1'").fetchone()
         self.assertEqual(row[0], "P007")
 
-    def test_self_service_submit_leaves_empty_date_and_null_sender(self):
-        # 自助取號模式送出：register_date='' 哨兵、sender_id NULL（結算時補）。
+    def test_unissued_reward_keeps_registration_date_and_null_sender(self):
+        # 敘獎登錄一律保留今天的登錄日期；發文頁才補發文日期與發文人員。
         self.conn.execute(
             "INSERT INTO Document_Reward"
-            "(doc_id,register_date,sender_id,reason,recipients) VALUES(?,?,?,?,?)",
-            ("1", "", None, "協助偵辦", "甲員"))
+            "(doc_id,create_date,register_date,sender_id,reason,recipients) VALUES(?,?,?,?,?,?)",
+            ("1", "2026-07-21", "", None, "協助偵辦", "甲員"))
         self.conn.commit()
         row = self.conn.execute(
-            "SELECT register_date,sender_id FROM Document_Reward "
+            "SELECT create_date,register_date,sender_id FROM Document_Reward "
             "WHERE doc_id='1'").fetchone()
-        self.assertEqual(row[0], "")      # 未發文哨兵，非 NULL（NULL＝軟刪除）
-        self.assertIsNone(row[1])         # 送文者待結算補填
+        self.assertEqual(row[0], "2026-07-21")
+        self.assertEqual(row[1], "")      # 未發文哨兵，非 NULL（NULL＝軟刪除）
+        self.assertIsNone(row[2])         # 發文人員待發文頁補填
 
     def test_reward_insert_and_update_triggers_maintain_last_modified(self):
         names = {r[0] for r in self.conn.execute(
@@ -109,8 +110,8 @@ class TestRewardSoftDelete(RewardDbTestCase):
         super().setUp()
         self.conn.execute(
             "INSERT INTO Document_Reward"
-            "(doc_id,register_date,reason,recipients) VALUES(?,?,?,?)",
-            ("7", "2026-07-17", "協助查緝", "名單外甲,乙員"))
+            "(doc_id,create_date,register_date,reason,recipients) VALUES(?,?,?,?,?)",
+            ("7", "2026-07-16", "2026-07-17", "協助查緝", "名單外甲,乙員"))
         self.conn.commit()
 
     def test_insert_and_update_do_not_write_audit(self):
@@ -126,9 +127,9 @@ class TestRewardSoftDelete(RewardDbTestCase):
             role="user", is_admin=False)
         self.assertEqual(result, "協助查緝")
         row = self.conn.execute(
-            "SELECT register_date,reason,recipients FROM Document_Reward "
+            "SELECT create_date,register_date,reason,recipients FROM Document_Reward "
             "WHERE doc_id='7'").fetchone()
-        self.assertEqual(row, (None, None, None))
+        self.assertEqual(row, (None, None, None, None))
 
         trash = self.conn.execute(
             "SELECT subject,doc_person,payload FROM Trash_Documents"
@@ -138,15 +139,16 @@ class TestRewardSoftDelete(RewardDbTestCase):
         payload = json.loads(trash[2])
         self.assertEqual(
             {k: payload[k] for k in
-             ("doc_id", "register_date", "reason", "recipients")},
-            {"doc_id": "7", "register_date": "2026-07-17",
+             ("doc_id", "create_date", "register_date", "reason", "recipients")},
+            {"doc_id": "7", "create_date": "2026-07-16", "register_date": "2026-07-17",
              "reason": "協助查緝", "recipients": "名單外甲,乙員"})
 
         audit = self.conn.execute(
             "SELECT operator,detail FROM Audit_Log WHERE target_table=?",
             ("Document_Reward",)).fetchone()
         self.assertIsNone(audit[0])
-        self.assertIn("2026-07-17", audit[1])
+        self.assertIn("登錄日期：2026-07-16", audit[1])
+        self.assertIn("發文日期：2026-07-17", audit[1])
         self.assertIn("協助查緝", audit[1])
         self.assertIn("名單外甲,乙員", audit[1])
 
@@ -160,9 +162,10 @@ class TestRewardSoftDelete(RewardDbTestCase):
             db_utils.restoreFromTrash(self.conn, trash_id),
             ("Document_Reward", "7"))
         row = self.conn.execute(
-            "SELECT register_date,reason,recipients FROM Document_Reward "
+            "SELECT create_date,register_date,reason,recipients FROM Document_Reward "
             "WHERE doc_id='7'").fetchone()
-        self.assertEqual(row, ("2026-07-17", "協助查緝", "名單外甲,乙員"))
+        self.assertEqual(
+            row, ("2026-07-16", "2026-07-17", "協助查緝", "名單外甲,乙員"))
         self.assertEqual(
             self.conn.execute("SELECT COUNT(*) FROM Trash_Documents").fetchone()[0],
             0)

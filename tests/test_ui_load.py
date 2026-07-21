@@ -13,11 +13,12 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QComboBox, QDateEdit, QLabel, QLineEdit, QPushButton,
-    QListWidget, QTableWidget,
+    QApplication, QWidget, QComboBox, QDateEdit, QLineEdit, QPushButton,
+    QListWidget, QTableWidget, QVBoxLayout,
 )
 import res.resources_rc          # 註冊 qrc（.ui 內引用 :/ 資源），勿刪
 from ui_utils import loadUi
+from ui_utils.widgets import RecipientCombo
 
 _app = QApplication.instance() or QApplication([])
 
@@ -60,10 +61,8 @@ class TestUiLoad(unittest.TestCase):
         w = loadUi(path)
         self.assertIsNotNone(w)
         required = (
-            (QDateEdit, "reward_date"),
-            (QComboBox, "reward_sender"),
             (QLineEdit, "reward_reason"),
-            (QLineEdit, "reward_recipients"),
+            (RecipientCombo, "reward_recipients"),   # 敘獎人員改為可編輯下拉
             (QPushButton, "btn_reward_submit"),
             (QPushButton, "btn_reward_clear"),
             (QListWidget, "reward_personnel_list"),
@@ -74,25 +73,20 @@ class TestUiLoad(unittest.TestCase):
                 self.assertIsNotNone(w.findChild(cls, name))
         table = w.findChild(QTableWidget, "reward_tableWidget")
         self.assertEqual(table.columnCount(), 5)
-        # 發文日期／發文人員規格比照交辦單發文頁（220x36）
-        for cls, name in ((QDateEdit, "reward_date"), (QComboBox, "reward_sender")):
+        self.assertIsNone(w.findChild(QDateEdit, "reward_date"))
+        self.assertIsNone(w.findChild(QComboBox, "reward_sender"))
+        # 事由（QLineEdit）／人員（RecipientCombo）欄保留可延展輸入寬度。
+        for cls, name in ((QLineEdit, "reward_reason"),
+                          (RecipientCombo, "reward_recipients")):
             field = w.findChild(cls, name)
-            self.assertEqual(field.minimumWidth(), 220)
-            self.assertEqual(field.maximumWidth(), 220)
-            self.assertEqual(field.minimumHeight(), 36)
-            self.assertEqual(field.maximumHeight(), 36)
-        self.assertTrue(w.findChild(QComboBox, "reward_sender").isEditable())
-        # 事由／人員欄橫跨 col1-3、右緣對齊發文人員下拉（寬度隨欄距、不鎖 max）
-        for name in ("reward_reason", "reward_recipients"):
-            field = w.findChild(QLineEdit, name)
             self.assertEqual(field.minimumWidth(), 220)
             self.assertEqual(field.maximumWidth(), 16777215)
             self.assertEqual(field.minimumHeight(), 36)
             self.assertEqual(field.maximumHeight(), 36)
         self.assertEqual(w.findChild(QLineEdit, "reward_reason").placeholderText(),
                          "請輸入敘獎事由")
-        self.assertEqual(w.findChild(QLineEdit, "reward_recipients").placeholderText(),
-                         "請輸入或點選右側候選人員")
+        # 敘獎人員（RecipientCombo）的 placeholder 於 tab setup 時設在其 lineEdit，
+        # 不在 .ui，故 raw 載入不檢查。
         root_css = w.findChild(QWidget, "centralwidget").styleSheet().lower()
         self.assertIn("background-color", root_css)
         self.assertIn("#ffffff", root_css)
@@ -100,21 +94,52 @@ class TestUiLoad(unittest.TestCase):
         self.assertIn("#000000", root_css)
         w.deleteLater()
 
-    def test_ticket_layout_has_approved_placeholder(self):
+    def test_reward_issue_layout_has_required_controls_and_no_inline_style(self):
         path = os.path.join(_LAYOUT_DIR, "Layout10.ui")
         w = loadUi(path)
         self.assertIsNotNone(w)
-        labels = w.findChildren(QLabel)
-        self.assertEqual(
-            [label.text() for label in labels],
-            ["▲ 罰單登錄", "本功能建置中，將於後續版本提供。"],
+        required = (
+            (QLineEdit, "lineEdit_reward_num"),
+            (QPushButton, "btn_reward_input"),
+            (QDateEdit, "reward_issue_date"),
+            (QComboBox, "reward_issue_sender"),
+            (QPushButton, "btn_reward_issue"),
+            (QPushButton, "btn_reward_issue_clear"),
+            (QTableWidget, "reward_issue_table"),
         )
+        for cls, name in required:
+            with self.subTest(control=name):
+                self.assertIsNotNone(w.findChild(cls, name))
+        table = w.findChild(QTableWidget, "reward_issue_table")
+        self.assertEqual(table.columnCount(), 6)
+        self.assertEqual(
+            [table.horizontalHeaderItem(i).text() for i in range(6)],
+            ["", "編號", "登錄日期", "發文日期", "敘獎事由", "敘獎人員"],
+        )
+        for cls, name in (
+                (QDateEdit, "reward_issue_date"),
+                (QComboBox, "reward_issue_sender")):
+            field = w.findChild(cls, name)
+            self.assertEqual(field.minimumWidth(), 220)
+            self.assertEqual(field.maximumWidth(), 220)
+            self.assertEqual(field.minimumHeight(), 36)
+            self.assertEqual(field.maximumHeight(), 36)
+        self.assertTrue(w.findChild(QComboBox, "reward_issue_sender").isEditable())
         root_css = w.findChild(QWidget, "centralwidget").styleSheet().lower()
-        self.assertIn("background-color", root_css)
-        self.assertIn("#ffffff", root_css)
-        self.assertIn("color", root_css)
-        self.assertIn("#000000", root_css)
+        self.assertEqual(root_css, "")
         w.deleteLater()
+
+    def test_reward_issue_layout_uses_same_default_outer_margins_as_dispatch(self):
+        dispatch = loadUi(os.path.join(_LAYOUT_DIR, "Layout1.ui"))
+        reward_issue = loadUi(os.path.join(_LAYOUT_DIR, "Layout10.ui"))
+        self.assertIsNotNone(dispatch)
+        self.assertIsNotNone(reward_issue)
+        dispatch_layout = dispatch.findChild(QVBoxLayout, "mainVerticalLayout")
+        reward_layout = reward_issue.findChild(QVBoxLayout, "mainVerticalLayout")
+        self.assertEqual(reward_layout.contentsMargins(),
+                         dispatch_layout.contentsMargins())
+        dispatch.deleteLater()
+        reward_issue.deleteLater()
 
 
 if __name__ == "__main__":

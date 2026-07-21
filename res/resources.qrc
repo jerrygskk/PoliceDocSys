@@ -32,7 +32,7 @@
     <file alias="menu/receive.svg">buttons/menu_receive.svg</file>
     <file alias="menu/report.svg">buttons/menu_report.svg</file>
     <file alias="menu/reward.svg">buttons/menu_reward.svg</file>
-    <file alias="menu/ticket.svg">buttons/menu_ticket.svg</file>
+    <file alias="menu/reward_issue.svg">buttons/menu_reward_issue.svg</file>
     <file alias="menu/print.svg">buttons/menu_print.svg</file>
     <file alias="menu/browse.svg">buttons/menu_browse.svg</file>
     <file alias="menu/archive.svg">buttons/menu_archive.svg</file>

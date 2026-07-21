@@ -166,6 +166,63 @@ def setupRecipientLineEdit(line_edit, personnel, alias_map=None):
     return controller
 
 
+class RecipientCombo(QComboBox):
+    """敘獎人員可編輯下拉：張開下拉瞬間快照當下欄位文字。
+
+    選取項目時 Qt 會先把整欄換成選中文字，setupRecipientCombo 的處理器需還原
+    張開當下的內容再附加姓名；快照若靠 textEdited 維護會漏掉 completer／程式填字
+    （textEdited 只在使用者打字時發出），故一律以張開瞬間為準。
+    可登記為 QUiLoader 自訂元件，於 .ui 內以 class=\"RecipientCombo\" 使用。
+    """
+    popup_snapshot = ""
+
+    def showPopup(self):
+        le = self.lineEdit()
+        self.popup_snapshot = le.text() if le else ""
+        super().showPopup()
+
+
+def setupRecipientCombo(combo, personnel, alias_map=None):
+    """把可編輯下拉接上敘獎人員候選：填人員名、掛 completer controller、
+    選取下拉項＝把姓名附加到現有清單（非取代整欄）。回傳 controller。
+
+    controller 同時掛在 combo 與其 lineEdit 上（呼叫端有的取 combo、有的取
+    lineEdit）。與 RewardEditDialog 共用同一套（單一來源）。"""
+    combo.setEditable(True)
+    combo.setInsertPolicy(QComboBox.NoInsert)
+    combo.clear()
+    for _sid, sname, _so in personnel:
+        combo.addItem(sname)
+    combo.setCurrentIndex(-1)
+    le = combo.lineEdit()
+    controller = setupRecipientLineEdit(le, personnel, alias_map=alias_map)
+    combo._recipient_controller = controller
+
+    def _on_picked(index):
+        name = combo.itemText(index)
+        le.setText(combo.popup_snapshot)   # 先還原張開下拉當下的快照
+        controller.add_person(name)        # 再把選中姓名附加進去
+
+    combo.activated.connect(_on_picked)
+    return controller
+
+
+def refreshRecipientComboItems(combo, personnel):
+    """參照人員異動（設定頁改名／增減）時就地重填下拉項目：保留使用者已輸入
+    文字、不重接 activated signal（completer 候選另由 controller.update_personnel
+    更新）。"""
+    le = combo.lineEdit()
+    snapshot = le.text() if le else ""
+    combo.blockSignals(True)
+    combo.clear()
+    for _sid, sname, _so in personnel:
+        combo.addItem(sname)
+    combo.setCurrentIndex(-1)
+    if le is not None:
+        le.setText(snapshot)
+    combo.blockSignals(False)
+
+
 def runWithBusy(parent, func, text="更新中，請稍候…", min_ms=350):
     """顯示無邊框「更新中」提示，同步執行 func（阻塞主執行緒）後自動關閉，回傳 func() 結果。
 

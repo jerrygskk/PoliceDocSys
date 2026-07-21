@@ -165,7 +165,7 @@ def _header_band(canvas, doc):
     canvas.setFillColor(colors.HexColor("#EAF0F7"))
     canvas.setFont(FONT, 10)
     canvas.drawString(18 * mm, h - 18 * mm,
-                      "八個分頁速查；詳細說明請點程式各頁右上角的「？」說明鈕。")
+                      "九個分頁速查；詳細說明請點程式各頁右上角的「？」說明鈕。")
     canvas.restoreState()
 
 
@@ -176,15 +176,20 @@ def build(out_path):
         topMargin=28 * mm, bottomMargin=14 * mm,
         title="公文管理系統 快速上手速查卡")
     # 版面分頁（指定）：
-    #   第 1 頁＝交辦單發文／收文、公文陳報、敘獎登錄
-    #   第 2 頁＝簽收單列印、資料庫瀏覽、檔案歸檔、資料庫設定
-    PAGE1 = [0, 1, 2, 3]
-    PAGE2 = [5, 6, 7, 8]
+    #   第 1 頁＝交辦單發文／收文、公文陳報
+    #   第 2 頁＝敘獎登錄／敘獎發文、簽收單列印
+    #   第 3 頁＝資料庫瀏覽、檔案歸檔、資料庫設定
+    PAGE1 = [0, 1, 2]
+    PAGE2 = [3, 4, 5]
+    PAGE3 = [6, 7, 8]
     story = []
     for idx in PAGE1:
         story.append(_section(idx))
     story.append(PageBreak())
     for idx in PAGE2:
+        story.append(_section(idx))
+    story.append(PageBreak())
+    for idx in PAGE3:
         story.append(_section(idx))
     doc.build(story, onFirstPage=_header_band, onLaterPages=_header_band)
 

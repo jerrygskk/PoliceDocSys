@@ -5,35 +5,97 @@
   <property name="geometry">
    <rect><x>0</x><y>0</y><width>1100</width><height>768</height></rect>
   </property>
-  <property name="windowTitle"><string>公文管理系統 - 罰單登錄</string></property>
+  <property name="windowTitle"><string>公文管理系統 - 敘獎發文</string></property>
   <widget class="QWidget" name="centralwidget">
-   <property name="styleSheet">
-    <string notr="true">QWidget#centralwidget { background-color: #ffffff; color: #000000; }</string>
-   </property>
    <layout class="QVBoxLayout" name="mainVerticalLayout">
-    <property name="spacing"><number>12</number></property>
-    <property name="leftMargin"><number>24</number></property>
-    <property name="topMargin"><number>24</number></property>
-    <property name="rightMargin"><number>24</number></property>
-    <property name="bottomMargin"><number>24</number></property>
+    <property name="spacing"><number>8</number></property>
     <item>
-     <widget class="QLabel" name="ticket_title">
-      <property name="text"><string>▲ 罰單登錄</string></property>
-     </widget>
+     <layout class="QGridLayout" name="rewardIssueGrid">
+      <property name="horizontalSpacing"><number>8</number></property>
+      <property name="verticalSpacing"><number>8</number></property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="lbl_reward_issue_date">
+        <property name="text"><string>發文日期</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QDateEdit" name="reward_issue_date">
+        <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="calendarPopup"><bool>true</bool></property>
+        <property name="displayFormat"><string>yyyy-MM-dd</string></property>
+       </widget>
+      </item>
+      <item row="0" column="2">
+       <widget class="QLabel" name="lbl_reward_issue_sender">
+        <property name="text"><string>發文人員</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="0" column="3">
+       <widget class="QComboBox" name="reward_issue_sender">
+        <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>220</width><height>36</height></size></property>
+        <property name="editable"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="0" column="4">
+       <spacer name="rewardIssueSpacer">
+        <property name="orientation"><enum>Qt::Horizontal</enum></property>
+        <property name="sizeHint" stdset="0"><size><width>20</width><height>0</height></size></property>
+       </spacer>
+      </item>
+      <item row="0" column="5">
+       <widget class="QPushButton" name="btn_reward_issue_clear">
+        <property name="minimumSize"><size><width>110</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>110</width><height>36</height></size></property>
+        <property name="text"><string>全部清除</string></property>
+       </widget>
+      </item>
+      <item row="0" column="6">
+       <widget class="QPushButton" name="btn_reward_issue">
+        <property name="minimumSize"><size><width>110</width><height>36</height></size></property>
+        <property name="maximumSize"><size><width>110</width><height>36</height></size></property>
+        <property name="text"><string>確認發文</string></property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="lbl_reward_num">
+        <property name="text"><string>編號</string></property>
+        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
+       </widget>
+      </item>
+      <item row="1" column="1" colspan="3">
+       <layout class="QHBoxLayout" name="rewardNumberRow">
+        <property name="spacing"><number>8</number></property>
+        <item>
+         <widget class="QLineEdit" name="lineEdit_reward_num">
+          <property name="minimumSize"><size><width>0</width><height>36</height></size></property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_reward_input">
+          <property name="minimumSize"><size><width>110</width><height>36</height></size></property>
+          <property name="maximumSize"><size><width>110</width><height>36</height></size></property>
+          <property name="text"><string>輸入</string></property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
     </item>
     <item>
-     <widget class="QLabel" name="ticket_message">
-      <property name="text"><string>本功能建置中，將於後續版本提供。</string></property>
-      <property name="wordWrap"><bool>true</bool></property>
+     <widget class="QTableWidget" name="reward_issue_table">
+      <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+      <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+      <column><property name="text"><string></string></property></column>
+      <column><property name="text"><string>編號</string></property></column>
+      <column><property name="text"><string>登錄日期</string></property></column>
+      <column><property name="text"><string>發文日期</string></property></column>
+      <column><property name="text"><string>敘獎事由</string></property></column>
+      <column><property name="text"><string>敘獎人員</string></property></column>
      </widget>
-    </item>
-    <item>
-     <spacer name="verticalSpacer">
-      <property name="orientation"><enum>Qt::Vertical</enum></property>
-      <property name="sizeHint" stdset="0">
-       <size><width>20</width><height>40</height></size>
-      </property>
-     </spacer>
     </item>
    </layout>
   </widget>

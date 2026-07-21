@@ -3,8 +3,10 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from lib import db_schema, db_seed, db_utils
 from tabs import tab_print
@@ -30,12 +32,12 @@ class TestRewardPrint(unittest.TestCase):
 
     def test_reward_section_is_active_only_one_reason_per_row(self):
         self.conn.executemany(
-            "INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
-            "VALUES(?,?,?,?)",
+            "INSERT INTO Document_Reward(doc_id,create_date,register_date,reason,recipients) "
+            "VALUES(?,?,?,?,?)",
             [
-                ("1", "2026-07-17", "協助查緝", "王小明、李小華"),
-                ("2", None, None, None),
-                ("3", "2026-07-18", "不同日期", "陳小美"),
+                ("1", "2026-07-16", "2026-07-17", "協助查緝", "王小明、李小華"),
+                ("2", None, None, None, None),
+                ("3", "2026-07-17", "2026-07-18", "不同日期", "陳小美"),
             ],
         )
         self.conn.commit()
@@ -51,6 +53,7 @@ class TestRewardPrint(unittest.TestCase):
             [c["role"] for c in reward["columns"]],
             ["id", "date", "recipients", "subject", "signature"],
         )
+        self.assertEqual(reward["columns"][1]["header"], "發文日期")
 
     def test_reward_columns_have_stretch_reason_and_signature_minimum(self):
         columns = tab_print.REWARD_COLUMNS
@@ -60,6 +63,27 @@ class TestRewardPrint(unittest.TestCase):
         self.assertTrue(reason["stretch"])
         self.assertGreaterEqual(signature["ratio"], 0.27)
         self.assertAlmostEqual(sum(c["ratio"] for c in columns), 1.0)
+
+    def test_unissued_counter_only_includes_criminal_and_general(self):
+        fake = SimpleNamespace(db_path=self.db, lbl_unissued=QLabel())
+        with patch("ui_utils.settle_dialog.count_unissued",
+                   return_value={"crim": 2, "gen": 3, "reward": 99}):
+            tab_print.TabPrint._refresh_unissued(fake)
+        self.assertEqual(fake.lbl_unissued.text(),
+                         "未發文：5 筆（刑案 2／一般 3）")
+
+    def test_settle_success_does_not_mark_reward_tab_dirty(self):
+        reward_tab = SimpleNamespace(reward_data_dirty=False)
+        fake = SimpleNamespace(
+            db_path=self.db, tab_widget=None, date_edit=None,
+            _manager=SimpleNamespace(tabs={"reward": reward_tab}),
+            _refresh_unissued=Mock(), _on_generate=Mock())
+        dialog = Mock()
+        dialog.settled.return_value = True
+        with patch("ui_utils.settle_dialog.SettleDialog", return_value=dialog):
+            tab_print.TabPrint._on_settle(fake)
+        self.assertFalse(reward_tab.reward_data_dirty)
+        fake._on_generate.assert_called_once_with()
 
     def _insert_print_rows(self, *, task=True, criminal=True, general=True,
                            reward=True):
@@ -87,9 +111,10 @@ class TestRewardPrint(unittest.TestCase):
             )
         if reward:
             self.conn.execute(
-                "INSERT INTO Document_Reward(doc_id,register_date,reason,recipients) "
-                "VALUES(?,?,?,?)",
-                ("14", "2026-07-17", "敘獎事由", "甲、乙"),
+                "INSERT INTO Document_Reward"
+                "(doc_id,create_date,register_date,reason,recipients) "
+                "VALUES(?,?,?,?,?)",
+                ("14", "2026-07-16", "2026-07-17", "敘獎事由", "甲、乙"),
             )
         self.conn.commit()
 

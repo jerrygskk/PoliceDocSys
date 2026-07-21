@@ -125,7 +125,7 @@ QToolButton:pressed {
       <widget class="QToolButton" name="btn_ticket">
        <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
        <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
-       <property name="text"><string>罰單登錄</string></property>
+       <property name="text"><string>敘獎發文</string></property>
        <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
       </widget>
      </item>

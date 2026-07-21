@@ -43,9 +43,12 @@ class TestRewardTab(unittest.TestCase):
         tab.setup(0)
         return tab
 
-    def test_setup_initializes_form_and_does_not_define_clear_tables(self):
+    def test_setup_initializes_registration_only_form(self):
         tab = self._make_tab()
-        self.assertEqual(tab.reward_date.date(), QDate.currentDate())
+        self.assertFalse(hasattr(tab, "reward_date"))
+        self.assertFalse(hasattr(tab, "reward_sender"))
+        self.assertFalse(hasattr(tab, "_senderChoices"))
+        self.assertFalse(hasattr(tab, "_applySelfServiceMode"))
         self.assertEqual(tab.reward_reason.placeholderText(), "請輸入敘獎事由")
         self.assertFalse(hasattr(tab, "clear_tables"))
         self.assertEqual(tab.reward_table.columnCount(), 5)
@@ -78,12 +81,13 @@ class TestRewardTab(unittest.TestCase):
                  for i in range(controller.model.rowCount())]
         self.assertIn("甲員 → 測試甲", labels)
         self.assertEqual(roles[labels.index("甲員 → 測試甲")], "測試甲")
-        tab.reward_recipients.setText("名單外姓名, 甲員")
-        tab.reward_recipients.setCursorPosition(len(tab.reward_recipients.text()))
+        le = tab.reward_recipients.lineEdit()   # 可編輯下拉：controller 掛在 lineEdit
+        le.setText("名單外姓名, 甲員")
+        le.setCursorPosition(len(le.text()))
         controller.completer.activated[QModelIndex].emit(
             controller.model.index(labels.index("甲員 → 測試甲"), 0))
         _app.processEvents()
-        self.assertEqual(tab.reward_recipients.text(), "名單外姓名, 測試甲")
+        self.assertEqual(le.text(), "名單外姓名, 測試甲")
 
     def test_setup_supports_legacy_personnel_table_without_alias(self):
         conn = sqlite3.connect(self.db)
@@ -113,57 +117,31 @@ class TestRewardTab(unittest.TestCase):
         self.assertIn("新別名 → 測試甲更名", labels)
         self.assertNotIn("甲員 → 測試甲", labels)
 
-    def test_submit_commits_then_tracks_session_and_clears_non_date_fields(self):
+    def test_submit_always_creates_unissued_reward_regardless_of_report_input_mode(self):
         tab = self._make_tab()
-        tab.reward_reason.setText("  協助查緝  ")
-        tab.reward_recipients.setText("測試甲、測試乙，測試甲")
-        tab.reward_sender.setCurrentIndex(tab.reward_sender.findData("P01"))
-        tab._submit()
         conn = sqlite3.connect(self.db)
-        row = conn.execute(
-            "SELECT doc_id,register_date,sender_id,reason,recipients FROM Document_Reward"
-        ).fetchone()
-        conn.close()
-        self.assertEqual(row[2:], ("P01", "協助查緝", "測試甲,測試乙"))
-        self.assertEqual(tab._session_doc_ids, [row[0]])
-        self.assertEqual(tab.reward_table.rowCount(), 1)
-        self.assertEqual(tab.reward_reason.text(), "")
-        self.assertEqual(tab.reward_recipients.text(), "")
-
-    def test_submit_requires_sender_in_sender_mode(self):
-        tab = self._make_tab()
-        tab.reward_reason.setText("協助查緝")
-        tab.reward_recipients.setText("測試甲")
-        # 未選發文人員 → 送文者模式必填擋下，不寫入
-        from unittest.mock import patch
-        with patch("tabs.tab_reward.msgWarning") as warn:
+        for mode in ("0", "1"):
+            conn.execute("INSERT OR REPLACE INTO App_Settings(key,value) "
+                         "VALUES('report_input_mode',?)", (mode,))
+            conn.commit()
+            tab.reward_reason.setText("  協助查緝  ")
+            tab.reward_recipients.setCurrentText("測試甲、測試乙，測試甲")
             tab._submit()
-            warn.assert_called_once()
-        conn = sqlite3.connect(self.db)
-        count = conn.execute("SELECT COUNT(*) FROM Document_Reward").fetchone()[0]
+        rows = conn.execute(
+            "SELECT doc_id,create_date,register_date,sender_id,reason,recipients "
+            "FROM Document_Reward ORDER BY CAST(doc_id AS INTEGER)"
+        ).fetchall()
         conn.close()
-        self.assertEqual(count, 0)
-
-    def test_self_service_submit_omits_sender_and_leaves_empty_date(self):
-        tab = self._make_tab()
-        conn = sqlite3.connect(self.db)
-        conn.execute("INSERT OR REPLACE INTO App_Settings(key,value) "
-                     "VALUES('report_input_mode','1')")
-        conn.commit()
-        conn.close()
-        tab._applySelfServiceMode()
-        # 自助模式：日期與發文人員兩欄反灰
-        self.assertFalse(tab.reward_date.isEnabled())
-        self.assertFalse(tab.reward_sender.isEnabled())
-        tab.reward_reason.setText("協助查緝")
-        tab.reward_recipients.setText("測試甲")
-        tab._submit()
-        conn = sqlite3.connect(self.db)
-        row = conn.execute(
-            "SELECT register_date,sender_id FROM Document_Reward").fetchone()
-        conn.close()
-        self.assertEqual(row[0], "")       # 未發文哨兵
-        self.assertIsNone(row[1])          # 送文者待結算補填
+        today = QDate.currentDate().toString("yyyy-MM-dd")
+        self.assertEqual([row[1:] for row in rows], [
+            (today, "", None, "協助查緝", "測試甲,測試乙"),
+            (today, "", None, "協助查緝", "測試甲,測試乙"),
+        ])
+        self.assertEqual(tab._session_doc_ids, [row[0] for row in rows])
+        self.assertEqual(tab.reward_table.rowCount(), 2)
+        self.assertEqual(tab.reward_table.item(0, 2).text(), "未發文")
+        self.assertEqual(tab.reward_reason.text(), "")
+        self.assertEqual(tab.reward_recipients.currentText(), "")
 
     def test_dirty_refresh_updates_active_rows_and_removes_deleted_rows(self):
         tab = self._make_tab()
@@ -209,8 +187,7 @@ class TestRewardTab(unittest.TestCase):
     def test_submit_then_delete_maintain_counts_in_memory(self):
         tab = self._make_tab()
         tab.reward_reason.setText("協助查緝")
-        tab.reward_recipients.setText("測試甲、測試乙")
-        tab.reward_sender.setCurrentIndex(tab.reward_sender.findData("P01"))
+        tab.reward_recipients.setCurrentText("測試甲、測試乙")
         tab._submit()
         self.assertEqual(tab._name_counts.get("測試甲"), 1)
         self.assertEqual(tab._name_counts.get("測試乙"), 1)

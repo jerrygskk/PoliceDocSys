@@ -270,7 +270,7 @@ class TabReceive(BaseTab, InputLockMixin):
         # 收文頁開放一般使用者刪除（更正剛輸入的錯列）；稽核記實際刪除者。
         reply = confirmBox(
             "確認刪除",
-            f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
+            "刪除後，本筆交辦單及文號將被廢棄不再使用，如有需要請重新輸入取號。",
             confirm_text="刪除", confirm_danger=True, default_confirm=False
         )
         if not reply:

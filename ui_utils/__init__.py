@@ -17,6 +17,7 @@ from .widgets import (
     parse_recipient_names, format_recipient_names, sort_reward_personnel,
     count_recipient_names, sort_personnel_by_counts,
     RecipientLineEditController, setupRecipientLineEdit,
+    RecipientCombo, setupRecipientCombo, refreshRecipientComboItems,
 )
 from .table   import (
     setupPreviewTable,
@@ -68,6 +69,9 @@ __all__ = [
     "sort_personnel_by_counts",
     "RecipientLineEditController",
     "setupRecipientLineEdit",
+    "RecipientCombo",
+    "setupRecipientCombo",
+    "refreshRecipientComboItems",
     "setupPreviewTable",
     "autoResizeTable",
     "makeDeleteBtn",

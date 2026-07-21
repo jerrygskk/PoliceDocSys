@@ -102,7 +102,8 @@ GEN_COLS = [
 REWARD_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號", "view_col": "doc_id", "slim": True, "link": True, "search": True, "w": 64},
-    {"header": "登錄日期", "view_col": "register_date", "slim": True, "search": True, "w": 140},
+    {"header": "登錄日期", "view_col": "create_date", "slim": True, "search": True, "w": 140},
+    {"header": "發文日期", "view_col": "register_date", "slim": True, "search": True, "w": 140},
     {"header": "發文人員", "view_col": "sender_name", "slim": True, "search": True, "w": 120, "ref_col": True},
     {"header": "敘獎事由", "view_col": "reason", "slim": True, "search": True, "stretch": True, "w": 300},
     {"header": "敘獎人員", "view_col": "recipients", "slim": True, "search": True, "w": 240},
@@ -143,7 +144,8 @@ def queryBrowseRows(conn, key):
     meta = TABLE_META[key]
     if meta.get("raw"):
         cur = conn.execute(
-            "SELECT r.doc_id, r.register_date, p.staff_name AS sender_name, "
+            "SELECT r.doc_id, r.create_date, r.register_date, "
+            "p.staff_name AS sender_name, "
             "r.reason, r.recipients, r.last_modified, 1 AS _proc_active "
             "FROM Document_Reward r "
             "LEFT JOIN Ref_Personnel p ON r.sender_id = p.staff_id "
@@ -297,15 +299,26 @@ class TabDBBrowse(BaseTab):
         # 身分切換時即時更新各表的刪除鈕與編號連結可用狀態
         AuthManager.instance().role_changed.connect(self._onRolePerm)
 
+    # 交辦單(task)與敘獎(reward)：僅最高權限管理者可改，歸檔管理不可（走各自的
+    # 收發文／敘獎發文流程，不由歸檔管理在此改動）。刑案/一般(crim/gen)歸檔管理仍可。
+    _ADMIN_ONLY_EDIT_KEYS = ("task", "reward")
+
+    def _canEditKey(self, key):
+        """該子頁的編輯（編號連結／編輯彈窗）是否可用於當前身分。"""
+        am = AuthManager.instance()
+        if key in self._ADMIN_ONLY_EDIT_KEYS:
+            return am.is_admin()
+        return am.is_manager()
+
     def _onRolePerm(self, _role=None):
         """身分變更：逐列切換刪除鈕停用/啟用、編號連結可點/純文字。"""
-        # 刪除：僅最高權限管理者；編輯（編號連結）：歸檔管理亦可
+        # 刪除：僅最高權限管理者；編輯（編號連結）：依 _canEditKey 逐表判定
         can_delete = AuthManager.instance().is_admin()
-        can_edit   = AuthManager.instance().is_manager()
         for key in BROWSE_KEYS:
             table = self._ui.get(key, {}).get("table")
             if not table:
                 continue
+            can_edit = self._canEditKey(key)
             cols = TABLE_META[key]["cols"]
             del_col  = next((i for i, c in enumerate(cols) if c.get("delete")), None)
             link_col = next((i for i, c in enumerate(cols) if c.get("link")), None)
@@ -814,7 +827,7 @@ class TabDBBrowse(BaseTab):
 
             if c.get("link"):
                 doc_id = str(r.get(id_col) or "")
-                can_edit = AuthManager.instance().is_manager()
+                can_edit = self._canEditKey(key)
                 if table.cellWidget(pos, c_idx) is not None:
                     table.removeCellWidget(pos, c_idx)
                 lnk = QTableWidgetItem(doc_id)
@@ -872,12 +885,11 @@ class TabDBBrowse(BaseTab):
                     table.setItem(pos, c_idx, sit)
                 continue
 
-            # 刑案/一般「陳報日期」、敘獎「登錄日期」為空（自助取號模式尚未結算）
-            # → 橘字「未發文」。敘獎哨兵為空字串 register_date=''（NULL＝軟刪除，
-            # 已被 active_where 排除，不會走到這裡）。
+            # 刑案/一般「陳報日期」、敘獎「發文日期」為空
+            # → 橘字「未發文」。
             _unissued_date = (
                 (key in ("crim", "gen") and c.get("header") == "陳報日期")
-                or (key == "reward" and c.get("header") == "登錄日期"))
+                or (key == "reward" and c.get("header") == "發文日期"))
             if _unissued_date and not text:
                 item = QTableWidgetItem("未發文")
                 item.setTextAlignment(Qt.AlignCenter)
@@ -956,7 +968,7 @@ class TabDBBrowse(BaseTab):
 
     def _onLinkCell(self, key, row, col, link_col):
         """cellClicked handler：攔截編號欄點擊開啟編輯視窗。"""
-        if col != link_col or not AuthManager.instance().is_manager():
+        if col != link_col or not self._canEditKey(key):
             return
         order = getattr(self, "_docorder", {}).get(key, [])
         if row < len(order):
@@ -1001,7 +1013,7 @@ class TabDBBrowse(BaseTab):
 
     # ── 點編號開 EditDialog ─────────────────────────────────
     def _onEdit(self, key, row, doc_id):
-        if not AuthManager.instance().is_manager():
+        if not self._canEditKey(key):
             return
         dialog_cls = TABLE_META[key]["dialog"]
         kwargs = {"source": "browse"} if key == "reward" else {}

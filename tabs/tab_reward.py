@@ -1,21 +1,22 @@
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QComboBox, QDateEdit, QLineEdit, QListWidget, QPushButton,
+    QLineEdit, QListWidget, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
 from lib.auth_manager import AuthManager
 from lib.base_tab import BaseTab
 from lib.db_utils import (
-    getResourcePath, isSelfServiceMode, loadActivePersonnel, nextDocId,
+    getResourcePath, loadActivePersonnel, nextDocId,
     softDeleteDoc,
 )
 from ui_utils import (
-    RewardEditDialog, attachStickyScroll, confirmBox, count_recipient_names,
-    loadUi, makeDeleteBtn, msgWarning, parse_recipient_names, refreshFilterCombo,
-    reportError, setDocIdLinkCell, setupDateEditToToday, setupFilterCombo,
-    setupPreviewTable, setupRecipientLineEdit, sort_personnel_by_counts,
+    RecipientCombo, RewardEditDialog, attachStickyScroll, confirmBox,
+    count_recipient_names, loadUi, makeDeleteBtn, msgWarning,
+    parse_recipient_names, refreshRecipientComboItems, reportError,
+    setDocIdLinkCell, setupPreviewTable, setupRecipientCombo,
+    sort_personnel_by_counts,
 )
 
 
@@ -40,22 +41,19 @@ class TabReward(BaseTab):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(inner)
         self._tab_index = tab_index
-        self.reward_date = inner.findChild(QDateEdit, "reward_date")
-        self.reward_sender = inner.findChild(QComboBox, "reward_sender")
         self.reward_reason = inner.findChild(QLineEdit, "reward_reason")
-        self.reward_recipients = inner.findChild(QLineEdit, "reward_recipients")
+        self.reward_recipients = inner.findChild(RecipientCombo, "reward_recipients")
         self.reward_personnel_list = inner.findChild(QListWidget, "reward_personnel_list")
         self.reward_table = inner.findChild(QTableWidget, "reward_tableWidget")
         self.btn_submit = inner.findChild(QPushButton, "btn_reward_submit")
         self.btn_clear = inner.findChild(QPushButton, "btn_reward_clear")
-        self.reward_date.setDate(QDate.currentDate())
-        setupDateEditToToday(self.reward_date)
         self._personnel, self._personnel_alias_map = loadActivePersonnel(self.db_path)
-        if self.reward_sender:
-            setupFilterCombo(self.reward_sender, self._senderChoices(),
-                             alias_map=self._personnel_alias_map)
-        setupRecipientLineEdit(self.reward_recipients, self._personnel,
-                               alias_map=self._personnel_alias_map)
+        # 敘獎人員：可編輯下拉（比照修改彈窗；下拉選取＝附加姓名，打字有 completer）。
+        setupRecipientCombo(self.reward_recipients, self._personnel,
+                            alias_map=self._personnel_alias_map)
+        le = self.reward_recipients.lineEdit()
+        if le is not None:
+            le.setPlaceholderText("請輸入或點選人員")
         self._setup_table()
         self._load_counts()
         self._rebuild_personnel_list()
@@ -65,39 +63,6 @@ class TabReward(BaseTab):
             lambda item: self.reward_recipients._recipient_controller.add_person(item.text()))
         self.tab_widget.currentChanged.connect(self._onShown)
         self.reward_reason.setFocus()
-        self._applySelfServiceMode()
-
-    def _senderChoices(self):
-        """把 loadActivePersonnel 的 (staff_id, name, sort_order) 三元組轉成
-        setupFilterCombo 需要的 (id, name) 二元組（姓名已去後綴）。"""
-        return [(sid, name) for sid, name, _ in self._personnel]
-
-    def _applySelfServiceMode(self):
-        """自助取號模式：發文日期與發文人員兩欄一起反灰，改由結算時自動填入；
-        切回送文者模式清哨兵並還原今天（照 tab_report._applySelfServiceMode 精神）。
-
-        日期用 specialValueText 哨兵顯示空白：僅在反灰（不可互動）狀態下，無鍵盤／
-        滑鼠路徑，不踩 QDateEdit 可編輯空白欄的雷；widgets.setupDateEditToToday
-        已對此哨兵放行。送出值與此無關（自助模式 _submit 一律帶 register_date=''、
-        sender_id NULL）。"""
-        if not getattr(self, "reward_date", None):
-            return
-        is_self = isSelfServiceMode(self.db_path)
-        tip = "自助取號模式：發文日期與送文者由結算時自動填入" if is_self else ""
-        self.reward_date.setToolTip(tip)
-        if getattr(self, "reward_sender", None):
-            self.reward_sender.setToolTip(tip)
-            self.reward_sender.setEnabled(not is_self)
-        if is_self:
-            self.reward_date.setEnabled(False)
-            self.reward_date.setSpecialValueText(" ")
-            self.reward_date.setDate(self.reward_date.minimumDate())
-        else:
-            self.reward_date.setEnabled(True)
-            if self.reward_date.specialValueText():
-                # 從自助切回送文者模式：清哨兵、還原今天（僅切換當下做一次）
-                self.reward_date.setSpecialValueText("")
-                self.reward_date.setDate(QDate.currentDate())
 
     def _setup_table(self):
         setupPreviewTable(
@@ -135,9 +100,7 @@ class TabReward(BaseTab):
                 loadActivePersonnel(self.db_path)
             self.reward_recipients._recipient_controller.update_personnel(
                 self._personnel, alias_map=self._personnel_alias_map)
-            if getattr(self, "reward_sender", None):
-                refreshFilterCombo(self.reward_sender, self._senderChoices(),
-                                   alias_map=self._personnel_alias_map)
+            refreshRecipientComboItems(self.reward_recipients, self._personnel)
             self._ref_changed = False
         if data_dirty:
             self._refresh_session_rows()
@@ -146,8 +109,6 @@ class TabReward(BaseTab):
             # 人員改名／敘獎資料異動皆可能改變名條計數或姓名 → 重載一次計數。
             self._load_counts()
             self._rebuild_personnel_list()
-        # 無條件重套（模式可能於設定頁切換）：不受上方旗標 early-path 影響。
-        self._applySelfServiceMode()
 
     def _load_counts(self):
         """全表載入一次名條計數到 self._name_counts（開機／旗標刷新時呼叫）。"""
@@ -179,21 +140,13 @@ class TabReward(BaseTab):
 
     def _form_clear(self):
         self.reward_reason.clear()
-        self.reward_recipients.clear()
+        self.reward_recipients.setCurrentText("")   # 只清輸入文字、不清下拉項目
         self.reward_reason.setFocus()
 
     def _submit(self):
-        # 自助取號模式：登錄日期留空哨兵（''）、發文人員 NULL，事後由列印頁結算
-        # 補今日日期與送文者；送文者模式則兩者當下填入（發文人員必填）。
-        is_self = isSelfServiceMode(self.db_path)
-        if is_self:
-            date = ""
-            sender_id = None
-        else:
-            date = self.reward_date.date().toString("yyyy-MM-dd")
-            sender_id = self.reward_sender.currentData() if self.reward_sender else None
+        create_date = QDate.currentDate().toString("yyyy-MM-dd")
         reason = self.reward_reason.text().strip()
-        names = parse_recipient_names(self.reward_recipients.text())
+        names = parse_recipient_names(self.reward_recipients.currentText())
         missing = []
         if not reason:
             missing.append("敘獎事由")
@@ -202,18 +155,14 @@ class TabReward(BaseTab):
         if missing:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(missing)}")
             return
-        # 發文人員必填（僅送文者模式；自助模式由結算補填），比照 tab_dispatch。
-        if not is_self and not sender_id:
-            msgWarning("欄位未填", "請選擇發文人員。")
-            return
         recipients = ",".join(names)
         conn = None
         try:
             conn = self._getConn()
             doc_id = nextDocId(conn, "Document_Reward")
             conn.execute(
-                "INSERT INTO Document_Reward(doc_id,register_date,sender_id,reason,recipients) "
-                "VALUES(?,?,?,?,?)", (doc_id, date, sender_id, reason, recipients))
+                "INSERT INTO Document_Reward(doc_id,create_date,register_date,sender_id,reason,recipients) "
+                "VALUES(?,?,?,?,?,?)", (doc_id, create_date, "", None, reason, recipients))
             conn.commit()
         except Exception as exc:
             reportError("寫入失敗", exc)
@@ -222,7 +171,7 @@ class TabReward(BaseTab):
             if conn:
                 conn.close()
         self._session_doc_ids.append(doc_id)
-        self._append_preview(doc_id, date, reason, recipients)
+        self._append_preview(doc_id, "", reason, recipients)
         self._bump_counts(names, +1)
         self._rebuild_personnel_list()
         self._flag_browse_dirty()
@@ -234,7 +183,7 @@ class TabReward(BaseTab):
         container, _ = makeDeleteBtn(lambda _=False, d=doc_id: self._deleteByDocId(d))
         self.reward_table.setCellWidget(row, 0, container)
         setDocIdLinkCell(self.reward_table, row, 1, doc_id, self._onEditRow, clickable=True)
-        # 發文日期（col2）：自助取號模式未結算時為空 → 橘字「未發文」置中。
+        # 發文日期（col2）：尚未發文時為空 → 橘字「未發文」置中。
         if date:
             date_item = QTableWidgetItem(date)
             date_item.setToolTip(date)
@@ -299,12 +248,11 @@ class TabReward(BaseTab):
 
     def _deleteByDocId(self, doc_id):
         row = self._row_for_doc_id(doc_id)
-        reason = self.reward_table.item(row, 3).text() if row >= 0 else ""
         recipients = (self.reward_table.item(row, 4).text()
                       if row >= 0 and self.reward_table.item(row, 4) else "")
         if not confirmBox(
                 "確認刪除",
-                f"確定刪除編號 {doc_id}（{reason}）？本文號不再使用。",
+                "刪除後，本筆敘獎登錄及文號將被廢棄不再使用，如有需要請重新輸入取號。",
                 confirm_text="刪除", confirm_danger=True, default_confirm=False):
             return
         auth = AuthManager.instance()
