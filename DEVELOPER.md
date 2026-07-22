@@ -169,7 +169,11 @@ graph LR
 
 純邏輯回歸測試，**不碰 GUI**（容器無法跑 Qt 視窗，故只測無視窗依賴的純邏輯）。
 
-- **跑法**（專案根）：`python -m unittest discover -s tests`；檔名 `test_*.py`（探索預設，勿改名）
+- **跑法**（專案根）：完整既有 suite 用 `python -m unittest discover -s tests`；檔名 `test_*.py`（探索預設，勿改名）。pytest/pytest-qt pilot 用：
+  ```powershell
+  $env:QT_QPA_PLATFORM = 'offscreen'
+  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests/test_pytest_qt_runtime.py tests/test_reward_gui_pilot.py -q
+  ```
 - **需 PySide6 的測試**（受測模組 import 時載入 PySide6）：`test_db_utils`／`test_status`／`test_auth_manager`／`test_error_msg`／`test_audit`／`test_ref_sort`；純 stdlib：`test_archive_text`／`test_app_lock`／`test_db_backup`
 - **offscreen Qt 元件測試**（module 層設 `QT_QPA_PLATFORM=offscreen` 建 QApplication，實例化 widget 但不開視窗）：`test_nullable_date`／`test_ui_load`／`test_dialog_smoke`／`test_dbbrowse_sync`（整個瀏覽 Tab offscreen 實例化，驗 `_allRows`/`_docorder` 與表格列 1:1 不變式、`_diffUpdate` 增修刪、`setUpdatesEnabled` try/finally 防卡死、搜尋過濾一致性）
 - **涵蓋**：歸檔解析（含 PK 撞號雷）、流水號／重置／設定／歸檔定位、逾期與狀態色、權限與密碼、錯誤白話化、稽核 helper、操作紀錄解析、軟性互斥、自動備份、閒置逾時解析（`test_idle_timeouts`，0＝停用／壞值退預設）；`.ui` 全檔載入與對話框建構 smoke（offscreen）；另 `test_no_pii` 防個資外洩（見 CLAUDE）

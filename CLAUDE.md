@@ -43,7 +43,7 @@
 - **README 與 DEVELOPER.md 都不主動改**，他要才改；例外：「發布版本」流程要更新 DEVELOPER 技術章節與 §8 版本記錄
 - **省 token**：先讀完相關檔案再動手，`str_replace` 範圍精準。⚠️ **`str_replace` 容易吃掉相鄰的 `def`**——改完 `grep` 確認上下相鄰函式定義還在（犯過多次），插入／刪除方法時最易發生
 - 改完**先 `py_compile` 驗證語法**，並主動自我迭代驗證：能單測就單測、能模擬（演算法／SQL round-trip）就跑一輪再交付。容器有 PySide6 可 import（跑非 GUI 純邏輯測試），但**無法開 GUI／截圖**——Tab 互動、Dialog、表格渲染請他上機測
-- **單元測試在 `tests/`**：`python -m unittest discover -s tests`，檔名 `test_*.py` 勿改名。動到可單測純邏輯（解析／SQL round-trip／狀態計算／權限判斷）**一併新增或更新測試**。見 DEVELOPER §4
+- **單元測試在 `tests/`**：完整既有 suite 用 `python -m unittest discover -s tests`，檔名 `test_*.py` 勿改名；pytest/pytest-qt pilot 用 `$env:QT_QPA_PLATFORM = 'offscreen'` 後執行 `C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests/test_pytest_qt_runtime.py tests/test_reward_gui_pilot.py -q`。動到可單測純邏輯（解析／SQL round-trip／狀態計算／權限判斷）**一併新增或更新測試**。見 DEVELOPER §4
 - ⚠️ **權限 gate 是每個新功能必檢項**：「受限身分不可做」的操作，只靠按鈕 `setEnabled(False)` 不夠——雙擊、行內編輯、Enter、右鍵、拖拉等替代路徑會繞過。①**所有**進入點補 guard（用 `_refEditable()`／`is_admin()` 等便捷判斷，勿字串比較）②上機以受限身分逐路徑驗證。此雷犯過，詳見 DEVELOPER §10「權限」
 - **UI 文字正式**不口語（「儲存目前排序後繼續編輯？」而非「要存嗎？」）；**一律台灣用語**（對話／文件／UI）：軟體、程式、預設、滑鼠、檔案、資料夾、登入/登出、視窗、回傳、字串、迴圈、品質、網路、硬碟…
 
