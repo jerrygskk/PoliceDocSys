@@ -49,7 +49,10 @@ class TestRewardIssueMenuAssets(unittest.TestCase):
         self.assertTrue(compiled.isValid())
         self.assertFalse(QIcon(":/menu/reward_issue.svg").isNull())
         with open(os.path.join(_ROOT, "res", "buttons", "menu_reward_issue.svg"), "rb") as fh:
-            self.assertEqual(bytes(compiled.data()), fh.read())
+            self.assertEqual(
+                bytes(compiled.data()).replace(b"\r\n", b"\n"),
+                fh.read().replace(b"\r\n", b"\n"),
+            )
 
         renderer = QSvgRenderer(bytes(compiled.data()))
         self.assertTrue(renderer.isValid())
