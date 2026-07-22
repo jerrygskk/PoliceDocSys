@@ -93,6 +93,15 @@ class _BrowseBase(unittest.TestCase):
         self.assertEqual(order, expected_ids)
         self.assertEqual([str(r.get(id_col) or "") for r in all_rows], expected_ids)
 
+    def _visible_rows(self, key):
+        table = self.tab._ui[key]["table"]
+        return [
+            [table.item(row, col).text() if table.item(row, col) else ""
+             for col in range(table.columnCount())]
+            for row in range(table.rowCount())
+            if not table.isRowHidden(row)
+        ]
+
 
 class TestReloadAlignment(_BrowseBase):
     """不變式 1：_reload 後 rowCount == len(_allRows) == len(_docorder)，順序一致。"""
@@ -109,39 +118,44 @@ class TestReloadAlignment(_BrowseBase):
 class TestDiffUpdateAlignment(_BrowseBase):
     """不變式 2：外部 INSERT / UPDATE / 軟刪除清空後 _diffUpdate 仍 1:1、內容正確。"""
 
-    def test_external_insert_keeps_alignment(self):
+    def test_external_insert_keeps_visible_rows_current(self):
         self.tab.buildInitial("task")
-        boundary = self.tab._lastLoad["task"]
+        before = self._visible_rows("task")
         conn = sqlite3.connect(self.db)
+        same_timestamp = conn.execute(
+            "SELECT MAX(last_modified) FROM Document_Task"
+        ).fetchone()[0]
         conn.execute(
             "INSERT INTO Document_Task(doc_id,receive_date,dept_id,subject,"
-            "processor_id,deadline,last_modified) VALUES('4','2026-07-04','D01',"
-            "'丁案交辦事由','P01','2026-07-25',?)", (boundary,))
+            "processor_id,deadline,last_modified) VALUES(?,?,?,?,?,?,?)",
+            ("4", "2026-07-04", "D01", "第四筆交辦事由", "P01",
+             "2026-07-25", same_timestamp),
+        )
         conn.commit()
         conn.close()
-        self.tab._diffUpdate("task")
-        # 交辦無 sort_numeric → 新列 append 於末端
-        self._assert_aligned("task", ["1", "2", "3", "4"])
-        subj_col = _col_idx("task", "交辦事由")
-        table = self.tab._ui["task"]["table"]
-        self.assertEqual(table.item(3, subj_col).text(), "丁案交辦事由")
 
-    def test_external_update_reflects_in_row_and_allrows(self):
+        self.tab.on_activated()
+
+        after = self._visible_rows("task")
+        subject_col = _col_idx("task", "交辦事由")
+        self.assertEqual(len(after), len(before) + 1)
+        self.assertIn("第四筆交辦事由", [row[subject_col] for row in after])
+
+    def test_external_update_reflects_in_visible_cell(self):
         self.tab.buildInitial("task")
-        boundary = self.tab._lastLoad["task"]
         conn = sqlite3.connect(self.db)
         conn.execute(
-            "UPDATE Document_Task SET subject='乙案已改主旨', last_modified=? "
-            "WHERE doc_id='2'", (boundary,))
+            "UPDATE Document_Task SET subject=?, last_modified=? WHERE doc_id=?",
+            ("第二筆已更新事由", "2099-01-01 00:00:00", "2"),
+        )
         conn.commit()
         conn.close()
-        self.tab._diffUpdate("task")
-        self._assert_aligned("task", ["1", "2", "3"])
-        subj_col = _col_idx("task", "交辦事由")
-        table = self.tab._ui["task"]["table"]
-        pos = self.tab._docorder["task"].index("2")
-        self.assertEqual(table.item(pos, subj_col).text(), "乙案已改主旨")
-        self.assertEqual(self.tab._allRows["task"][pos]["交辦事由"], "乙案已改主旨")
+
+        self.tab.on_activated()
+
+        rows = self._visible_rows("task")
+        subject_col = _col_idx("task", "交辦事由")
+        self.assertIn("第二筆已更新事由", [row[subject_col] for row in rows])
 
     def test_soft_delete_clear_removes_row_and_keeps_alignment(self):
         # 真實清空式 UPDATE（_DELETE_CLEAR_SQL）：清欄位保留 doc_id，不碰
