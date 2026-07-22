@@ -21,7 +21,7 @@
 | `tests/test_db_backup.py` | 資料庫備份、驗證與還原 | DB | 綠 | — | 2 | 高 | 保留 |
 | `tests/test_db_schema.py` | Schema 與 View 結構 | DB | 綠 | — | 2 | 低 | 保留 |
 | `tests/test_db_utils.py` | 資料庫共用工具公開行為 | DB | 綠 | — | 2 | 高 | 保留 |
-| `tests/test_dbbrowse_sync.py` | 瀏覽列表外部資料同步 | DB+GUI/offscreen | 綠 | — | 2 | 高 | 階段 1 改寫 |
+| `tests/test_dbbrowse_sync.py` | 瀏覽列表外部資料同步 | DB+GUI/offscreen | 綠 | — | 2 | 高；保留 soft-delete lower-level invariant：同秒清空可能不改變 (COUNT, MAX(last_modified)) signature，public on_activated 可能漏刷新；本計畫不改 production。<br>私有耦合剩餘行：4、88–89、107、119、168、177、211（依 2026-07-22 Select-String）。 | 階段 1 改寫 |
 | `tests/test_dialog_smoke.py` | 編輯 Dialog 建立、預填與儲存 | DB+GUI/offscreen | 綠 | — | 6 | 高 | pilot 後評估；本輪不刪不併 |
 | `tests/test_doc_convert.py` | 文件資料轉換與 round-trip | DB | 綠 | — | 1 | 低 | 保留 |
 | `tests/test_error_msg.py` | 資料庫錯誤友善訊息分類 | unit | 綠 | — | 1 | 高 | 保留 |
