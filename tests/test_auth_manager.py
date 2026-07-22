@@ -18,25 +18,11 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib.auth_manager import AuthManager, _hash_eq
+from lib.auth_manager import AuthManager
 
 
 def _hash(p):
     return hashlib.sha256(p.encode()).hexdigest()
-
-
-class TestHashEq(unittest.TestCase):
-    def test_equal(self):
-        self.assertTrue(_hash_eq(_hash("admin"), _hash("admin")))
-
-    def test_not_equal(self):
-        self.assertFalse(_hash_eq(_hash("admin"), _hash("0000")))
-
-    def test_none_stored(self):
-        self.assertFalse(_hash_eq(None, _hash("admin")))
-
-    def test_non_str_stored(self):
-        self.assertFalse(_hash_eq(123, _hash("admin")))
 
 
 class _AuthBase(unittest.TestCase):
@@ -79,6 +65,15 @@ class TestPermissions(_AuthBase):
 
 
 class TestLogin(_AuthBase):
+    def test_missing_admin_hash_rejects_login_and_keeps_role(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("DELETE FROM App_Settings WHERE key='admin_password_hash'")
+        conn.commit()
+        conn.close()
+
+        self.assertFalse(self.auth.login("admin", self.db_path))
+        self.assertEqual(self.auth.current_role, "user")
+
     def test_admin_password(self):
         self.assertTrue(self.auth.login("admin", self.db_path))
         self.assertEqual(self.auth.current_role, "admin")
