@@ -3,7 +3,14 @@ import sqlite3
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import pytest
+try:
+    import pytest
+except ModuleNotFoundError as exc:  # 讓 unittest discover 在缺 pytest 時記為「跳過」而非 ImportError
+    if exc.name != "pytest":
+        raise
+    import unittest
+
+    raise unittest.SkipTest("需 pytest/pytest-qt，請以 pytest 執行此檔")
 from PySide6.QtCore import QDate, QTimer, Qt
 from PySide6.QtWidgets import (
     QApplication, QLabel, QPushButton, QTabWidget, QWidget,

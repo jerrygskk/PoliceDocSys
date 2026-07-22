@@ -220,7 +220,11 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertIn("管理者可修改、可刪除", browse_help)
 
         from pypdf import PdfReader
-        self.assertEqual(len(PdfReader(ROOT / "docs" / "Quick_Start.pdf").pages), 3)
+        # docs/ 為 gitignored 產物（發版前 gen_quickstart 重產再上傳，見 DEVELOPER §7）；
+        # 缺檔環境（fresh clone／CI）不驗頁數，避免依賴未入庫產物而 error。
+        pdf_path = ROOT / "docs" / "Quick_Start.pdf"
+        if pdf_path.exists():
+            self.assertEqual(len(PdfReader(pdf_path).pages), 3)
 
         developer = (ROOT / "DEVELOPER.md").read_text(encoding="utf-8")
         self.assertNotIn("新 Tab 若有日期／發文欄位要接自助取號模式", developer)
