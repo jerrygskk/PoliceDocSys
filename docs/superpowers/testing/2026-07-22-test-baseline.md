@@ -58,3 +58,13 @@
 | 管理員開啟特權 Dialog 後角色降級 | stale privilege 的應用內便利性防護 | 記錄；單機情境風險另案評估 |
 
 真正的資料安全邊界是 Windows／SMB ACL；以上不稱為後端安全漏洞。
+## pytest-qt runtime spike (2026-07-22)
+
+- Initial import check with the approved Python runtime failed before installation: `ModuleNotFoundError: No module named 'pytest'`.
+- Per the Task 6 protocol, the initial spike marker was cleaned up before installing the missing test dependencies and restarting the spike with a fresh timebox.
+## pytest-qt runtime spike result (2026-07-22)
+
+- Installed only the missing Task 6 test dependencies after the recorded red import check: `pytest 9.1.1` and `pytest-qt 4.5.0`.
+- Fresh-spike imports passed with `PySide6 6.11.1`, `pytest 9.1.1`, and `pytest-qt 4.5.0`.
+- Exact node: `tests/test_pytest_qt_runtime.py::test_qtbot_clicks_offscreen_button`; result: `1 passed in 0.07s` with `QT_QPA_PLATFORM=offscreen`.
+- Fresh marker elapsed time was `00:00:30.6516104` (0.5109 minutes), within the 30-minute limit; marker cleanup succeeded.
