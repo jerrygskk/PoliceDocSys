@@ -130,7 +130,26 @@ def test_reward_lifecycle_pilot(qtbot, reward_db, monkeypatch):
         qtbot.mouseClick(getattr(dialog, SELECTORS["edit_save"]), Qt.LeftButton)
 
     QTimer.singleShot(0, edit_visible_dialog)
-    label.linkActivated.emit(str(doc_id))
+    timed_out = {"value": False}
+    edit_watchdog = QTimer()
+    edit_watchdog.setSingleShot(True)
+
+    def close_stuck_edit_dialogs():
+        timed_out["value"] = True
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, RewardEditDialog) and widget.isVisible():
+                widget.reject()
+                widget.close()
+
+    edit_watchdog.timeout.connect(close_stuck_edit_dialogs)
+    edit_watchdog.start(5000)
+    try:
+        label.linkActivated.emit(str(doc_id))
+    finally:
+        edit_watchdog.stop()
+        edit_watchdog.timeout.disconnect(close_stuck_edit_dialogs)
+        edit_watchdog.deleteLater()
+    assert not timed_out["value"], "編輯: 對話框未在 5 秒內完成"
     edited = fetch_reward(reward_db, doc_id)
     assert edited[1] == "", "編輯: register_date 不得改變"
     assert edited[2] is None, "編輯: sender_id 不得改變"

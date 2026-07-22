@@ -2,7 +2,7 @@
 
 ## Runtime
 
-- Python command: `C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest`
+- Python command: `C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest`。⚠️ **Codex 本機專用；Claude 或一般環境不可假設此路徑存在，應改用已安裝相同依賴的 Python**；此處保留絕對路徑僅為已量測 pilot 證據。
 - Environment: `QT_QPA_PLATFORM=offscreen`（AI offscreen）；Windows 本機 Python，Python prefix 為空
 - Runtime packages: PySide6 6.11.1、matplotlib 3.11.1、pytest 9.1.1、pytest-qt 4.5.0
 - Minimal spike: `tests/test_pytest_qt_runtime.py` 與 `tests/test_reward_gui_pilot.py` 最終合跑為 `2 passed in 1.52s`
@@ -37,8 +37,8 @@
 
 ## Decision
 
-`擴充候選—等待使用者核准`
+`擴充候選—使用者已核准`
 
-理由：10/10 通過，最慢與總耗時均大幅低於 gate；受控 UI selector 破壞能在 DB mutation 前被精確攔截；無 repository residue，也不需要 production seam。是否值得為其他 GUI 流程另立計畫，仍須由使用者依維護成本與覆蓋價值核准。
+理由：10/10 通過，最慢與總耗時均大幅低於 gate；受控 UI selector 破壞能在 DB mutation 前被精確攔截；無 repository residue，也不需要 production seam。使用者已核准此擴充候選與本次驗證過的 pytest-qt workflow；其他 GUI 流程仍須另立範圍與計畫。
 
 本文件不核准其餘五條 GUI 流程，也不核准 driver、版本調升、發布或 push。

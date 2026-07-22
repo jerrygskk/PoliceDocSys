@@ -69,7 +69,7 @@ graph LR
     S --> D[DEVELOPER.md 對應節<br>＋權限矩陣]
     S --> H[HELP help_content.py<br>＋QUICKSTART→重產PDF]
     S --> R[README 門面<br>使用者有感才改]
-    S --> T[tests/ 純邏輯測試]
+    S --> T[tests/ unittest 回歸測試<br>＋pytest-qt pilot]
 ```
 
 | 主題 | 程式觸點 | 文件／測試同步 |
@@ -150,7 +150,7 @@ graph LR
 │                    settings_dialogs／help_dialog／help_content／ui_common／button_imgs）
 ├── tools/           開發／維運工具（入庫，從專案根執行；不被核心模組 import）：
 │                    bump_version／gen_buttons／gen_quickstart／gen_shell_db
-└── tests/           純邏輯單元測試（unittest）
+└── tests/           既有 unittest 回歸測試＋兩個 pytest-qt offscreen pilot
 ```
 
 - ⚠️ 一次性／現場交付腳本（`fix_audit_setup.py`／`fix_cat_status.py`／`seed_*.py`）刻意**不入庫、留根目錄**：`fix_*` 打包成 exe 發給現場放 `dbfile.db` 旁執行（靠「找腳本旁的 db」邏輯，不可改），`seed_*` 為本機壓測／塞假料丟棄腳本（git add 時跳過，見 CLAUDE）
@@ -167,13 +167,14 @@ graph LR
 
 ### 單元測試（tests/）
 
-純邏輯回歸測試，**不碰 GUI**（容器無法跑 Qt 視窗，故只測無視窗依賴的純邏輯）。
+既有回歸套件以 **unittest** 為主，涵蓋純邏輯、資料庫與 offscreen Qt 元件；offscreen 測試會實例化元件，但不開互動式 GUI 視窗。另有兩個獨立的 **pytest/pytest-qt pilot**，用來驗證最小 Qt 點擊與敘獎 lifecycle，不取代 unittest 完整套件。
 
-- **跑法**（專案根）：完整既有 suite 用 `python -m unittest discover -s tests`；檔名 `test_*.py`（探索預設，勿改名）。pytest/pytest-qt pilot 用：
+- **跑法**（專案根）：完整既有 suite 用 `python -m unittest discover -s tests`；檔名 `test_*.py`（探索預設，勿改名）。兩個 pytest/pytest-qt pilot（`test_pytest_qt_runtime.py`、`test_reward_gui_pilot.py`）在本次核准的 Codex 本機環境用：
   ```powershell
   $env:QT_QPA_PLATFORM = 'offscreen'
   C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests/test_pytest_qt_runtime.py tests/test_reward_gui_pilot.py -q
   ```
+  ⚠️ **Codex 本機專用**；Claude 或一般環境不可假設此路徑存在，應改用已安裝相同依賴的 Python。上列絕對路徑僅是本次已驗證的 Codex 本機 workflow／量測證據。
 - **需 PySide6 的測試**（受測模組 import 時載入 PySide6）：`test_db_utils`／`test_status`／`test_auth_manager`／`test_error_msg`／`test_audit`／`test_ref_sort`；純 stdlib：`test_archive_text`／`test_app_lock`／`test_db_backup`
 - **offscreen Qt 元件測試**（module 層設 `QT_QPA_PLATFORM=offscreen` 建 QApplication，實例化 widget 但不開視窗）：`test_nullable_date`／`test_ui_load`／`test_dialog_smoke`／`test_dbbrowse_sync`（整個瀏覽 Tab offscreen 實例化，驗 `_allRows`/`_docorder` 與表格列 1:1 不變式、`_diffUpdate` 增修刪、`setUpdatesEnabled` try/finally 防卡死、搜尋過濾一致性）
 - **涵蓋**：歸檔解析（含 PK 撞號雷）、流水號／重置／設定／歸檔定位、逾期與狀態色、權限與密碼、錯誤白話化、稽核 helper、操作紀錄解析、軟性互斥、自動備份、閒置逾時解析（`test_idle_timeouts`，0＝停用／壞值退預設）；`.ui` 全檔載入與對話框建構 smoke（offscreen）；另 `test_no_pii` 防個資外洩（見 CLAUDE）

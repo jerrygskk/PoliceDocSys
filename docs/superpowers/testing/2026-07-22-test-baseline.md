@@ -2,7 +2,7 @@
 
 ## 執行環境
 
-- 核准的 Python：`C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`（`$PythonPrefix=@()`；`Python 3.12.13`；`PySide6 6.11.1`；`matplotlib 3.11.1`）
+- 核准的 Python：`C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`（`$PythonPrefix=@()`；`Python 3.12.13`；`PySide6 6.11.1`；`matplotlib 3.11.1`）。⚠️ **Codex 本機專用；Claude 或一般環境不可假設此路徑存在，應改用已安裝相同依賴的 Python**；此處保留絕對路徑僅為已量測環境證據。
 - 基線命令：`& $PythonExe @PythonPrefix -m unittest discover -s tests`
 - 基線結果：process exit code `1`；`FAILED (failures=1, errors=1, skipped=2)`；`Ran 470 tests in 36.831s`
 
