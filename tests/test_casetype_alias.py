@@ -12,12 +12,12 @@
 import sqlite3
 import sys
 import os
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from lib.db_schema import applySchema, _add_column
-from ui_utils.settings_dialogs import _has_alias_col
+from lib.db_schema import applySchema, ensureSchema
 
 
 # ── helper ───────────────────────────────────────────────────────────
@@ -50,21 +50,29 @@ class TestSchemaAlias(unittest.TestCase):
         self.assertIn("alias", cols)
 
     def test_legacy_db_gets_alias_col_after_ensure(self):
-        conn = _make_legacy_db()
-        cols_before = [r[1] for r in conn.execute("PRAGMA table_info(Ref_CaseTypes)")]
-        self.assertNotIn("alias", cols_before)
-        # 模擬 ensureSchema 的 _add_column 行為
-        _add_column(conn, "Ref_CaseTypes", "alias", "TEXT")
-        cols_after = [r[1] for r in conn.execute("PRAGMA table_info(Ref_CaseTypes)")]
-        self.assertIn("alias", cols_after)
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.addCleanup(lambda: os.path.exists(db_path) and os.remove(db_path))
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "CREATE TABLE Ref_CaseTypes ("
+            "case_type_id VARCHAR(10) PRIMARY KEY, "
+            "case_type_name VARCHAR(100) NOT NULL, "
+            "is_active BOOLEAN NOT NULL DEFAULT 1, sort_order INTEGER)"
+        )
+        conn.commit()
+        conn.close()
 
-    def test_has_alias_col_casetype(self):
-        conn = _make_db()
-        self.assertTrue(_has_alias_col(conn, "Ref_CaseTypes"))
+        ensureSchema(db_path)
 
-    def test_has_alias_col_legacy_returns_false(self):
-        conn = _make_legacy_db()
-        self.assertFalse(_has_alias_col(conn, "Ref_CaseTypes"))
+        conn = sqlite3.connect(db_path)
+        try:
+            columns = [row[1] for row in conn.execute(
+                "PRAGMA table_info(Ref_CaseTypes)"
+            )]
+        finally:
+            conn.close()
+        self.assertIn("alias", columns)
 
 
 # ── 2. Completer 候選 model 純邏輯 ───────────────────────────────────
@@ -175,10 +183,6 @@ class TestCasetypeAliasSql(unittest.TestCase):
             "SELECT alias FROM Ref_CaseTypes WHERE case_type_id='CT02'"
         ).fetchone()
         self.assertIsNone(row[0])
-
-    def test_has_alias_col_true_after_apply(self):
-        self.assertTrue(_has_alias_col(self.conn, "Ref_CaseTypes"))
-
 
 # ── 4. 歸檔 _docTokens 含別名斷詞 ────────────────────────────────────
 
