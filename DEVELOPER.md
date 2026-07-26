@@ -143,12 +143,14 @@ graph LR
 專案根/
 ├── main.py          進入點（從專案根目錄啟動）
 ├── lib/             核心模組（package）：db_utils／base_tab／auth_manager／app_lock／
-│                    db_backup／db_schema／db_seed／archive_text／theme／version／loading_screen
-├── layouts/         所有 .ui（Layout1~7、main_menu）
+│                    db_backup／db_schema／db_seed／archive_text／theme／version／loading_screen／
+│                    ticket_utils（罰單 domain 層，唯一寫入入口）／window_geometry（開窗尺寸收斂）
+├── layouts/         所有 .ui（Layout1~11、main_menu；Layout1＝主視窗，其餘依 Tab 對應）
 ├── res/             圖片／SVG／qrc（package）：resources.qrc／resources_rc.py／buttons／tabs
 ├── tabs/            各 Tab
 ├── ui_utils/        共用 UI 工具（table／widgets／status／sticky_scroll／edit_dialog／
-│                    settings_dialogs／help_dialog／help_content／ui_common／button_imgs）
+│                    settings_dialogs／settings_panels／help_dialog／help_content／ui_common／
+│                    button_imgs／settle_dialog／reward_dialog／ticket_dialog；門面見 `__init__.py`）
 ├── tools/           開發／維運工具（入庫，從專案根執行；不被核心模組 import）：
 │                    bump_version／gen_buttons／gen_quickstart／gen_shell_db
 └── tests/           既有 unittest 回歸測試＋兩個 pytest-qt offscreen pilot
@@ -178,7 +180,7 @@ graph LR
   ⚠️ **Codex 本機專用**；Claude 或一般環境不可假設此路徑存在，應改用已安裝相同依賴的 Python。上列絕對路徑僅是本次已驗證的 Codex 本機 workflow／量測證據。
 - **需 PySide6 的測試**（受測模組 import 時載入 PySide6）：`test_db_utils`／`test_status`／`test_auth_manager`／`test_error_msg`／`test_audit`／`test_ref_sort`；純 stdlib：`test_archive_text`／`test_app_lock`／`test_db_backup`
 - **offscreen Qt 元件測試**（module 層設 `QT_QPA_PLATFORM=offscreen` 建 QApplication，實例化 widget 但不開視窗）：`test_nullable_date`／`test_ui_load`／`test_dialog_smoke`／`test_dbbrowse_sync`（整個瀏覽 Tab offscreen 實例化，驗 `_allRows`/`_docorder` 與表格列 1:1 不變式、`_diffUpdate` 增修刪、`setUpdatesEnabled` try/finally 防卡死、搜尋過濾一致性）
-- **涵蓋**：歸檔解析（含 PK 撞號雷）、流水號／重置／設定／歸檔定位、逾期與狀態色、權限與密碼、錯誤白話化、稽核 helper、操作紀錄解析、軟性互斥、自動備份、閒置逾時解析（`test_idle_timeouts`，0＝停用／壞值退預設）；`.ui` 全檔載入與對話框建構 smoke（offscreen）；另 `test_no_pii` 防個資外洩（見 CLAUDE）
+- **涵蓋**：歸檔解析（含 PK 撞號雷）、流水號／重置／設定／歸檔定位、逾期與狀態色、權限與密碼、錯誤白話化、稽核 helper、操作紀錄解析、軟性互斥、自動備份、閒置逾時解析（`test_idle_timeouts`，0＝停用／壞值退預設）；`.ui` 全檔載入與對話框建構 smoke（offscreen）；罰單四檔（`test_ticket_data` domain／`test_ticket_tab` 登錄頁與欄寬伸縮／`test_ticket_browse` 瀏覽 gate／`test_ticket_print` 排序分頁合併）＋`test_combo_hint`（提示灰字六狀態）＋`test_window_geometry`；另 `test_no_pii` 防個資外洩（見 CLAUDE）
 - **紀律**：動到可單測純邏輯時一併新增／更新測試；GUI 互動仍須上機驗證
 
 ---

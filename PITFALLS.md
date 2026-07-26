@@ -55,6 +55,7 @@
 - **SQL-4**: **編號欄超連結＋純文字重疊** → `setDocIdLinkCell` 切換前互清：連結分支先 `takeItem`、純文字分支先 `removeCellWidget`（item 與 cellWidget 兩套獨立儲存）。
 - **SQL-5**: **瀏覽頁搜尋整個沒反應／取到錯列** → ① `_allRows[key]`／`_docorder[key]` 必須與表格列嚴格 1:1（`_diffUpdate` 每次 pop/append 兩者同步維護）；② `_applyRowVisibility`／歸檔 `_rematch` 的 `setUpdatesEnabled(False…True)` **必用 try/finally**（中途丟例外會把表格卡在不更新＝所有 `setRowHidden` 失效，持續到下次整表重建）。
 - **SQL-6**: **參照表 rename 後瀏覽／歸檔頁不更新** → 指紋只看公文表 `last_modified`，碰不到參照改名；rename 必走 `_ref_changed` 旗標路徑（`_refreshRefCells`／重載小清單），不能靠指紋偵測。
+- **SQL-7**: **同一秒內的兩次異動可能被指紋漏掉（已知限制，勿當新 bug 修）** → 瀏覽／歸檔頁的 `(COUNT, MAX(last_modified))` 指紋只有**秒精度**（trigger 用 `datetime('now','localtime')`），且 `COUNT` 對「筆數不變的 UPDATE」無感。故當「指紋快照」剛好落在同一秒的兩次異動之間（例：登錄一筆罰單／敘獎後，於**同一秒內**切到瀏覽頁取快照、再回去結算發文），切回瀏覽頁不會刷新，要按「重載」鈕或等下次異動。2026-07 實測 ticket 與 reward 行為完全一致（`insert 後=(1,'…10:10')`／`settle 後=(1,'…10:10')`），是**全專案共通的既有設計取捨**，非個別功能缺陷：指紋只在 `on_activated`／`buildInitial` 取，一條龍結算不經瀏覽頁，人工幾乎命中不了，逃生口是手動「重載」。要治本（`last_modified` 帶毫秒或加 rowversion）＝動五張主表 trigger 與所有指紋比較點，**須另立經核可的全域計畫**，不要在功能分支裡順手改。相關：SQL-6（參照改名同樣碰不到指紋，走 `_ref_changed` 旗標）。
 
 #### ARC：歸檔檔名解析（lib/archive_text.py）
 - **ARC-1**: **動斷詞／日期／主旨解析前** → 三條解析雷（斷詞漏字、PK 1xx 日期、無 `-` 主旨）詳述在 **DEVELOPER §10「歸檔檔名解析的雷」**，動 `archive_text.py` 前先翻。
