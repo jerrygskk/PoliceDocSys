@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""三表新增鎖（唯讀設定）純邏輯測試。
+"""輸入流程唯讀設定純邏輯測試。
 
 兩層：
   1. db_utils 讀取層：INPUT_LOCK_KEYS／isInputLocked（App_Settings round-trip）
-  2. InputLockMixin 行為層（收文/發文/陳報三頁共用的唯讀鎖定）：
+  2. InputLockMixin 行為層（各輸入／發文頁共用的唯讀鎖定）：
      鎖種類解析（str / callable）、依身分＋isInputLocked 決定反灰/橫幅、
      dict 版（陳報頁依模式取用當前那組）、登出清單。
      以 stub 元件＋monkeypatch AuthManager／isInputLocked，不需真的開 Qt 視窗。
@@ -27,11 +27,14 @@ class TestInputLock(unittest.TestCase):
 
     def test_keys_present(self):
         self.assertEqual(set(INPUT_LOCK_KEYS),
-                         {"dispatch", "task", "crim", "gen", "ticket", "reward"})
+                         {"dispatch", "task", "crim", "gen", "ticket",
+                          "reward", "reward_issue"})
 
     def test_ticket_and_reward_lock_keys_present(self):
         self.assertEqual(INPUT_LOCK_KEYS["ticket"], "input_lock_ticket")
         self.assertEqual(INPUT_LOCK_KEYS["reward"], "input_lock_reward")
+        self.assertEqual(
+            INPUT_LOCK_KEYS["reward_issue"], "input_lock_reward_issue")
 
     def test_ticket_and_reward_round_trip(self):
         # 走正式設定 API（無 setInputLocked helper，設定面板本身以 setSetting 寫入）。
@@ -43,6 +46,16 @@ class TestInputLock(unittest.TestCase):
         setSetting(self.db, INPUT_LOCK_KEYS["ticket"], "")
         self.assertFalse(isInputLocked(self.db, "ticket"))
         self.assertTrue(isInputLocked(self.db, "reward"))
+
+    def test_reward_registration_and_issue_locks_are_independent(self):
+        setSetting(self.db, INPUT_LOCK_KEYS["reward_issue"], "1")
+        self.assertTrue(isInputLocked(self.db, "reward_issue"))
+        self.assertFalse(isInputLocked(self.db, "reward"))
+
+        setSetting(self.db, INPUT_LOCK_KEYS["reward"], "1")
+        setSetting(self.db, INPUT_LOCK_KEYS["reward_issue"], "")
+        self.assertTrue(isInputLocked(self.db, "reward"))
+        self.assertFalse(isInputLocked(self.db, "reward_issue"))
 
     def test_ticket_and_reward_zero_and_junk_are_unlocked(self):
         for kind in ("ticket", "reward"):

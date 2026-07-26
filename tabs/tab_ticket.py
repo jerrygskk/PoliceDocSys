@@ -104,6 +104,7 @@ class TabTicket(BaseTab, InputLockMixin):
                 self.ticket_clear_issuer,
                 self.ticket_no,
                 self.ticket_add,
+                self.ticket_candidates_list,
             ],
             clear_tables=[self.ticket_table],
         )

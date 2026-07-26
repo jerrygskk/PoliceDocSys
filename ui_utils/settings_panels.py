@@ -5,7 +5,7 @@ settings_panels.py — 設定頁「系統設定」子頁的嵌入式面板
   - ArchiveRootPanel   歸檔資料夾（年度層 UNC + 刑案/一般子夾名；admin/archive 皆可改）
   - PrintTitlePanel    簽收表標題（5 欄自訂文字＋1 註記；僅 admin）
   - IdleTimeoutPanel   閒置逾時（自動登出／強制關閉，分；僅 admin，重啟生效）
-  - InputLockPanel     唯讀設定（六表新增鎖；僅 admin；即時生效）
+  - InputLockPanel     唯讀設定（七種輸入／發文流程；僅 admin；即時生效）
   - BackupPanel        自動備份（第二備份位置／異地副本；僅 admin；下次開啟生效）
 
 由 ArchiveRootDialog / PrintTitleDialog（settings_dialogs.py，已移除）改寫而來，
@@ -557,7 +557,7 @@ class IdleTimeoutPanel(_SettingsPanel):
 
 
 # ══════════════════════════════════════════════════════════════════
-# 唯讀設定（六表新增鎖；僅 admin；archive 整塊反灰；即時生效）
+# 唯讀設定（七種輸入流程；僅 admin；archive 整塊反灰；即時生效）
 # ══════════════════════════════════════════════════════════════════
 class InputLockPanel(_SettingsPanel):
     # (kind, 勾選框標籤)
@@ -568,6 +568,7 @@ class InputLockPanel(_SettingsPanel):
         ("gen",      "唯讀一般陳報"),
         ("ticket",   "唯讀罰單登錄"),
         ("reward",   "唯讀敘獎登錄"),
+        ("reward_issue", "唯讀敘獎發文"),
     ]
 
     def __init__(self, db_path, parent=None):
@@ -579,9 +580,9 @@ class InputLockPanel(_SettingsPanel):
         v.setContentsMargins(16, 14, 16, 12)
 
         hint = QLabel(
-            "勾選後，該項目只鎖「新增」：\n"
-            "一般使用者無法新增交辦單發文／交辦單收文／刑案陳報／一般陳報／"
-            "罰單登錄／敘獎登錄，但既有資料仍可修改、刪除；"
+            "勾選後，一般使用者無法使用對應的新增或發文流程：\n"
+            "交辦單發文／交辦單收文／刑案陳報／一般陳報／罰單登錄／"
+            "敘獎登錄／敘獎發文；既有資料仍可依原權限修改、刪除；"
             "管理者與歸檔管理不受限制。儲存後立即生效。")
         hint.setStyleSheet(_HINT_SS)
         hint.setWordWrap(True)

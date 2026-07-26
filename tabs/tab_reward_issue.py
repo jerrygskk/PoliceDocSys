@@ -6,8 +6,11 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
-from lib.base_tab import BaseTab
-from lib.db_utils import REWARD_ACTIVE_SQL, getResourcePath, rewardState
+from lib.auth_manager import AuthManager
+from lib.base_tab import BaseTab, InputLockMixin
+from lib.db_utils import (
+    REWARD_ACTIVE_SQL, getResourcePath, isInputLocked, rewardState,
+)
 from ui_utils import (
     attachStickyScroll, autoResizeTable, confirmBox, loadUi, makeDeleteBtn,
     msgInfo, msgWarning, refreshFilterCombo, reportError, setupDateEditToToday,
@@ -22,7 +25,7 @@ _PENDING_BANNER_CSS = (
     "border-radius: 7px; padding: 6px 14px; font-weight: 600;")
 
 
-class TabRewardIssue(BaseTab):
+class TabRewardIssue(BaseTab, InputLockMixin):
     """敘獎發文：輸入編號加入清單，再批次設定發文日期與人員。"""
 
     HEADERS = ["", "編號", "登錄日期", "發文日期", "敘獎事由", "敘獎人員"]
@@ -91,6 +94,16 @@ class TabRewardIssue(BaseTab):
         if inner_layout is not None:
             inner_layout.insertWidget(1, self._pending_banner)
 
+        self._wrapLayoutWithBanner(layout)
+        self._setupInputLock(
+            tab_index,
+            lock_kind="reward_issue",
+            lock_widgets=[w for w in (
+                self.lineEdit, btn_input, self.issue_date,
+                self.issue_sender, btn_issue, btn_clear) if w],
+            clear_tables=[self.table],
+        )
+
     def get_tables(self):
         table = getattr(self, "table", None)
         return [table] if table else []
@@ -104,7 +117,15 @@ class TabRewardIssue(BaseTab):
             if getattr(self, "issue_sender", None):
                 refreshFilterCombo(self.issue_sender, personnel)
             self._ref_changed = False
+        self._applyInputLock()
         self._updatePendingBanner()
+
+    def _onRoleClearList(self, *args):
+        """降回一般使用者時，清空清單及其衍生待發狀態。"""
+        super()._onRoleClearList(*args)
+        if not AuthManager.instance().is_manager():
+            self._pending.clear()
+            self._updatePendingBanner()
 
     def _tableDocIds(self):
         ids = set()
@@ -220,6 +241,11 @@ class TabRewardIssue(BaseTab):
             self._updatePendingBanner()
 
     def handleIssue(self):
+        # 唯讀硬 gate：UI 反灰只是提示，任何替代觸發路徑都必須在 UPDATE 前擋下。
+        if (not AuthManager.instance().is_manager()
+                and isInputLocked(self.db_path, "reward_issue")):
+            msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
+            return
         table = getattr(self, "table", None)
         if not table or table.rowCount() == 0:
             msgInfo("提示", "清單是空的，請先輸入編號")

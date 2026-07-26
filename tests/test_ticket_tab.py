@@ -515,6 +515,7 @@ class TestTicketInputLock(TicketTabBase):
         self.assertFalse(tab.ticket_add.isEnabled())
         self.assertFalse(tab.ticket_no.isEnabled())
         self.assertFalse(tab.ticket_issuer.isEnabled())
+        self.assertFalse(tab.ticket_candidates_list.isEnabled())
         # offscreen 無 show()：以 isHidden 判斷本身可見旗標（isVisible 受祖鏈影響）
         self.assertFalse(tab._readonly_banner.isHidden())
 
@@ -523,6 +524,7 @@ class TestTicketInputLock(TicketTabBase):
         self._set_role("admin")
         tab = self._make_tab()
         self.assertTrue(tab.ticket_add.isEnabled())
+        self.assertTrue(tab.ticket_candidates_list.isEnabled())
         self.assertTrue(tab._readonly_banner.isHidden())
 
     def test_submit_hard_guard_blocks_even_when_inputs_bypassed(self):

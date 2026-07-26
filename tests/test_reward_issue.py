@@ -46,6 +46,10 @@ class TestRewardIssue(unittest.TestCase):
                 is_active INTEGER,
                 sort_order INTEGER
             );
+            CREATE TABLE App_Settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
             INSERT INTO Ref_Personnel VALUES (7, '王小明', 1, 1);
         """)
         conn.commit()
@@ -352,20 +356,73 @@ class TestRewardIssue(unittest.TestCase):
         self.assertEqual(self.tab.issue_sender.itemText(
             self.tab.issue_sender.findData(8)), "李小華")
 
-    def test_table_is_read_only_and_controller_has_no_role_or_input_lock_gate(self):
-        import inspect
+    def test_setup_applies_reward_issue_lock_and_on_activated_reapplies_it(self):
         import tabs.tab_reward_issue as module
 
-        source = inspect.getsource(module)
-        self.assertNotIn("InputLockMixin", source)
-        self.assertNotIn("AuthManager", source)
-        self.tab.setup(0)
+        fake_auth = SimpleNamespace(is_manager=lambda: False)
+        locked = {"value": True}
+        with patch.object(module.AuthManager, "instance", return_value=fake_auth), \
+                patch("lib.db_utils.isInputLocked",
+                      side_effect=lambda _db, kind:
+                      kind == "reward_issue" and locked["value"]):
+            self.tab.setup(0)
+
+            self.assertFalse(self.tab.lineEdit.isEnabled())
+            self.assertFalse(self.tab.issue_date.isEnabled())
+            self.assertFalse(self.tab.issue_sender.isEnabled())
+            self.assertFalse(self.tab._readonly_banner.isHidden())
+
+            locked["value"] = False
+            self.tab.on_activated()
+
+        self.assertTrue(self.tab.lineEdit.isEnabled())
+        self.assertTrue(self.tab.issue_date.isEnabled())
+        self.assertTrue(self.tab.issue_sender.isEnabled())
+        self.assertTrue(self.tab._readonly_banner.isHidden())
         self.assertEqual(
             self.tab.table.editTriggers(),
             QTableWidget.EditTrigger.NoEditTriggers,
         )
         self.assertIsNotNone(self.tab.get_focus_widget())
         self.assertEqual(self.tab.get_tables(), [self.tab.table])
+
+    def test_locked_general_user_is_stopped_before_confirmation_and_update(self):
+        from lib.db_utils import INPUT_LOCK_KEYS, setSetting
+        import tabs.tab_reward_issue as module
+
+        self._insert("NEW", "")
+        self._query("NEW")
+        setSetting(self.db_path, INPUT_LOCK_KEYS["reward_issue"], "1")
+
+        fake_auth = SimpleNamespace(is_manager=lambda: False)
+        with patch.object(module.AuthManager, "instance", return_value=fake_auth), \
+                patch("tabs.tab_reward_issue.msgWarning") as warning, \
+                patch("tabs.tab_reward_issue.confirmBox") as confirm:
+            self.tab.handleIssue()
+
+        warning.assert_called_once_with(
+            "唯讀模式", "本功能目前為唯讀模式無法使用。")
+        confirm.assert_not_called()
+        conn = sqlite3.connect(self.db_path)
+        row = conn.execute(
+            "SELECT register_date, sender_id FROM Document_Reward WHERE doc_id='NEW'"
+        ).fetchone()
+        conn.close()
+        self.assertEqual(row, ("", None))
+
+    def test_role_change_to_general_user_clears_issue_list(self):
+        import tabs.tab_reward_issue as module
+
+        self._insert("NEW", "")
+        self._query("NEW")
+        fake_auth = SimpleNamespace(is_manager=lambda: False)
+        with patch.object(module.AuthManager, "instance", return_value=fake_auth):
+            self.tab._lock_clear_tables = [self.tab.table]
+            self.tab._onRoleClearList()
+
+        self.assertEqual(self.tab.table.rowCount(), 0)
+        self.assertEqual(self.tab._pending, set())
+        self.assertTrue(self.tab._pending_banner.isHidden())
 
 
 if __name__ == "__main__":

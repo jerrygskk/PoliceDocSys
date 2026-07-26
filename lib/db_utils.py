@@ -687,7 +687,7 @@ def getIdleTimeoutsMs(db_path):
 
 
 # ══════════════════════════════════════════════════════════════════
-# 三表新增唯讀鎖（管理者可停用一般使用者新增）
+# 輸入流程唯讀鎖（管理者可停用一般使用者新增／發文）
 # ──────────────────────────────────────────────────────────────────
 # 跨年度重置不清這些 key（唯讀模式是管理端安全設定，見 performYearEndReset）。
 INPUT_LOCK_KEYS = {
@@ -696,7 +696,8 @@ INPUT_LOCK_KEYS = {
     "crim":     "input_lock_crim",
     "gen":      "input_lock_gen",
     "ticket":   "input_lock_ticket",     # 罰單登錄
-    "reward":   "input_lock_reward",     # 敘獎登錄（不含敘獎發文）
+    "reward":   "input_lock_reward",     # 敘獎登錄
+    "reward_issue": "input_lock_reward_issue",  # 敘獎發文（Tab4 確認發文）
 }
 
 

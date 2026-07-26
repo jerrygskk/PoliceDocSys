@@ -292,7 +292,11 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertNotIn("並對有 `reward_data_dirty` 屬性的 tab 設 True", developer)
         self.assertIn("成員為刑案／一般／罰單", developer)
         self.assertIn("罰單 meta 帶 `strict=True`，任一衝突即整批 rollback", developer)
-        self.assertIn("`input_lock_reward`／`input_lock_ticket`", developer)
+        self.assertIn(
+            "`input_lock_reward`／`input_lock_reward_issue`／`input_lock_ticket`",
+            developer)
+        self.assertIn(
+            "`tab_reward_issue.handleIssue`(reward_issue／UPDATE)", developer)
         self.assertIn("`print_title_ticket`", developer)
         self.assertIn("| **罰單登錄**（`Document_Ticket`／`print_title_ticket`）", developer)
         self.assertIn("所有 CRUD 寫入唯一走 `lib/ticket_utils.py`；結算發文由 `SETTLE_META` 在共用 transaction 更新", developer)

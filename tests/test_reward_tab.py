@@ -218,7 +218,7 @@ class TestRewardTab(unittest.TestCase):
 
 
 class TestRewardInputLock(unittest.TestCase):
-    """跨年度唯讀鎖（input_lock_reward）：只作用敘獎登錄，不碰敘獎發文。
+    """跨年度唯讀鎖（input_lock_reward）：只作用敘獎登錄，不會誤鎖敘獎發文。
     只擋一般使用者新增，不擋 admin／archive，不擋既有資料 edit／delete。"""
 
     def setUp(self):
@@ -414,16 +414,15 @@ class TestRewardInputLock(unittest.TestCase):
         self.assertEqual(self._reward_count(), 0)   # 已軟刪除（recipients 清空）
 
     def test_reward_lock_does_not_affect_reward_issue(self):
-        # input_lock_reward 只作用敘獎登錄；敘獎發文完全不接鎖。
+        # input_lock_reward 只作用敘獎登錄；敘獎發文使用獨立 reward_issue 鎖。
         self._set_lock(True)
         self._set_role("user")
         issue = self._make_issue_tab()
         btn = issue._container.widget(0).findChild(QPushButton, "btn_reward_issue")
         self.assertIsNotNone(btn)
         self.assertTrue(btn.isEnabled())
-        # 敘獎發文頁不得掛任何唯讀鎖屬性
-        self.assertFalse(hasattr(issue, "_lock_kind"))
-        self.assertFalse(hasattr(issue, "_readonly_banner"))
+        self.assertEqual(issue._lock_kind, "reward_issue")
+        self.assertTrue(issue._readonly_banner.isHidden())
 
 
 if __name__ == "__main__":
