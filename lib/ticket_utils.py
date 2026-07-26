@@ -1,0 +1,316 @@
+# -*- coding: utf-8 -*-
+"""罰單登錄（Document_Ticket）的 domain 層：編號正規化、唯一性與 CRUD。
+
+界線（重要）：
+  - 所有罰單編號寫入入口一律先走 `normalizeTicketNo()`（去頭尾空白→轉大寫→
+    只允許 ASCII 英數），UI 端不得自行 trim／upper 後直接寫 DB。
+  - `register_date` 為三態欄位，語意與 `Document_Reward` 一致：
+    `NULL`＝軟刪除空殼、`''`＝自助登錄未發文、非空日期＝發文者登錄已發文。
+    因此「有效列」條件恆為 `register_date IS NOT NULL`。
+  - 刪除一律清空業務欄位保留 `doc_id`（不真 DELETE、不寫 `Trash_Documents`；
+    罰單為單欄輕量資料，不納入誤刪還原回收筒）。
+  - 本模組全部函式使用呼叫端傳入的同一個 `conn`，Audit 與業務操作同一
+    transaction，**由呼叫端統一 commit／rollback**（同 `db_utils.softDeleteDoc`）。
+  - 純資料層，不彈視窗；驗證失敗一律拋例外，由 UI 層接住後走 `reportError`
+    或顯示白話提示。
+"""
+import re
+import sqlite3
+
+from lib.db_utils import auditStaffName, buildDetail, nextDocId, writeAudit
+
+
+TICKET_TABLE = "Document_Ticket"
+
+# 罰單有效列條件（NULL 僅代表軟刪除），供本模組與後續查詢頁共用。
+TICKET_ACTIVE_SQL = "register_date IS NOT NULL"
+
+_AUDIT_CATEGORY = "罰單"
+
+
+class TicketValidationError(ValueError):
+    """罰單欄位驗證失敗（編號格式、必填、參照人員不存在等）。"""
+    pass
+
+
+class TicketDuplicateError(TicketValidationError):
+    """罰單編號在目前年度資料庫已存在（不分大小寫）。"""
+    pass
+
+
+class TicketNotFoundError(LookupError):
+    """查無該筆罰單有效資料（不存在或已被刪除）。"""
+    pass
+
+
+_TICKET_RE = re.compile(r"^[A-Z0-9]+$")
+TICKET_NO_MAX_LEN = 20
+
+
+def normalizeTicketNo(value):
+    """罰單編號正規化：去頭尾空白→轉大寫→驗證僅含 ASCII 英數→驗證長度上限。
+
+    全形英數（如 `Ｄ４ＲＤ`）刻意不做轉換，一律視為不合法並要求重新輸入，
+    避免使用者誤以為已輸入正確半形編號。長度上限對應簽收單列印欄寬，
+    超過會被裁掉且無省略號，故在寫入前即擋下。
+    """
+    normalized = (value or "").strip().upper()
+    if not normalized:
+        raise TicketValidationError("請輸入罰單編號。")
+    if not _TICKET_RE.fullmatch(normalized):
+        raise TicketValidationError("罰單編號只能包含英文字母與數字。")
+    if len(normalized) > TICKET_NO_MAX_LEN:
+        raise TicketValidationError(
+            f"罰單編號長度不可超過 {TICKET_NO_MAX_LEN} 個字元。")
+    return normalized
+
+
+def ticketExists(conn, ticket_no, *, exclude_doc_id=None):
+    """該罰單編號是否已被有效列使用（不分大小寫）。
+
+    軟刪除空殼的 `ticket_no` 為 NULL，天然不列入比對——刪除後同一編號可再登錄。
+    `exclude_doc_id` 供編輯時排除自己那列。此處刻意不拋格式例外（純查詢用途），
+    空字串直接回 False。
+    """
+    value = (ticket_no or "").strip().upper()
+    if not value:
+        return False
+    sql = ("SELECT 1 FROM Document_Ticket "
+           "WHERE ticket_no IS NOT NULL AND ticket_no = ? COLLATE NOCASE")
+    params = [value]
+    if exclude_doc_id is not None:
+        sql += " AND doc_id <> ?"
+        params.append(str(exclude_doc_id))
+    return conn.execute(sql + " LIMIT 1", params).fetchone() is not None
+
+
+def _requirePerson(conn, staff_id, label):
+    """驗證人員 id 存在於 Ref_Personnel，回傳去空白後的 id。"""
+    value = (staff_id or "").strip()
+    if not value:
+        raise TicketValidationError(f"請選擇{label}。")
+    row = conn.execute(
+        "SELECT 1 FROM Ref_Personnel WHERE staff_id = ?", (value,)).fetchone()
+    if row is None:
+        raise TicketValidationError(f"查無{label}（{value}），請重新選擇。")
+    return value
+
+
+def _requireCreateDate(create_date):
+    value = (create_date or "").strip()
+    if not value:
+        raise TicketValidationError("請選擇登錄日期。")
+    return value
+
+
+def _requireUnique(conn, ticket_no, *, exclude_doc_id=None):
+    if ticketExists(conn, ticket_no, exclude_doc_id=exclude_doc_id):
+        raise TicketDuplicateError(f"罰單編號 {ticket_no} 已登錄，不可重複。")
+
+
+def _raiseDuplicateIfUnique(exc, ticket_no):
+    """`sqlite3.IntegrityError` 只在確為唯一性違規時轉成編號重複，其餘原樣重拋。
+
+    外鍵違規（`FOREIGN KEY constraint failed`）與 CHECK 違規拋出的同樣是
+    `IntegrityError`，若一律翻譯成「編號重複」會給使用者完全錯誤的提示。
+    ⚠️ 不可改用訊息字串比對：SQLite 把主鍵衝突也寫成
+    `UNIQUE constraint failed: Document_Ticket.doc_id`，流水號與實際
+    最大 doc_id 失準時（還原舊備份、手改 DB）會把「配號撞號」誤報成
+    「罰單編號重複」。改以 extended error code 精確區分：唯一索引違規是
+    2067（`SQLITE_CONSTRAINT_UNIQUE`），主鍵違規是 1555
+    （`SQLITE_CONSTRAINT_PRIMARYKEY`），兩者不同碼。
+    `sqlite_errorcode` 需 Python 3.11+（本專案為 3.12），取不到時退回
+    字串比對，寧可誤報也不要在資料層炸掉。
+    """
+    code = getattr(exc, "sqlite_errorcode", None)
+    if code is not None:
+        is_unique = code == 2067      # SQLITE_CONSTRAINT_UNIQUE
+    else:
+        is_unique = "unique constraint" in str(exc).lower()
+    if is_unique:
+        raise TicketDuplicateError(
+            f"罰單編號 {ticket_no} 已登錄，不可重複。") from exc
+    raise exc
+
+
+def _detail(conn, *, doc_id, create_date, register_date, sender_id,
+            issuer_id, ticket_no):
+    """組稽核 detail 內容（人員一律存當下姓名快照）。"""
+    return (
+        f"編號：{doc_id}；罰單編號：{ticket_no or ''}；"
+        f"開立人員：{auditStaffName(conn, issuer_id)}；"
+        f"登錄日期：{create_date or ''}；"
+        f"發文日期：{register_date or ''}；"
+        f"發文者：{auditStaffName(conn, sender_id)}"
+    )
+
+
+def _writeTicketAudit(conn, *, role, action, label, doc_id, create_date,
+                      register_date, sender_id, issuer_id, ticket_no):
+    """寫一筆罰單稽核。
+
+    `operator` 一律留空：罰單登錄開放所有已登入身分操作，資料列本身不足以
+    判定「是誰按下的」（自助模式沒有發文者、admin 亦可代改），與其寫入可能
+    誤導的姓名，不如只留 `role`。
+    """
+    writeAudit(
+        conn, role=role, action=action, target_table=TICKET_TABLE,
+        target_id=str(doc_id), operator=None,
+        detail=buildDetail(_AUDIT_CATEGORY, label, _detail(
+            conn, doc_id=doc_id, create_date=create_date,
+            register_date=register_date, sender_id=sender_id,
+            issuer_id=issuer_id, ticket_no=ticket_no)))
+
+
+def createTicket(conn, *, issuer_id, ticket_no, self_service, sender_id,
+                 create_date, role):
+    """新增一筆罰單，回傳配發到的 `doc_id`（字串）。
+
+    自助模式：`register_date=''`、`sender_id=NULL`（UI 的發文者欄雖反灰仍可能
+    有殘留值，此處一律忽略）。發文者登錄模式：`register_date=create_date`、
+    寫入指定發文者。`doc_id` 由 `Seq_DocId` 配發，**與罰單編號完全無關**。
+    """
+    normalized = normalizeTicketNo(ticket_no)
+    create_date = _requireCreateDate(create_date)
+    issuer_id = _requirePerson(conn, issuer_id, "開立人員")
+    if self_service:
+        sender_id = None
+        register_date = ""
+    else:
+        sender_id = _requirePerson(conn, sender_id, "發文者")
+        register_date = create_date
+    _requireUnique(conn, normalized)
+
+    doc_id = nextDocId(conn, TICKET_TABLE)
+    try:
+        conn.execute(
+            "INSERT INTO Document_Ticket"
+            "(doc_id, create_date, register_date, sender_id, issuer_id, ticket_no) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (doc_id, create_date, register_date, sender_id, issuer_id,
+             normalized))
+    except sqlite3.IntegrityError as exc:
+        # 併發下他機可能在唯一性檢查與寫入之間搶先登錄同一編號。
+        _raiseDuplicateIfUnique(exc, normalized)
+    _writeTicketAudit(
+        conn, role=role, action="INSERT", label="新增", doc_id=doc_id,
+        create_date=create_date, register_date=register_date,
+        sender_id=sender_id, issuer_id=issuer_id, ticket_no=normalized)
+    return doc_id
+
+
+def updateTicket(conn, *, doc_id, issuer_id, ticket_no, role):
+    """罰單登錄頁的編輯：只改舉發人員與罰單編號。
+
+    `create_date`／`register_date`／`sender_id` 一律保留原值（不因編輯而把
+    未發文改成已發文，或竄改登錄日期）。`last_modified` 由 trigger 維護。
+    """
+    doc_id = str(doc_id)
+    row = conn.execute(
+        "SELECT create_date, register_date, sender_id "
+        "FROM Document_Ticket WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL,
+        (doc_id,)).fetchone()
+    if row is None:
+        raise TicketNotFoundError(
+            f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
+    create_date, register_date, sender_id = row
+
+    normalized = normalizeTicketNo(ticket_no)
+    issuer_id = _requirePerson(conn, issuer_id, "開立人員")
+    _requireUnique(conn, normalized, exclude_doc_id=doc_id)
+
+    try:
+        cur = conn.execute(
+            "UPDATE Document_Ticket SET issuer_id = ?, ticket_no = ? "
+            "WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL,
+            (issuer_id, normalized, doc_id))
+    except sqlite3.IntegrityError as exc:
+        _raiseDuplicateIfUnique(exc, normalized)
+    if cur.rowcount != 1:
+        raise TicketNotFoundError(
+            f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
+    _writeTicketAudit(
+        conn, role=role, action="UPDATE", label="修改", doc_id=doc_id,
+        create_date=create_date, register_date=register_date,
+        sender_id=sender_id, issuer_id=issuer_id, ticket_no=normalized)
+
+
+def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
+                           sender_id, issuer_id, ticket_no, role):
+    """資料庫瀏覽頁的 admin 編輯：可改全部業務欄位。
+
+    `register_date` 必須明確區分 `''`（未發文）與有效日期，**不接受 `None`**
+    ——`NULL` 是刪除狀態的哨兵，只能經由 `deleteTicket()` 產生。
+    另在 helper 層把關「已發文必有發文人員」（有發文日期就必然有發文者：
+    發文者登錄模式當場指定、自助結算整批寫入），資料表 CHECK 不改動——既有
+    資料庫的 CHECK 不會因改 schema 而重建，只有這裡擋得住。
+    """
+    doc_id = str(doc_id)
+    if register_date is None:
+        raise TicketValidationError(
+            "發文日期資料無效；尚未發文請留空白，如需刪除請使用刪除功能。")
+
+    normalized = normalizeTicketNo(ticket_no)
+    create_date = _requireCreateDate(create_date)
+    issuer_id = _requirePerson(conn, issuer_id, "開立人員")
+    register_date = (register_date or "").strip()
+    if (sender_id or "").strip():
+        sender_id = _requirePerson(conn, sender_id, "發文者")
+    elif register_date:
+        raise TicketValidationError("已填寫發文日期時，請一併選擇發文者。")
+    else:
+        sender_id = None
+    _requireUnique(conn, normalized, exclude_doc_id=doc_id)
+
+    try:
+        cur = conn.execute(
+            "UPDATE Document_Ticket SET create_date = ?, register_date = ?, "
+            "sender_id = ?, issuer_id = ?, ticket_no = ? "
+            "WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL,
+            (create_date, register_date, sender_id, issuer_id, normalized,
+             doc_id))
+    except sqlite3.IntegrityError as exc:
+        _raiseDuplicateIfUnique(exc, normalized)
+    if cur.rowcount != 1:
+        raise TicketNotFoundError(
+            f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
+    _writeTicketAudit(
+        conn, role=role, action="UPDATE", label="修改", doc_id=doc_id,
+        create_date=create_date, register_date=register_date,
+        sender_id=sender_id, issuer_id=issuer_id, ticket_no=normalized)
+
+
+def deleteTicket(conn, *, doc_id, role):
+    """軟刪除：清空業務欄位、保留 `doc_id` 空殼（流水號永久佔用）。
+
+    `register_date IS NOT NULL` 同時是併發刪除保護——他機已刪則 rowcount=0，
+    拋 `TicketNotFoundError` 由呼叫端提示，不會重複寫稽核。
+    ⚠️ `last_modified` 明確寫入 `datetime('now','localtime')`：與 trigger 同一
+    時區基準，不可用 `CURRENT_TIMESTAMP`（UTC，在本地時間之前，會讓瀏覽頁的
+    `MAX(last_modified)` 指紋倒退而漏刷新）。
+    """
+    doc_id = str(doc_id)
+    row = conn.execute(
+        "SELECT create_date, register_date, sender_id, issuer_id, ticket_no "
+        "FROM Document_Ticket WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL,
+        (doc_id,)).fetchone()
+
+    cur = conn.execute(
+        "UPDATE Document_Ticket "
+        "SET create_date=NULL, "
+        "    register_date=NULL, "
+        "    sender_id=NULL, "
+        "    issuer_id=NULL, "
+        "    ticket_no=NULL, "
+        "    last_modified=datetime('now','localtime') "
+        "WHERE doc_id=? AND register_date IS NOT NULL",
+        (doc_id,))
+    if cur.rowcount != 1:
+        raise TicketNotFoundError(
+            f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
+
+    create_date, register_date, sender_id, issuer_id, ticket_no = row
+    _writeTicketAudit(
+        conn, role=role, action="DELETE", label="刪除", doc_id=doc_id,
+        create_date=create_date, register_date=register_date,
+        sender_id=sender_id, issuer_id=issuer_id, ticket_no=ticket_no)

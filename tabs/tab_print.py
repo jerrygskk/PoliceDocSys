@@ -1,5 +1,6 @@
 import io
 import sqlite3
+from dataclasses import dataclass
 from datetime import date
 
 import matplotlib
@@ -7,6 +8,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.font_manager as fm
+from matplotlib.transforms import Bbox, TransformedBbox
 from matplotlib.backends.backend_pdf import PdfPages
 
 from PySide6.QtWidgets import (
@@ -186,6 +188,7 @@ SCHEMES = {
     'criminal': ('#6B8E4E', '#A8C68F', '#EEF5E8', '#4A6A32', '#1E3B12'),
     'general':  ('#F4B183', '#F8CBAD', '#FCE4D6', '#C05000', '#3D1500'),
     'reward':   ('#9B8BB8', '#C4B7D7', '#F1EDF6', '#66547F', '#2E2238'),
+    'ticket':   ('#8FA8C7', '#B9CBE0', '#EAF0F7', '#4A6D93', '#1B3049'),
 }
 
 STANDARD_COLUMNS = (
@@ -368,6 +371,414 @@ def _draw_page(side_label, table_title, print_date, disp_date,
     return fig
 
 
+# ── 罰單簽收表：純邏輯層（排序／六欄分組／分頁）────────────
+# 設計原則：排序、分頁、rowspan 全部在這裡算完，drawTicketPage() 只消費已
+# 整理好的 TicketPage／grid，不得在 renderer 的座標迴圈裡臨時決策資料。
+@dataclass
+class TicketCell:
+    """簽收表單一格的展示資料。
+
+    `issuer_rowspan`：本格所屬「欄內連續同一舉發人員」群組的合併列數；
+    群組起始列＝實際列數（≥1），群組內非起始列＝0（renderer 依此判斷
+    是否要畫姓名／合併框，不重覆顯示姓名）。由 `buildTicketGrid()` 計算，
+    `sortTicketRows()`／`paginateTicketRows()` 產生的清單一律先預設為 1
+    （尚未分欄，尚無「群組」概念）。
+    """
+    doc_id: str = ''
+    ticket_no: str = ''
+    issuer_id: str = ''
+    issuer_name: str = ''
+    issuer_sort_order: int = 0
+    issuer_rowspan: int = 1
+
+
+def _toTicketCell(row):
+    """`row` 可為 dict（DB 查詢列）或既有 TicketCell（複製一份，避免呼叫端
+    重複使用同一物件、被 buildTicketGrid 的原地標記互相污染）。"""
+    if isinstance(row, TicketCell):
+        return TicketCell(
+            doc_id=row.doc_id, ticket_no=row.ticket_no,
+            issuer_id=row.issuer_id, issuer_name=row.issuer_name,
+            issuer_sort_order=row.issuer_sort_order)
+    return TicketCell(
+        doc_id=row.get('doc_id', ''),
+        ticket_no=row['ticket_no'],
+        issuer_id=row.get('issuer_id', ''),
+        issuer_name=row['issuer_name'],
+        issuer_sort_order=row.get('issuer_sort_order', 0))
+
+
+def sortTicketRows(rows):
+    """依規格排序：`(issuer_sort_order, issuer_name, ticket_no.upper())`。"""
+    cells = [_toTicketCell(r) for r in rows]
+    cells.sort(key=lambda c: (c.issuer_sort_order, c.issuer_name,
+                               c.ticket_no.upper()))
+    return cells
+
+
+@dataclass
+class TicketPage:
+    """一頁簽收表的已整理資料。`items` 為本頁攤平（未分欄）清單，供
+    `buildTicketGrid()` 進一步分欄；`grid` 由呼叫端另行以
+    `buildTicketGrid(page.items, body_rows)` 產生，本 dataclass 不預先算，
+    避免與分頁邏輯耦合（body_rows 是每頁固定值，不必隨每頁重算）。"""
+    items: list
+    show_summary: bool = False
+    total_count: int = 0
+    page_num: int = 1
+    total_pages: int = 1
+
+
+def paginateTicketRows(rows, *, full_rows, final_rows):
+    """排序後依容量分頁：非末頁 `full_rows*3`、末頁 `final_rows*3`（末頁保留
+    summary 空間，容量通常較小）。
+
+    0 筆回傳空清單（沿用既有 `_build_sections` 慣例：查無資料的類別不產生
+    section／頁面，呼叫端應如 `if ticket_rows: ...` 才呼叫本函式，不會因此
+    印出一張空白簽收頁）。
+
+    ⚠️ 與 brief 虛擬碼的兩點差異（刻意修正，見交付報告）：
+    1. `total` 在排序後、切頁前先算好（`len(sorted_rows)`），不是憑空引用。
+    2. 不採 `while len(rows) > final_rows*3: rows = rows[full_rows*3:]` 的
+       寫法——當 `full_rows*3` 介於「總筆數」與「總筆數-末頁容量」之間時
+       （例如 total=7、full=9、final=6），該寫法會把全部 7 筆一次吃進「非
+       末頁」，讓真正的末頁淪為 0 筆卻仍被標記 show_summary，等於印出一張
+       空白但有 summary 的頁。
+
+    ⚠️ 分頁策略：非末頁優先填滿（貪婪取 `full_capacity`），只有「整批剩餘
+    量可一次塞進本頁（`take == len(remaining)`）」時才會讓末頁變成 0
+    筆——此時回退少取 1 筆，把它留給末頁，確保末頁恆為 1~final_capacity
+    筆。這樣非末頁的底部空間才會「全部用於明細」（spec §11.4），不會像舊版
+    只取「剛好留給末頁的量」導致非末頁系統性留白。`full_rows`／`final_rows`
+    < 1 時仍由下方防呆直接拋例外，不會無窮迴圈。
+    """
+    if full_rows < 1 or final_rows < 1:
+        raise ValueError("full_rows 與 final_rows 必須為正整數。")
+    sorted_rows = sortTicketRows(rows)
+    total = len(sorted_rows)
+    if total == 0:
+        return []
+
+    full_capacity = full_rows * 3
+    final_capacity = final_rows * 3
+
+    pages_items = []
+    remaining = sorted_rows
+    while len(remaining) > final_capacity:
+        take = min(full_capacity, len(remaining))
+        if len(remaining) - take == 0:
+            # 整批剩餘一次吃光會讓末頁淪為 0 筆：回退 1 筆留給末頁。
+            take = len(remaining) - 1
+        pages_items.append(remaining[:take])
+        remaining = remaining[take:]
+    pages_items.append(remaining)
+
+    pages = []
+    n = len(pages_items)
+    for idx, items in enumerate(pages_items, start=1):
+        pages.append(TicketPage(
+            items=items,
+            show_summary=(idx == n),
+            total_count=total,
+            page_num=idx,
+            total_pages=n))
+    return pages
+
+
+def buildTicketGrid(rows, body_rows):
+    """把一頁的攤平清單（已排序）切成左／中／右三個直欄，每欄最多
+    `body_rows` 筆，並在「每欄之內」獨立計算連續同一舉發人員的
+    rowspan——跨欄（甚至跨頁，因為每頁各自呼叫本函式）一律重建群組、
+    重新顯示姓名，不做全域合併。純資料整形，不畫圖。
+
+    `rows` 可為 dict 或 TicketCell；回傳前一律轉為 TicketCell 新物件。
+    """
+    if body_rows < 1:
+        raise ValueError("body_rows 必須為正整數。")
+    cells = [_toTicketCell(r) for r in rows]
+    capacity = body_rows * 3
+    if len(cells) > capacity:
+        raise ValueError(
+            f"資料筆數（{len(cells)}）超過本頁欄位容量（{capacity}）。")
+
+    bands = [cells[i * body_rows:(i + 1) * body_rows] for i in range(3)]
+    for band in bands:
+        _applyLocalRowspan(band)
+    return bands
+
+
+def _applyLocalRowspan(band):
+    """單一直欄內，就地標記連續同一 issuer_id 的 rowspan（群組起始列＝
+    實際列數；群組內其餘列＝0 且姓名清空，交給 renderer 判斷合併）。"""
+    i, n = 0, len(band)
+    while i < n:
+        j = i
+        while (j + 1 < n and band[i].issuer_id
+               and band[j + 1].issuer_id == band[i].issuer_id):
+            j += 1
+        span = j - i + 1
+        band[i].issuer_rowspan = span
+        for k in range(i + 1, j + 1):
+            band[k].issuer_rowspan = 0
+            band[k].issuer_name = ''
+        i = j + 1
+
+
+# ── 罰單簽收表：renderer（只消費已整理好的 grid／TicketPage）────
+# spec §11.1：每頁三組並排、共六欄（開立人員｜罰單編號 ×3），逐列「簽收」
+# 子欄是 Task 8 骨架的規格外殘留，已移除（簽收改為 §11.4 末頁一次性簽收人區）。
+TICKET_SUB_HEADERS = ('開立人員', '罰單編號')
+# 開立人員欄略窄、罰單編號欄略寬（spec §11.1）；9 碼以上編號需保留足夠寬度
+# 不縮字（如 D4RD15263）。
+_TICKET_SUB_RATIOS = (0.45, 0.55)
+
+# 罰單簽收表標題：比照既有四張，可在設定頁「簽收表標題」自訂（print_title_ticket）；
+# 未設定走 db_utils.PRINT_TITLE_DEFAULTS 的 ○○ 預設（見 printTitle(db_path, 'ticket')）。
+
+# spec §11.4：末頁簽收人區高度至少為一般明細列的兩倍。
+TICKET_SUMMARY_H = 2 * ROW_H
+
+# spec §11.4／brief M1：每頁容量固定為 renderer 常數，不同電腦一致；並加防呆
+# 避免 body_rows 大到讓表格衝出 BOT（既有 ROW_H=0.052、可用高約 0.802 →
+# 上限約 15 列）。
+_TICKET_MAX_ROWS_SAFETY = 15
+
+
+def _ticket_body_avail():
+    return TOP - DATE_H - TITLE_H - HDR_H - BOT
+
+
+def _ticket_full_rows():
+    """非末頁：底部空間全部用於明細（spec §11.4）。"""
+    avail = _ticket_body_avail()
+    return max(1, min(_TICKET_MAX_ROWS_SAFETY, int(avail / ROW_H)))
+
+
+def _ticket_final_rows():
+    """末頁：扣除至少兩倍明細列高的簽收區。"""
+    avail = _ticket_body_avail() - TICKET_SUMMARY_H
+    return max(1, min(_TICKET_MAX_ROWS_SAFETY, int(avail / ROW_H)))
+
+
+TICKET_FULL_ROWS = _ticket_full_rows()
+TICKET_FINAL_ROWS = _ticket_final_rows()
+
+
+def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
+                   page_num=1, total_pages=1, scheme='ticket',
+                   show_summary=False, total_count=0):
+    """畫一頁罰單簽收表：三組並排、共六欄（開立人員｜罰單編號 ×3），
+    開立人員依 `TicketCell.issuer_rowspan` 合併——本函式只讀取已算好的欄位
+    值，不做任何排序、分組或分頁判斷。
+
+    `grid`：`buildTicketGrid()` 回傳的三欄清單。`body_rows`：本頁固定列數
+    （用於畫滿版面高度，筆數不足的欄以空白列補滿，維持各頁版面一致，
+    比照既有四種簽收表 `_draw_page(fill_to=...)` 的作法）。
+
+    `show_summary=True` 時，於表格下方加畫一次「總計／簽收人」區
+    （spec §11.4，高度固定為 `TICKET_SUMMARY_H`，至少為兩倍明細列高）。
+    """
+    fig = plt.figure(figsize=(A4_W, A4_H))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
+    fig.patch.set_facecolor('white')
+    c_title, c_hdr, c_row_odd, c_border, c_text = SCHEMES[scheme]
+
+    ax.text(TABLE_L + PAD, TOP - DATE_H/2, f'列印日期　{print_date}',
+            fontproperties=fp(8), ha='left', va='center',
+            transform=ax.transAxes, color='#333333')
+    ax.text(1-R-PAD, TOP - DATE_H/2, f'發文日期：{disp_date}',
+            fontproperties=fp(10, bold=True), ha='right', va='center',
+            transform=ax.transAxes, color=c_text)
+    cy = TOP - DATE_H
+    title_top = cy   # 標題帶上緣＝外框上緣（F1：外框須涵蓋標題帶與欄名列）
+
+    ax.add_patch(patches.FancyBboxPatch(
+        (TABLE_L, cy-TITLE_H), TABLE_W, TITLE_H,
+        boxstyle='square,pad=0', lw=0, fc=c_title,
+        transform=ax.transAxes, zorder=1))
+    ax.text(TABLE_L + TABLE_W/2, cy - TITLE_H/2, table_title,
+            fontproperties=fp(14, bold=True), ha='center', va='center',
+            transform=ax.transAxes, color=c_text)
+    cy -= TITLE_H
+    header_top = cy   # 欄名列上緣：直欄線穿過欄名列時的上界（比照既有 _draw_page）
+
+    band_w = TABLE_W / 3
+
+    def _sub_xs(band_left):
+        """回傳該組內每個子欄（開立人員／罰單編號）的左緣 x：長度固定為 2
+        （對應 `TICKET_SUB_HEADERS`／`_TICKET_SUB_RATIOS`，皆已移除簽收子欄）。"""
+        xs = [band_left]
+        for r in _TICKET_SUB_RATIOS[:-1]:
+            xs.append(xs[-1] + band_w * r)
+        return xs
+
+    # 表頭
+    ax.plot([TABLE_L, TABLE_L+TABLE_W], [cy]*2, color=c_border, lw=0.8,
+            transform=ax.transAxes, zorder=4)
+    ax.add_patch(patches.FancyBboxPatch(
+        (TABLE_L, cy-HDR_H), TABLE_W, HDR_H,
+        boxstyle='square,pad=0', lw=0, fc=c_hdr,
+        transform=ax.transAxes, zorder=1))
+    for b in range(3):
+        sub_xs = _sub_xs(TABLE_L + band_w * b)
+        for hdr, sx, ratio in zip(TICKET_SUB_HEADERS, sub_xs, _TICKET_SUB_RATIOS):
+            ax.text(sx + band_w*ratio/2, cy-HDR_H/2, hdr,
+                    fontproperties=fp(11, bold=True), ha='center', va='center',
+                    transform=ax.transAxes, color=c_text)
+    ax.plot([TABLE_L, TABLE_L+TABLE_W], [cy-HDR_H]*2, color=c_border, lw=0.8,
+            transform=ax.transAxes)
+    cy -= HDR_H
+    table_top = cy
+
+    # 資料列（開立人員合併：僅在群組起始列畫姓名，垂直置中於合併範圍）
+    for ridx in range(body_rows):
+        row_top = cy
+        bg = c_row_odd if ridx % 2 == 0 else '#FFFFFF'
+        ax.add_patch(patches.FancyBboxPatch(
+            (TABLE_L, cy-ROW_H), TABLE_W, ROW_H,
+            boxstyle='square,pad=0', lw=0, fc=bg,
+            transform=ax.transAxes, zorder=1))
+        for b in range(3):
+            band = grid[b] if b < len(grid) else []
+            sub_xs = _sub_xs(TABLE_L + band_w * b)
+            cell = band[ridx] if ridx < len(band) else None
+            if cell is None:
+                continue
+            if cell.issuer_rowspan > 0:
+                merge_h = ROW_H * cell.issuer_rowspan
+                if cell.issuer_rowspan > 1:
+                    # F4：逐列斑馬紋是整列上色，姓名合併格會露出格內交替深淺。
+                    # 疊一塊該群組起始列底色的整塊矩形蓋掉合併範圍內的分色
+                    # （只影響外觀，不動列高／格線等已驗證幾何）。
+                    ax.add_patch(patches.FancyBboxPatch(
+                        (sub_xs[0], row_top - merge_h),
+                        band_w*_TICKET_SUB_RATIOS[0], merge_h,
+                        boxstyle='square,pad=0', lw=0, fc=bg,
+                        transform=ax.transAxes, zorder=1.5))
+                text, font = _wrap_clamp(cell.issuer_name,
+                                          band_w*_TICKET_SUB_RATIOS[0],
+                                          max_lines=1, fixed_size=12)
+                ax.text(sub_xs[0] + band_w*_TICKET_SUB_RATIOS[0]/2,
+                        row_top - merge_h/2, text,
+                        fontproperties=font, ha='center', va='center',
+                        transform=ax.transAxes, color='#111111')
+            no_font = _fit_font(cell.ticket_no, band_w*_TICKET_SUB_RATIOS[1],
+                                 max_size=12, min_size=8)
+            no_x0 = sub_xs[1]
+            no_x1 = sub_xs[1] + band_w*_TICKET_SUB_RATIOS[1]
+            no_text = ax.text(no_x0 + (no_x1-no_x0)/2,
+                    cy - ROW_H/2, cell.ticket_no,
+                    fontproperties=no_font, ha='center', va='center',
+                    transform=ax.transAxes, color='#111111')
+            # F2：_fit_font 以 8pt 觸底、非精確量測，超長編號（例如 20 字元）仍可能
+            # 溢出格寬壓到鄰欄；用該格自己的 bbox 當 clip box（而非整張 axes，
+            # ax 涵蓋整頁，單純 clip_on=True 擋不住跨欄溢出），確保超出部分被
+            # 裁掉、不污染鄰欄。
+            no_text.set_clip_box(TransformedBbox(
+                Bbox.from_extents(no_x0, cy - ROW_H, no_x1, cy), ax.transAxes))
+            no_text.set_clip_on(True)
+        cy -= ROW_H
+    table_bottom = cy
+
+    # 外框／欄線／組間分隔線
+    # F1：外框上緣須涵蓋標題帶與欄名列（比照既有 _draw_page 的 box_top = TOP-DATE_H
+    # 做法），不可用 table_top（欄名列下緣）——那樣會把標題帶與欄名列畫在外框之外。
+    box_top = title_top
+    if show_summary:
+        summary_top = table_bottom
+        summary_bottom = summary_top - TICKET_SUMMARY_H
+        box_bottom = summary_bottom
+    else:
+        box_bottom = table_bottom
+    box_h = box_top - box_bottom
+    ax.add_patch(patches.FancyBboxPatch(
+        (TABLE_L, box_bottom), TABLE_W, box_h, boxstyle='square,pad=0', lw=1.2,
+        ec=c_border, fc='none', transform=ax.transAxes, zorder=3))
+    # 直欄線只穿過欄名列（到 header_top），不穿過標題帶（比照既有 _draw_page：
+    # 欄線畫到 box_top - TITLE_H，即欄名列上緣，標題帶內不分欄）。
+    for b in range(3):
+        band_left = TABLE_L + band_w * b
+        if b > 0:
+            ax.plot([band_left, band_left], [table_bottom, header_top], color=c_border,
+                    lw=0.8, transform=ax.transAxes)
+        for sx in _sub_xs(band_left)[1:]:
+            ax.plot([sx, sx], [table_bottom, header_top], color=c_border, lw=0.4,
+                    transform=ax.transAxes)
+
+    # 明細水平線：I2 — issuer 合併區只移除合併內部的 issuer 水平線，保留
+    # number 格水平線（罰單編號逐張各占一格）。以「每組每子欄」為單位獨立
+    # 判斷（同一列在不同組的合併狀態互不相干）。
+    for b in range(3):
+        band = grid[b] if b < len(grid) else []
+        sub_xs = _sub_xs(TABLE_L + band_w * b)
+        band_left = TABLE_L + band_w * b
+        issuer_x0, issuer_x1 = sub_xs[0], sub_xs[1]
+        number_x0, number_x1 = sub_xs[1], band_left + band_w
+        for ridx in range(1, body_rows):
+            ry = table_top - ROW_H * ridx
+            ax.plot([number_x0, number_x1], [ry, ry], color=c_border, lw=0.4,
+                    transform=ax.transAxes)
+            cell = band[ridx] if ridx < len(band) else None
+            continues_merge = cell is not None and cell.issuer_rowspan == 0
+            if not continues_merge:
+                ax.plot([issuer_x0, issuer_x1], [ry, ry], color=c_border,
+                        lw=0.4, transform=ax.transAxes)
+
+    # 末頁 summary：總計＋簽收人（僅畫一次，spec §11.4）
+    if show_summary:
+        ax.plot([TABLE_L, TABLE_L+TABLE_W], [summary_top]*2, color=c_border,
+                lw=0.8, transform=ax.transAxes)
+        mid_x = TABLE_L + TABLE_W * 0.5
+        ax.plot([mid_x, mid_x], [summary_bottom, summary_top], color=c_border,
+                lw=0.8, transform=ax.transAxes)
+        ax.text(TABLE_L + TABLE_W*0.25, (summary_top+summary_bottom)/2,
+                f'總計：{total_count} 張',
+                fontproperties=fp(12, bold=True), ha='center', va='center',
+                transform=ax.transAxes, color=c_text)
+        ax.text(mid_x + PAD*1.5, (summary_top+summary_bottom)/2,
+                '簽收人：',
+                fontproperties=fp(12, bold=True), ha='left', va='center',
+                transform=ax.transAxes, color=c_text)
+
+    ax.text(0.5, BOT/2, str(page_num), fontproperties=fp(9),
+            ha='center', va='center', transform=ax.transAxes, color='#555555')
+    return fig
+
+
+# 日期欄名白名單（brief Step3 明令）：只能從這兩個固定欄名擇一，不接受字串插入 SQL。
+_TICKET_DATE_COLS = ("register_date", "create_date")
+
+
+def queryTicketPrintRows(db_path, date_text):
+    """查詢指定日期可列印的罰單（依輸入模式二選一日期欄，spec §5）：
+
+    - 自助模式：以 `register_date`（已發文取號日）查已發文罰單。
+    - 發文者登錄模式：以 `create_date` 查，但仍要求 `register_date` 有效
+      （非 NULL 且非哨兵空字串），避免尚未發文的資料因 `create_date` 剛好
+      相同而被誤列。
+    """
+    date_col = "register_date" if isSelfServiceMode(db_path) else "create_date"
+    if date_col not in _TICKET_DATE_COLS:
+        raise ValueError("非法日期欄名")   # 防呆：白名單外一律拒絕，不會走到這裡
+    conn = sqlite3.connect(db_path)
+    try:
+        sql = (
+            "SELECT doc_id, issuer_id, issuer_name, issuer_sort_order, ticket_no "
+            "FROM Document_Ticket_Full "
+            f"WHERE {date_col}=? "
+            "  AND register_date IS NOT NULL "
+            "  AND register_date<>'' "
+            "  AND ticket_no IS NOT NULL "
+            "ORDER BY issuer_sort_order, ticket_no COLLATE NOCASE"
+        )
+        cur = conn.execute(sql, (date_text,))
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def _build_sections(db_path, date_str):
     """查詢指定日期並回傳自帶類別、配色與欄位角色的列印 sections。"""
     conn = sqlite3.connect(db_path)
@@ -429,6 +840,12 @@ def _build_sections(db_path, date_str):
         sections.append({'key': 'reward', 'side': '敘獎',
             'title': printTitle(db_path, 'reward'), 'columns': REWARD_COLUMNS,
             'rows': reward_rows, 'is_crim': False, 'scheme': 'reward'})
+    # 罰單：專用 renderer（六欄＋末頁總計／簽收人），不硬塞既有 subject／unit
+    # 欄位（brief Step5 明令）。標題比照既有四張，走 print_title_ticket 設定。
+    ticket_rows = queryTicketPrintRows(db_path, date_str)
+    if ticket_rows:
+        sections.append({'key': 'ticket', 'kind': 'ticket', 'side': '罰單簽收',
+            'title': printTitle(db_path, 'ticket'), 'rows': ticket_rows, 'scheme': 'ticket'})
     return sections
 
 
@@ -450,23 +867,44 @@ def generate_pages(db_path, date_str):
         fig.patch.set_facecolor('white')
         return fig
 
-    # 各 section 獨立頁碼
-    section_page_counts = []
-    for section in sections:
-        n = max(1, -(-len(section['rows']) // per))
-        section_page_counts.append(n)
-
-    figs = []
-    for section, section_total in zip(sections, section_page_counts):
+    def _standard_section_figs(section):
         rows = section['rows']
+        n = max(1, -(-len(rows) // per))
         section_figs = []
         for page_num, start in enumerate(range(0, max(len(rows), 1), per), start=1):
             chunk = rows[start:start+per]
             fig = _draw_page(section['side'], section['title'], print_date, disp_date,
                              section['columns'], chunk, per, section['is_crim'],
-                             page_num=page_num, total_pages=section_total,
+                             page_num=page_num, total_pages=n,
                              scheme=section['scheme'], note_text=note_text)
             section_figs.append(fig)
+        return section_figs, n
+
+    def _ticket_section_figs(section):
+        # 罰單專用 renderer：容量固定用 TICKET_FULL_ROWS／TICKET_FINAL_ROWS
+        # （renderer 版型常數，見 M1），不消費 per（那是既有四種簽收表的
+        # 逐頁容量，與六欄罰單表版面不同）。
+        ticket_pages = paginateTicketRows(
+            section['rows'], full_rows=TICKET_FULL_ROWS, final_rows=TICKET_FINAL_ROWS)
+        section_figs = []
+        for tp in ticket_pages:
+            body_rows = TICKET_FINAL_ROWS if tp.show_summary else TICKET_FULL_ROWS
+            grid = buildTicketGrid(tp.items, body_rows=body_rows)
+            fig = drawTicketPage(
+                grid, table_title=section['title'], print_date=print_date,
+                disp_date=disp_date, body_rows=body_rows,
+                page_num=tp.page_num, total_pages=tp.total_pages,
+                scheme=section['scheme'], show_summary=tp.show_summary,
+                total_count=tp.total_count)
+            section_figs.append(fig)
+        return section_figs, len(ticket_pages)
+
+    figs = []
+    for section in sections:
+        if section.get('kind') == 'ticket':
+            section_figs, section_total = _ticket_section_figs(section)
+        else:
+            section_figs, section_total = _standard_section_figs(section)
 
         figs.extend(section_figs)
 
@@ -604,9 +1042,9 @@ class TabPrint(BaseTab):
         self._refresh_settle_group()
 
     def _titles_sig(self):
-        """目前四張表標題與註記的指紋，用來判斷產生後是否被改過。"""
+        """目前各張表標題與註記的指紋，用來判斷產生後是否被改過。"""
         return tuple(printTitle(self.db_path, w)
-                     for w in ("task", "crim", "gen", "reward", "note"))
+                     for w in ("task", "crim", "gen", "reward", "ticket", "note"))
 
     def _refresh_title_warn(self):
         """簽收表標題未設定（仍 ○○ 預設）時顯示頂部紅字。"""
@@ -642,15 +1080,16 @@ class TabPrint(BaseTab):
             self._refresh_unissued()
 
     def _refresh_unissued(self):
-        """重算未發文計數並更新 lbl_unissued。"""
+        """重算未發文計數並更新 lbl_unissued（依 SETTLE_META 逐型態列出，
+        新增結算型態時本處自動涵蓋，不需另改）。"""
         try:
-            from ui_utils.settle_dialog import count_unissued
+            from ui_utils.settle_dialog import SETTLE_META, count_unissued
             counts = count_unissued(self.db_path)
-            a = counts.get("crim", 0)
-            b = counts.get("gen", 0)
-            total = a + b
-            self.lbl_unissued.setText(
-                f"未發文：{total} 筆（刑案 {a}／一般 {b}）")
+            per_type = {m["key"]: counts.get(m["key"], 0) for m in SETTLE_META}
+            total = sum(per_type.values())
+            parts = "／".join(
+                f"{m['label']} {per_type[m['key']]}" for m in SETTLE_META)
+            self.lbl_unissued.setText(f"未發文：{total} 筆（{parts}）")
         except Exception:
             self.lbl_unissued.setText("未發文：—")
 

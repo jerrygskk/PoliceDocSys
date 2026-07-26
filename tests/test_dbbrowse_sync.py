@@ -67,6 +67,13 @@ class _BrowseBase(unittest.TestCase):
             " subject_summary,is_reported,is_electronic) VALUES(?,?,?,?,?,?,?,?,?)",
             [("1", "2026-07-01", "P02", "CT01", "CS01", "P01", "甲嫌竊盜案", 0, ""),
              ("2", "2026-07-02", "P02", "CT01", "CS01", "P02", "乙嫌竊盜案", 0, "")])
+        # 罰單：兩筆
+        conn.executemany(
+            "INSERT INTO Document_Ticket"
+            "(doc_id,create_date,register_date,sender_id,issuer_id,ticket_no) "
+            "VALUES(?,?,?,?,?,?)",
+            [("1", "2026-07-01", "2026-07-02", "P01", "P02", "AB1234"),
+             ("2", "2026-07-03", "", None, "P02", "CD5678")])
         conn.commit()
         conn.close()
 
@@ -113,6 +120,10 @@ class TestReloadAlignment(_BrowseBase):
     def test_crim_reload_three_structures_aligned(self):
         self.tab.buildInitial("crim")
         self._assert_aligned("crim", ["1", "2"])
+
+    def test_ticket_reload_three_structures_aligned(self):
+        self.tab.buildInitial("ticket")
+        self._assert_aligned("ticket", ["1", "2"])
 
 
 class TestDiffUpdateAlignment(_BrowseBase):
@@ -177,6 +188,52 @@ class TestDiffUpdateAlignment(_BrowseBase):
         self.tab._diffUpdate("crim")
         self._assert_aligned("crim", ["2"])
 
+    def test_ticket_settlement_update_reflected_via_on_activated(self):
+        # 模擬自助結算（settle_selected 的效果）：另一頁把未發文罰單補上
+        # 發文日期／發文者。驗證瀏覽頁「切回來」真正用到的入口 on_activated()
+        # （指紋比對→_diffUpdate），不是直接呼叫 _diffUpdate() 繞過指紋層。
+        self.tab.buildInitial("ticket")
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "UPDATE Document_Ticket SET register_date=?, sender_id=?, "
+            "last_modified=? WHERE doc_id=?",
+            ("2026-07-23", "P01", "2099-01-01 00:00:00", "2"))
+        conn.commit()
+        conn.close()
+
+        self.tab.on_activated()
+
+        rows = self._visible_rows("ticket")
+        date_col = _col_idx("ticket", "register_date")
+        self.assertIn("2026-07-23", [row[date_col] for row in rows])
+
+    def test_ticket_external_insert_reflected_via_on_activated(self):
+        self.tab.buildInitial("ticket")
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "INSERT INTO Document_Ticket"
+            "(doc_id,create_date,register_date,sender_id,issuer_id,ticket_no) "
+            "VALUES(?,?,?,?,?,?)",
+            ("3", "2026-07-05", "2026-07-05", "P01", "P02", "EF9012"))
+        conn.commit()
+        conn.close()
+
+        self.tab.on_activated()
+
+        self._assert_aligned("ticket", ["1", "2", "3"])
+
+    def test_ticket_delete_via_domain_helper_removes_row_and_keeps_alignment(self):
+        # 罰單瀏覽頁刪除走 lib.ticket_utils.deleteTicket()（非 _DELETE_CLEAR_SQL），
+        # 驗證 _diffUpdate 仍能感知並保持 1:1 對應（與其餘三表共用同一機制）。
+        from lib.ticket_utils import deleteTicket
+        self.tab.buildInitial("ticket")
+        conn = sqlite3.connect(self.db)
+        deleteTicket(conn, doc_id="1", role="admin")
+        conn.commit()
+        conn.close()
+        self.tab._diffUpdate("ticket")
+        self._assert_aligned("ticket", ["2"])
+
 
 class TestRowVisibilityUpdatesEnabled(_BrowseBase):
     """不變式 3：_applyRowVisibility 過程丟例外時，updatesEnabled 最終仍為 True。"""
@@ -240,6 +297,47 @@ class TestApplyFilter(_BrowseBase):
         for pos in range(table.rowCount()):
             self.assertTrue(table.isRowHidden(pos))
         self.assertEqual(self.tab._lastSearch["task"][2], 0)
+
+
+class TestGenericViewNumericOrder(unittest.TestCase):
+    """保護對象：queryBrowseRows 泛用 view 路徑的 ORDER BY（非 raw 表，如 task/crim/gen/ticket）。
+
+    doc_id 為文字欄，若無明確數字排序，rowid 掃描順序在查詢計畫改變（如走
+    doc_id PK 索引）時會退化成字串序（'10' 排在 '2' 之前）。故意先插入
+    doc_id='10' 再插入 '2'，只有明確 ORDER BY CAST(... AS INTEGER) 才能
+    正確排出 ['2', '10']。"""
+
+    def setUp(self):
+        fd, self.db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = sqlite3.connect(self.db)
+        applySchema(conn)
+        conn.executescript("""
+            INSERT INTO Ref_Personnel(staff_id,staff_name,is_active,sort_order) VALUES
+                ('P01','測試員A',1,1),('P02','測試員B',1,2),('P03','測試員C',1,3);
+            INSERT INTO Ref_Departments(dept_id,dept_name,is_active,sort_order) VALUES
+                ('D01','偵查隊',1,1);
+        """)
+        conn.executemany(
+            "INSERT INTO Document_Task"
+            "(doc_id,receive_date,receive_id,dept_id,subject,processor_id,"
+            " deadline,dispatch_date,sender_id,timestamp) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            [("10", "2026-07-01", "P02", "D01", "先插入的十號", "P01",
+              "2026-07-20", "2026-07-05", "P03", "2026-07-01 09:00:00"),
+             ("2", "2026-07-02", "P02", "D01", "後插入的二號", "P02",
+              "2026-07-21", None, "P03", "2026-07-02 09:00:00")])
+        conn.commit()
+        conn.close()
+        self.addCleanup(lambda: os.remove(self.db) if os.path.exists(self.db) else None)
+
+    def test_task_view_orders_doc_id_numerically(self):
+        from tabs.tab_dbbrowse import queryBrowseRows
+        conn = sqlite3.connect(self.db)
+        try:
+            rows = queryBrowseRows(conn, "task")
+        finally:
+            conn.close()
+        self.assertEqual([r["編號"] for r in rows], ["2", "10"])
 
 
 if __name__ == "__main__":

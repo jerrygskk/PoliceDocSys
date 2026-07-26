@@ -42,7 +42,7 @@ class TestRewardBrowse(unittest.TestCase):
         return tab
 
     def test_metadata_is_raw_and_has_single_key_source(self):
-        self.assertEqual(BROWSE_KEYS, ("task", "crim", "gen", "reward"))
+        self.assertEqual(BROWSE_KEYS, ("task", "crim", "gen", "reward", "ticket"))
         self.assertEqual(PRELOAD_KEYS, ("task", "crim", "gen"))
         meta = TABLE_META["reward"]
         self.assertTrue(meta["raw"])

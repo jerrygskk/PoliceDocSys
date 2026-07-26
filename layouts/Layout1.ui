@@ -3,7 +3,7 @@
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
   <property name="geometry">
-   <rect><x>0</x><y>0</y><width>1320</width><height>768</height></rect>
+   <rect><x>0</x><y>0</y><width>1440</width><height>780</height></rect>
   </property>
   <property name="windowTitle"><string>公文管理系統</string></property>
   <widget class="QWidget" name="centralwidget">
@@ -127,8 +127,11 @@
       <widget class="QWidget" name="tab_reward">
        <attribute name="title"><string>敘獎登錄</string></attribute>
       </widget>
-      <widget class="QWidget" name="tab_ticket">
+      <widget class="QWidget" name="tab_reward_issue">
        <attribute name="title"><string>敘獎發文</string></attribute>
+      </widget>
+      <widget class="QWidget" name="tab_ticket">
+       <attribute name="title"><string>罰單登錄</string></attribute>
       </widget>
       <widget class="QWidget" name="tab_print">
        <attribute name="title"><string>簽收單列印</string></attribute>

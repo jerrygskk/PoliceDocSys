@@ -261,6 +261,23 @@
         <item><layout class="QHBoxLayout" name="reward_foot"><item><widget class="QLabel" name="reward_count"><property name="text"><string/></property></widget></item><item><spacer name="reward_spacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item><item><widget class="QLabel" name="reward_hint"><property name="text"><string/></property></widget></item></layout></item>
        </layout>
       </widget>
+      <widget class="QWidget" name="page_ticket">
+       <attribute name="title"><string>🎫 罰單登錄</string></attribute>
+       <layout class="QVBoxLayout" name="ticket_layout">
+        <property name="spacing"><number>8</number></property>
+        <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>8</number></property>
+        <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+        <item><layout class="QHBoxLayout" name="ticket_filter"><property name="spacing"><number>8</number></property>
+         <item><widget class="QComboBox" name="ticket_scope"><property name="minimumSize"><size><width>120</width><height>34</height></size></property></widget></item>
+         <item><widget class="QLineEdit" name="ticket_kw"><property name="minimumHeight"><number>34</number></property><property name="placeholderText"><string>關鍵字</string></property><property name="clearButtonEnabled"><bool>true</bool></property></widget></item>
+         <item><widget class="QPushButton" name="ticket_search"><property name="minimumSize"><size><width>80</width><height>34</height></size></property><property name="text"><string>查詢</string></property></widget></item>
+         <item><widget class="QPushButton" name="ticket_seg_full"><property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="text"><string>完整</string></property><property name="checkable"><bool>true</bool></property></widget></item>
+         <item><widget class="QPushButton" name="ticket_reload"><property name="minimumSize"><size><width>76</width><height>34</height></size></property><property name="text"><string>重載</string></property><property name="toolTip"><string>強制重新載入此表全部資料</string></property></widget></item>
+        </layout></item>
+        <item><widget class="QTableWidget" name="ticket_table"/></item>
+        <item><layout class="QHBoxLayout" name="ticket_foot"><item><widget class="QLabel" name="ticket_count"><property name="text"><string/></property></widget></item><item><widget class="QPushButton" name="ticket_overdue"><property name="text"><string>未發文</string></property><property name="checkable"><bool>true</bool></property><property name="minimumSize"><size><width>0</width><height>26</height></size></property><property name="maximumSize"><size><width>88</width><height>26</height></size></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item><item><spacer name="ticket_spacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item><item><widget class="QLabel" name="ticket_hint"><property name="text"><string/></property></widget></item></layout></item>
+       </layout>
+      </widget>
      </widget>
     </item>
    </layout>

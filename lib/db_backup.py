@@ -26,6 +26,7 @@ import sqlite3
 from datetime import datetime
 
 from lib.db_utils import REWARD_ACTIVE_SQL
+from lib.ticket_utils import TICKET_ACTIVE_SQL
 
 BACKUP_DIR_NAME = "backups"
 DAILY_PREFIX    = "dbfile_backup_day_"
@@ -404,7 +405,8 @@ def verify_backup(path):
 
 def backup_doc_counts(path):
     """讀備份內主表未刪除筆數（供還原前預覽、確認選對份）。
-    回 {task,crim,gen,reward}（值可能為 None＝該表讀不到）或 None（整檔開不了）。
+    回 {task,crim,gen,reward,ticket}（值可能為 None＝該表讀不到，例如舊備份
+    尚無 Document_Ticket）或 None（整檔開不了）。
     唯讀、吞例外。"""
     try:
         conn = sqlite3.connect(path, timeout=2)
@@ -423,6 +425,8 @@ def backup_doc_counts(path):
                             "WHERE report_date IS NOT NULL"),
                 "reward": cnt("SELECT COUNT(*) FROM Document_Reward "
                               f"WHERE {REWARD_ACTIVE_SQL}"),
+                "ticket": cnt("SELECT COUNT(*) FROM Document_Ticket "
+                              f"WHERE {TICKET_ACTIVE_SQL}"),
             }
         finally:
             conn.close()
@@ -431,13 +435,18 @@ def backup_doc_counts(path):
 
 
 def formatDocCounts(counts, prefix="", suffix=""):
-    """主表筆數摘要（備份內容／重置預覽共用）。None 值顯示「—」。"""
-    def s(value):
+    """主表筆數摘要（備份內容／重置預覽共用）。None 值顯示「—」。
+
+    ⚠️ 取值一律走 `counts.get()`：缺 key（舊備份無該主表、或呼叫端只給部分
+    欄位）與「讀不到」同樣顯示「—」，不可讓摘要因 KeyError 整個炸掉。
+    """
+    def s(key):
+        value = counts.get(key)
         return "—" if value is None else str(value)
     return (
-        f"{prefix}交辦 {s(counts['task'])} 筆、"
-        f"刑案 {s(counts['crim'])} 筆、一般 {s(counts['gen'])} 筆、"
-        f"敘獎 {s(counts['reward'])} 筆{suffix}"
+        f"{prefix}交辦 {s('task')} 筆、"
+        f"刑案 {s('crim')} 筆、一般 {s('gen')} 筆、"
+        f"敘獎 {s('reward')} 筆、罰單 {s('ticket')} 筆{suffix}"
     )
 
 

@@ -81,6 +81,7 @@ SEQ_DOCID = (
     ('Document_General', 0),
     ('Document_Reward', 0),
     ('Document_Task', 0),
+    ('Document_Ticket', 0),
 )
 
 # (key, value)
@@ -94,6 +95,7 @@ APP_SETTINGS = (
     ('print_title_crim', ''),
     ('print_title_gen', ''),
     ('print_title_reward', ''),
+    ('print_title_ticket', ''),
     ('print_note_current', ''),
 )
 

@@ -39,6 +39,29 @@ def _make_db():
     return conn
 
 
+def _make_db_file(path):
+    """比照 `_make_db()`，但建在磁碟檔案而非 :memory:（供需要驗證真正
+    commit 落盤的測試使用）。"""
+    from lib.db_schema import applySchema
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    applySchema(conn)
+    conn.execute(
+        "INSERT OR IGNORE INTO Ref_Personnel "
+        "(staff_id, staff_name, is_active, sort_order) VALUES (?,?,1,1)",
+        ("P001", "王承辦"))
+    conn.execute(
+        "INSERT OR IGNORE INTO Ref_CaseTypes "
+        "(case_type_id, case_type_name, is_active, sort_order) VALUES (?,?,1,1)",
+        ("CT01", "測試案類"))
+    conn.execute(
+        "INSERT OR IGNORE INTO Ref_Case_Status "
+        "(status_id, status_name) VALUES (?,?)",
+        ("CS01", "現行"))
+    conn.commit()
+    return conn
+
+
 def _set_setting(conn, key, value):
     conn.execute(
         "INSERT OR REPLACE INTO App_Settings (key, value) VALUES (?,?)",
@@ -205,7 +228,7 @@ class TestArchiveQueryExcludesUnissued(unittest.TestCase):
 
 
 class TestSettleDocumentTypes(unittest.TestCase):
-    """結算發文只處理刑案與一般陳報；敘獎改由獨立發文頁處理。"""
+    """結算發文處理刑案／一般陳報／罰單；敘獎改由獨立發文頁處理。"""
 
     def setUp(self):
         import tempfile
@@ -230,9 +253,160 @@ class TestSettleDocumentTypes(unittest.TestCase):
 
     def test_settle_registry_and_counts_exclude_reward(self):
         from ui_utils.settle_dialog import SETTLE_META, count_unissued
-        self.assertEqual([meta["key"] for meta in SETTLE_META], ["crim", "gen"])
+        self.assertEqual(
+            [meta["key"] for meta in SETTLE_META], ["crim", "gen", "ticket"])
         counts = count_unissued(self.path)
-        self.assertEqual(counts, {"crim": 0, "gen": 0})
+        self.assertEqual(counts, {"crim": 0, "gen": 0, "ticket": 0})
+
+
+class TestSettleMetaTicket(unittest.TestCase):
+    """Task 7：罰單併入結算 registry（單一擴充點驗證）。"""
+
+    def setUp(self):
+        import tempfile
+        from lib.db_schema import applySchema
+        self._tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self._tmp, "ticket_settle.db")
+        conn = sqlite3.connect(self.path)
+        applySchema(conn)
+        conn.execute(
+            "INSERT OR IGNORE INTO Ref_Personnel "
+            "(staff_id, staff_name, is_active, sort_order) VALUES ('P001','王小明',1,1)")
+        conn.execute(
+            "INSERT INTO Document_Ticket"
+            "(doc_id,create_date,register_date,sender_id,issuer_id,ticket_no) "
+            "VALUES ('1','2026-07-20','',NULL,'P001','D4RD15263')")
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_settle_meta_includes_ticket(self):
+        from ui_utils.settle_dialog import SETTLE_META
+        meta = {m["key"]: m for m in SETTLE_META}["ticket"]
+        self.assertEqual(meta["label"], "罰單")
+        self.assertEqual(meta["color"], "#6b4fa3")
+        self.assertTrue(meta["with_sender"])
+        self.assertTrue(meta.get("strict"))
+
+    def test_ticket_unissued_query_and_search_fields(self):
+        from ui_utils.settle_dialog import load_unissued
+        data = load_unissued(self.path)
+        row = data["ticket"][0]
+        self.assertEqual(row["doc_id"], "1")
+        self.assertEqual(row["processor"], "王小明")
+        self.assertEqual(row["subject"], "D4RD15263")
+
+
+class TestSettleSelectedAtomicity(unittest.TestCase):
+    """Task 7：settle_selected() 混合結算的原子性（罰單衝突需整批 rollback）。
+
+    用檔案 DB（非 :memory:）：斷言一律另開一條連線讀取，確保真的 commit
+    落到磁碟，而不是只在同一條 conn 上看到「未 commit 也能看到」的假象
+    （曾以刪掉 conn.commit() 驗證：用同一條 conn 斷言時三條測試仍全綠）。
+    """
+
+    def setUp(self):
+        import tempfile
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.conn = _make_db_file(self.db_path)
+        self.conn.execute(
+            "INSERT INTO Document_Criminal "
+            "(doc_id, report_date, sender_id, case_type, case_status, "
+            " processor_id, subject_summary, is_reported, is_electronic) "
+            "VALUES ('C0050', NULL, NULL, 'CT01', 'CS01', 'P001', '混合結算刑案', 0, '')")
+        self.conn.execute(
+            "INSERT INTO Document_Ticket"
+            "(doc_id,create_date,register_date,sender_id,issuer_id,ticket_no) "
+            "VALUES ('T0050','2026-07-20','',NULL,'P001','A1B2C3')")
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            os.remove(self.db_path)
+        except OSError:
+            pass
+
+    def _read_row(self, sql):
+        # 另開一條連線讀，確保看到的是「已 commit 落盤」的資料，
+        # 不是同一條 conn 上未 commit 也能看見的內容。
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return conn.execute(sql).fetchone()
+        finally:
+            conn.close()
+
+    def _criminal_report_date(self):
+        return self._read_row(
+            "SELECT report_date FROM Document_Criminal "
+            "WHERE doc_id='C0050'")[0]
+
+    def _ticket_register_date(self):
+        return self._read_row(
+            "SELECT register_date FROM Document_Ticket "
+            "WHERE doc_id='T0050'")[0]
+
+    def test_mixed_settlement_rolls_back_on_ticket_conflict(self):
+        from ui_utils.settle_dialog import SettlementConflict, settle_selected
+        # 模擬他機已搶先把該罰單發文（register_date 不再是 ''）。
+        self.conn.execute(
+            "UPDATE Document_Ticket SET register_date='2026-07-22' "
+            "WHERE doc_id='T0050'")
+        self.conn.commit()
+
+        selected = {"crim": ["C0050"], "gen": [], "ticket": ["T0050"]}
+        with self.assertRaises(SettlementConflict):
+            settle_selected(self.conn, selected, "2026-07-23", "P001")
+
+        self.assertIsNone(self._criminal_report_date())
+        self.assertEqual(self._ticket_register_date(), "2026-07-22")
+
+    def test_mixed_settlement_commits_when_no_conflict(self):
+        from ui_utils.settle_dialog import settle_selected
+        selected = {"crim": ["C0050"], "gen": [], "ticket": ["T0050"]}
+        settled_n = settle_selected(self.conn, selected, "2026-07-23", "P001")
+        self.assertEqual(settled_n, 2)
+        self.assertEqual(self._criminal_report_date(), "2026-07-23")
+        self.assertEqual(self._ticket_register_date(), "2026-07-23")
+
+    def test_settlement_updates_ticket_last_modified_for_browse_fingerprint(self):
+        # 瀏覽頁的「切回來即刷新」完全靠指紋 (COUNT, MAX(last_modified))；
+        # settle_selected() 若漏了某型態、trigger 沒被觸發，瀏覽頁會凍結在舊資料。
+        from ui_utils.settle_dialog import settle_selected
+        settle_selected(self.conn, {"crim": [], "gen": [], "ticket": ["T0050"]},
+                         "2026-07-23", "P001")
+        after = self._read_row(
+            "SELECT last_modified FROM Document_Ticket WHERE doc_id='T0050'")[0]
+        # trigger 精度只到秒，不做 > 比較（比照 TestSettleRoundTrip 既有寫法），
+        # 只驗 trigger 確實有寫入而非 NULL（NULL 代表 trigger 未觸發，指紋算不出來）。
+        self.assertIsNotNone(after)
+
+    def test_settlement_writes_no_audit_row(self):
+        # 結算不寫稽核 LOG 是既有維護者決策（量大無查核意義，見 DEVELOPER
+        # 「自助取號模式」§3），本測試鎖住此行為避免日後不小心補寫造成雙軌。
+        from ui_utils.settle_dialog import settle_selected
+        settle_selected(self.conn, {"crim": ["C0050"], "gen": [], "ticket": ["T0050"]},
+                         "2026-07-23", "P001")
+        rows = self._read_row("SELECT COUNT(*) FROM Audit_Log")
+        self.assertEqual(rows[0], 0)
+
+    def test_non_strict_type_conflict_skips_without_raising(self):
+        """刑案／一般沿用既有部分結算語意：非 strict 型態衝突不 raise、不 rollback。"""
+        from ui_utils.settle_dialog import settle_selected
+        self.conn.execute(
+            "UPDATE Document_Criminal SET report_date='2026-07-22', sender_id='P001' "
+            "WHERE doc_id='C0050'")
+        self.conn.commit()
+
+        selected = {"crim": ["C0050"], "gen": [], "ticket": ["T0050"]}
+        settled_n = settle_selected(self.conn, selected, "2026-07-23", "P001")
+        self.assertEqual(settled_n, 1)  # 只有罰單真的被結算
+        self.assertEqual(self._criminal_report_date(), "2026-07-22")  # 維持原值
+        self.assertEqual(self._ticket_register_date(), "2026-07-23")
 
 
 class TestSettleConcurrencyGuard(unittest.TestCase):

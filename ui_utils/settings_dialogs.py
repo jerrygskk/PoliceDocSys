@@ -516,7 +516,7 @@ class ResetDialog(QDialog):
         vlay.addWidget(lbl_db)
 
         lbl_scope = QLabel(
-            "1. 清空全部交辦單、刑案陳報、一般陳報及敘獎登錄資料"
+            "1. 清空全部交辦單、刑案陳報、一般陳報、敘獎登錄及罰單登錄資料"
             + (f"（{self.doc_summary}）" if self.doc_summary else "") + "\n"
             "2. 移除已停用的人員、部門、案件類型（如需保留請先返回啟用）\n"
             "3. 流水號歸零\n"

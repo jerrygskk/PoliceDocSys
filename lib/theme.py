@@ -2,6 +2,11 @@
 # arrow.svg 路徑在 main.py 啟動時動態替換（ARROW_PLACEHOLDER → 絕對路徑）
 # 打包後從 _MEIPASS 讀，開發時從當前目錄讀
 
+# 可打字 QComboBox 提示文字／正常文字色（供 ui_utils.widgets.attachComboHint 使用）。
+# HINT_COLOR 與下方 QLineEdit::placeholder 同色，統一全專案的「提示灰」。
+HINT_COLOR = "#aeaeb2"
+TEXT_COLOR = "#1c1c1e"
+
 APPLE_STYLE = """
 /* ── 全域基礎 ── */
 * {
@@ -201,6 +206,7 @@ QPushButton#btn_send,
 QPushButton#btn_recv_submit,
 QPushButton#btn_rpt_submit,
 QPushButton#btn_reward_submit,
+QPushButton#ticket_add,
 QPushButton#crim_paper_only,
 QPushButton#gen_paper_only,
 QPushButton#crim_do_archive,
@@ -215,6 +221,7 @@ QPushButton#btn_send:hover,
 QPushButton#btn_recv_submit:hover,
 QPushButton#btn_rpt_submit:hover,
 QPushButton#btn_reward_submit:hover,
+QPushButton#ticket_add:hover,
 QPushButton#crim_paper_only:hover,
 QPushButton#gen_paper_only:hover,
 QPushButton#crim_do_archive:hover,
@@ -225,6 +232,7 @@ QPushButton#btn_send:pressed,
 QPushButton#btn_recv_submit:pressed,
 QPushButton#btn_rpt_submit:pressed,
 QPushButton#btn_reward_submit:pressed,
+QPushButton#ticket_add:pressed,
 QPushButton#crim_paper_only:pressed,
 QPushButton#gen_paper_only:pressed,
 QPushButton#crim_do_archive:pressed,

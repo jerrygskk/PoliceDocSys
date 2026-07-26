@@ -3,9 +3,9 @@ settings_panels.py — 設定頁「系統設定」子頁的嵌入式面板
 
 包含（皆為 QGroupBox，掛進 page_system 的 systemLayout，各自帶「儲存」）：
   - ArchiveRootPanel   歸檔資料夾（年度層 UNC + 刑案/一般子夾名；admin/archive 皆可改）
-  - PrintTitlePanel    簽收表標題（4 欄自訂文字；僅 admin）
+  - PrintTitlePanel    簽收表標題（5 欄自訂文字＋1 註記；僅 admin）
   - IdleTimeoutPanel   閒置逾時（自動登出／強制關閉，分；僅 admin，重啟生效）
-  - InputLockPanel     唯讀設定（三表新增鎖；僅 admin；即時生效）
+  - InputLockPanel     唯讀設定（六表新增鎖；僅 admin；即時生效）
   - BackupPanel        自動備份（第二備份位置／異地副本；僅 admin；下次開啟生效）
 
 由 ArchiveRootDialog / PrintTitleDialog（settings_dialogs.py，已移除）改寫而來，
@@ -321,6 +321,7 @@ class PrintTitlePanel(_SettingsPanel):
             (PRINT_TITLE_KEYS["crim"], "刑案陳報標題", self._TITLE_MAX),
             (PRINT_TITLE_KEYS["gen"],  "一般陳報標題", self._TITLE_MAX),
             (PRINT_TITLE_KEYS["reward"], "敘獎標題", self._TITLE_MAX),
+            (PRINT_TITLE_KEYS["ticket"], "罰單標題", self._TITLE_MAX),
             (PRINT_TITLE_KEYS["note"], "現行犯免簽收註記", self._NOTE_MAX),
         ]
 
@@ -556,7 +557,7 @@ class IdleTimeoutPanel(_SettingsPanel):
 
 
 # ══════════════════════════════════════════════════════════════════
-# 唯讀設定（三表新增鎖；僅 admin；archive 整塊反灰；即時生效）
+# 唯讀設定（六表新增鎖；僅 admin；archive 整塊反灰；即時生效）
 # ══════════════════════════════════════════════════════════════════
 class InputLockPanel(_SettingsPanel):
     # (kind, 勾選框標籤)
@@ -565,6 +566,8 @@ class InputLockPanel(_SettingsPanel):
         ("task",     "唯讀交辦單收文"),
         ("crim",     "唯讀刑案陳報"),
         ("gen",      "唯讀一般陳報"),
+        ("ticket",   "唯讀罰單登錄"),
+        ("reward",   "唯讀敘獎登錄"),
     ]
 
     def __init__(self, db_path, parent=None):
@@ -576,8 +579,9 @@ class InputLockPanel(_SettingsPanel):
         v.setContentsMargins(16, 14, 16, 12)
 
         hint = QLabel(
-            "勾選後，該頁面將進入唯讀模式：\n"
-            "一般使用者無法收發交辦單，也不能新增、修改、刪除陳報案件；"
+            "勾選後，該項目只鎖「新增」：\n"
+            "一般使用者無法新增交辦單發文／交辦單收文／刑案陳報／一般陳報／"
+            "罰單登錄／敘獎登錄，但既有資料仍可修改、刪除；"
             "管理者與歸檔管理不受限制。儲存後立即生效。")
         hint.setStyleSheet(_HINT_SS)
         hint.setWordWrap(True)

@@ -8,6 +8,8 @@ from PySide6.QtGui import (
     QRegularExpressionValidator, QStandardItemModel, QStandardItem,
 )
 
+from lib.theme import HINT_COLOR, TEXT_COLOR
+
 
 def parse_recipient_names(text):
     """將多人姓名文字正規化為保序、去重的姓名清單。"""
@@ -47,6 +49,23 @@ def sort_personnel_by_counts(personnel, counts):
     def _key(person):
         staff_id, name, sort_order = person[:3]
         return (-counts.get(name, 0), sort_order is None,
+                sort_order if sort_order is not None else 0, staff_id)
+
+    return sorted(personnel, key=_key)
+
+
+def sort_personnel_by_id_counts(personnel, id_counts):
+    """依 ``staff_id`` 次數與人員既有順序排列在職人員（次數多者在前）。
+
+    ``personnel`` 每筆 ``(staff_id, name, sort_order)``；``id_counts`` 為
+    ``{staff_id: count}``。罰單登錄的次數來自 ``Document_Ticket_Full`` 的
+    ``issuer_id``；姓名在 ``personnel`` 裡已去後綴，而 View 的 ``issuer_name``
+    是未去後綴原值，兩者字串不同命名空間，**必須以 staff_id 為 key**、不可
+    沿用 :func:`sort_personnel_by_counts` 的姓名 key（否則排序整個 no-op）。
+    """
+    def _key(person):
+        staff_id, _name, sort_order = person[:3]
+        return (-id_counts.get(staff_id, 0), sort_order is None,
                 sort_order if sort_order is not None else 0, staff_id)
 
     return sorted(personnel, key=_key)
@@ -632,14 +651,34 @@ def setupFilterCombo(combo, data_list, alias_map=None):
 
 def attachComboHint(combo, hint):
     """可打字 combo 的「提示文字」行為：
-    - 第 0 項（空白哨兵）以 hint 文字呈現（灰字由呼叫端 stylesheet 控制）
+    - 第 0 項（空白哨兵）以 hint 文字呈現，灰字／黑字由本函式統一負責
+      （不再交給呼叫端 stylesheet；`lib.theme.HINT_COLOR`／`TEXT_COLOR`）
     - 點入（focus-in）時若仍是提示文字 → 自動清空，直接可打字
     - 離開（focus-out）時若沒選任何項目且沒打字 → 還原提示文字
-    對 setItemText(0, hint) 的既有慣例做補強；重複呼叫安全（filter 只裝一次）。
+    對 setItemText(0, hint) 的既有慣例做補強；重複呼叫安全（filter 只裝一次，
+    顏色相關 signal 連線也不會重複疊加）。
+
+    ⚠️ 顏色判斷不可用 `currentIndexChanged` + `idx == 0`（舊寫法，
+    `tabs/tab_report.py` 曾這樣手刻過）：`setupFilterCombo` 裝的
+    `_onTextChanged` 在使用者打字時會 `combo.blockSignals(True)` 重建清單，
+    重建後 index 恆為 0，`currentIndexChanged` 結構上不會在打字期間觸發，
+    導致自訂輸入的文字永遠顯示成灰色（回歸過兩三次）。改為直接檢查「目前
+    是否正在顯示提示文字」（`currentData() is None` 且 `currentText() == hint`），
+    不依賴 index／signal 種類。
     """
     combo.setItemText(0, hint)
+
+    def _repaint():
+        showing_hint = (combo.currentData() is None
+                        and combo.currentText() == hint)
+        combo.setStyleSheet(
+            "QComboBox { color: %s; }"
+            % (HINT_COLOR if showing_hint else TEXT_COLOR)
+        )
+
     if getattr(combo, "_hint_filter", None) is not None:
         combo._hint_filter._hint = hint
+        _repaint()
         return
 
     class _HintFilter(QObject):
@@ -653,10 +692,12 @@ def attachComboHint(combo, hint):
                    combo.currentText() == self._hint:
                     # singleShot：等 Qt 完成 focus 的預設處理（游標定位）後再清
                     QTimer.singleShot(0, combo.clearEditText)
+                    QTimer.singleShot(0, _repaint)
             elif event.type() == QEvent.FocusOut:
                 if combo.currentData() is None and \
                    not combo.currentText().strip():
                     combo.setEditText(self._hint)
+                    QTimer.singleShot(0, _repaint)
             return False
 
     f = _HintFilter(combo)
@@ -664,6 +705,9 @@ def attachComboHint(combo, hint):
     combo.installEventFilter(f)
     combo.lineEdit().installEventFilter(f)
     combo._hint_filter = f   # 防 GC
+    combo.lineEdit().textEdited.connect(lambda _text: _repaint())
+    combo.currentIndexChanged.connect(lambda _idx: _repaint())
+    _repaint()
 
 
 def refreshFilterCombo(combo, data_list, alias_map=None):

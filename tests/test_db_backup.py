@@ -250,6 +250,14 @@ class TestListVerifyRestore(unittest.TestCase):
                      "VALUES('T1','2026-01-01')")
         conn.execute("INSERT INTO Document_Criminal(doc_id, report_date) "
                      "VALUES('C1','2026-01-01')")
+        conn.execute("INSERT INTO Ref_Personnel"
+                     "(staff_id,staff_name,alias,is_active,sort_order) "
+                     "VALUES('P01','甲員','',1,1)")
+        # 罰單有效未發文列（register_date=''）
+        conn.execute("INSERT INTO Document_Ticket"
+                     "(doc_id,create_date,register_date,sender_id,issuer_id,"
+                     "ticket_no) VALUES('1','2026-01-01','',NULL,'P01',"
+                     "'D4RD15263')")
         conn.commit(); conn.close()
 
     def tearDown(self):
@@ -296,7 +304,19 @@ class TestListVerifyRestore(unittest.TestCase):
                   ("R2", None, None, None))
         c.commit(); c.close()
         self.assertEqual(db_backup.backup_doc_counts(self.db),
-                         {"task": 1, "crim": 1, "gen": 0, "reward": 1})
+                         {"task": 1, "crim": 1, "gen": 0, "reward": 1,
+                          "ticket": 1})
+
+    def test_backup_doc_counts_and_format_include_ticket(self):
+        counts = db_backup.backup_doc_counts(self.db)
+        self.assertEqual(counts["ticket"], 1)
+        self.assertIn("罰單 1 筆", db_backup.formatDocCounts(counts))
+
+    def test_deleted_ticket_shell_not_counted(self):
+        c = sqlite3.connect(self.db)
+        c.execute("INSERT INTO Document_Ticket(doc_id) VALUES('2')")
+        c.commit(); c.close()
+        self.assertEqual(db_backup.backup_doc_counts(self.db)["ticket"], 1)
 
     def test_restore_roundtrip_with_prerestore(self):
         db_backup.run_auto_backup(self.db)

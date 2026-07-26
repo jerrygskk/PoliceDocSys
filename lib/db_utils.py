@@ -32,9 +32,15 @@ def getConn(db_path):
 
     busy_timeout=3000：多機 SMB 併發下，寫入鎖碰撞多為毫秒級，讓 SQLite
     自動等待重試最多 3 秒即可消化大半「資料庫忙線中」。⚠️ WAL 刻意不開
-    （網路檔案系統上不安全），只加 busy_timeout。"""
+    （網路檔案系統上不安全），只加 busy_timeout。
+
+    foreign_keys=ON：SQLite 每條連線預設關閉外鍵。`Document_Ticket` 的
+    `sender_id`／`issuer_id` 宣告了真外鍵，不在此開啟即形同虛設。既有四張主表
+    未宣告任何外鍵，故本 PRAGMA 對既有功能不產生新限制。⚠️ 跨年度重置
+    （performYearEndReset）自開連線並刻意 `foreign_keys=OFF`，不走本函式。"""
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA busy_timeout=3000")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
@@ -434,11 +440,18 @@ _RESET_REF_TABLES = [
     ("Ref_CaseTypes",   "case_type_id", "CT", 2),
 ]
 
-# 主表中參照到參照表 id 的欄位：{參照表: [(主表, 欄位), ...]}
-# 跨年度時主表會被清空，故重編 id 不需連動更新主表；此表僅供文件參考。
+# 跨年度重置要清空的公文主表。（Seq_DocId 歸零是另一段無條件 UPDATE，
+# 涵蓋全表，與本清單無關。）
+# ⚠️ Document_Ticket 的 issuer_id／sender_id 是 Ref_Personnel 的真外鍵
+# （ON DELETE RESTRICT），必須在「刪停用參照項＋重編參照 id」之前清空，
+# 否則會留下指向已消失／已改號人員的孤兒關聯。新增主表務必同步補進本清單。
+# ⚠️ 現有測試保護的是「本表在清單內」，**不是**清表的先後順序：重置全程
+# PRAGMA foreign_keys=OFF，SQLite 不做即時檢查，而 PRAGMA foreign_key_check
+# 只看最終狀態，先清後清都是空結果。順序目前只靠本註解約束，動這段流程時
+# 不要以為測試會攔住你。
 _RESET_SEQ_TABLES = [
     "Document_Task", "Document_Criminal", "Document_General",
-    "Document_Reward",
+    "Document_Reward", "Document_Ticket",
 ]
 
 
@@ -475,7 +488,7 @@ def listInactiveRefItems(db_path):
 def performYearEndReset(db_path):
     """
     跨年度重置（破壞性操作，呼叫端須先備份 + 強確認）：
-      1. 清空四張主表（Document_Task / Criminal / General / Reward）
+      1. 清空五張主表（Document_Task / Criminal / General / Reward / Ticket）
       2. 刪除參照表中停用（is_active=0）項目
       3. 依 sort_order 重編參照表 id（連續，維持原前綴與位數）
       4. 重設 sort_order 為連續整數（1 起）
@@ -493,7 +506,7 @@ def performYearEndReset(db_path):
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute("BEGIN")
 
-        # 1. 清空四張主表
+        # 1. 清空五張主表（含 Document_Ticket，須早於刪停用人員與重編 id）
         for t in _RESET_SEQ_TABLES:
             conn.execute(f"DELETE FROM {t}")
 
@@ -602,6 +615,7 @@ PRINT_TITLE_KEYS = {
     "crim": "print_title_crim",
     "gen":  "print_title_gen",
     "reward": "print_title_reward",
+    "ticket": "print_title_ticket",
     "note": "print_note_current",
 }
 PRINT_TITLE_DEFAULTS = {
@@ -609,6 +623,7 @@ PRINT_TITLE_DEFAULTS = {
     "print_title_crim": "○○派出所刑案陳報單發文簽收表",
     "print_title_gen":  "○○派出所一般陳報單發文簽收表",
     "print_title_reward": "○○派出所敘獎簽收表",
+    "print_title_ticket": "○○派出所罰單簽收表",
     "print_note_current": "＜現行犯已隨案移送免簽收＞",
 }
 
@@ -622,7 +637,7 @@ def printTitle(db_path, which):
 
 
 def printTitlesUnset(db_path):
-    """四個標題／註記是否「皆未設定」（任一為空即視為未設定，供列印頁紅字警示）。
+    """各標題／註記是否「皆未設定」（任一為空即視為未設定，供列印頁紅字警示）。
     回 True＝有未設定項。"""
     for key in PRINT_TITLE_DEFAULTS:
         if not (getSetting(db_path, key, "") or "").strip():
@@ -680,6 +695,8 @@ INPUT_LOCK_KEYS = {
     "task":     "input_lock_task",       # 交辦單收文（Tab1 新增）
     "crim":     "input_lock_crim",
     "gen":      "input_lock_gen",
+    "ticket":   "input_lock_ticket",     # 罰單登錄
+    "reward":   "input_lock_reward",     # 敘獎登錄（不含敘獎發文）
 }
 
 

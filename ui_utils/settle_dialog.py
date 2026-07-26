@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui     import QColor
 
 from lib.db_utils    import getConn, loadActivePersonnel
+from lib.archive_text import _trimName
 from ui_utils.ui_common import msgInfo, msgWarning, confirmBox, reportError
 
 _ORANGE = QColor("#e67e22")
@@ -37,7 +38,9 @@ _BLACK  = QColor("#000000")
 #   color       類型欄前景色
 #   query       查未發文列 SQL，回三欄 (doc_id, 承辦人, 主旨)
 #   update      結算補值 SQL（with_sender 帶 (today, sender_id, doc_id)，否則 (today, doc_id)）
-#   with_sender 結算時是否需選送文者（現行兩型態皆需；False 分支留給日後不需送文者的型態）
+#   with_sender 結算時是否需選送文者（現行三型態皆需；False 分支留給日後不需送文者的型態）
+#   strict      rowcount!=1 是否視為併發衝突並整批 rollback（罰單為 True；
+#               刑案／一般沿用既有「部分結算」語意，預設 False）
 SETTLE_META = (
     {
         "key": "crim",
@@ -72,6 +75,24 @@ SETTLE_META = (
         "update": ("UPDATE Document_General SET report_date=?, sender_id=? "
                    "WHERE doc_id=? AND (report_date IS NULL OR report_date='')"),
         "with_sender": True,
+    },
+    {
+        "key": "ticket",
+        "label": "罰單",
+        "color": "#6b4fa3",
+        "query": (
+            "SELECT doc_id, issuer_name, ticket_no "
+            "FROM Document_Ticket_Full "
+            "WHERE register_date='' "
+            "  AND ticket_no IS NOT NULL "
+            "ORDER BY issuer_sort_order, ticket_no COLLATE NOCASE"
+        ),
+        "update": ("UPDATE Document_Ticket SET register_date=?, sender_id=? "
+                   "WHERE doc_id=? AND register_date=''"),
+        "with_sender": True,
+        # 罰單三態嚴格（'' 唯一代表未發文，NULL＝軟刪除），rowcount!=1 即代表他機
+        # 已搶先發文或刪除；不比照刑案／一般靜默略過，而是整批 rollback。
+        "strict": True,
     },
 )
 
@@ -158,16 +179,18 @@ QPushButton#chip:checked {
 """
 
 
-def _load_unissued(db_path):
+def load_unissued(db_path):
     """逐 SETTLE_META 查未發文列，回傳 {key: [rows]}。
-    每筆為 dict(doc_id, processor, subject)。純 SQL，可單測。"""
+    每筆為 dict(doc_id, processor, subject)；processor 已去 `-NN` 後綴
+    （比照敘獎／罰單登錄頁顯示，`_trimName`），資料庫仍存原值不受影響。
+    純 SQL，可單測。"""
     result = {m["key"]: [] for m in SETTLE_META}
     conn = getConn(db_path)
     try:
         for meta in SETTLE_META:
             rows = conn.execute(meta["query"]).fetchall()
             result[meta["key"]] = [
-                {"doc_id": r[0], "processor": r[1] or "", "subject": r[2] or ""}
+                {"doc_id": r[0], "processor": _trimName(r[1]), "subject": r[2] or ""}
                 for r in rows
             ]
     finally:
@@ -177,7 +200,51 @@ def _load_unissued(db_path):
 
 def count_unissued(db_path):
     """快速計算各類別未發文筆數，回傳 {key: int}。供列印頁顯示計數用。"""
-    return {k: len(v) for k, v in _load_unissued(db_path).items()}
+    return {k: len(v) for k, v in load_unissued(db_path).items()}
+
+
+class SettlementConflict(Exception):
+    """結算時偵測到 `strict` 型態已由他機搶先發文或刪除（rowcount!=1）。
+
+    由 `settle_selected()` 內部整批 rollback 後重拋。這是多機共用 DB 下的
+    正常併發事件，不是程式異常：呼叫端（對話框）接住後應以 `msgWarning`
+    顯示本例外訊息本身（已是白話、含編號），並重新載入清單，而不是走
+    `reportError`（`reportError` 會寫 error.log，且顯示成泛用當機訊息）。"""
+    pass
+
+
+def settle_selected(conn, selected, today_str, sender_id):
+    """依 SETTLE_META 逐類別批次執行結算 UPDATE，回傳實際結算筆數。
+
+    - `selected`：{key: [doc_id, ...]}（通常為 `_DocTable.checked_by_key()` 結果）
+    - 單一 transaction：成功則 `conn.commit()`；任何例外（含 `SettlementConflict`）
+      一律 `conn.rollback()` 後重拋，交易邊界完全由本函式持有，呼叫端不得自行
+      commit／rollback，也不得針對特定 key 另開分支——擴充新型態只需在
+      `SETTLE_META` 加一筆（可選 `strict=True`）。
+    - 非 `strict` 型態沿用既有「部分結算」語意：他機已搶先發文/刪除的列
+      （rowcount=0）靜默略過，不影響其餘列結算，也不 rollback。
+    - `strict` 型態（目前為罰單）：rowcount!=1 視為併發衝突，拋
+      `SettlementConflict`，觸發整批 rollback（含已寫入但尚未 commit 的
+      刑案／一般更新）。
+    """
+    try:
+        settled_n = 0
+        for meta in SETTLE_META:
+            for doc_id in selected.get(meta["key"], []):
+                if meta["with_sender"]:
+                    cur = conn.execute(meta["update"], (today_str, sender_id, doc_id))
+                else:
+                    cur = conn.execute(meta["update"], (today_str, doc_id))
+                if meta.get("strict") and cur.rowcount != 1:
+                    raise SettlementConflict(
+                        f"{meta['label']}（編號 {doc_id}）已由其他電腦發文或刪除，"
+                        "本次結算已全部取消，請重新開啟結算視窗。")
+                settled_n += cur.rowcount
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return settled_n
 
 
 class _DocTable(QTableWidget):
@@ -491,7 +558,7 @@ class SettleDialog(QDialog):
 
     # ── 載入資料 ─────────────────────────────────────────────
     def _load(self):
-        data = _load_unissued(self.db_path)
+        data = load_unissued(self.db_path)
         self._tbl.populate(data)
         self._update_chip_labels()
 
@@ -604,22 +671,15 @@ class SettleDialog(QDialog):
         try:
             conn = getConn(self.db_path)
             try:
-                settled_n = 0
-                for meta in SETTLE_META:
-                    ids = by[meta["key"]]
-                    for doc_id in ids:
-                        if meta["with_sender"]:
-                            cur = conn.execute(meta["update"],
-                                               (today_str, sender_id, doc_id))
-                        else:
-                            cur = conn.execute(meta["update"], (today_str, doc_id))
-                        settled_n += cur.rowcount
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
+                settled_n = settle_selected(conn, by, today_str, sender_id)
             finally:
                 conn.close()
+        except SettlementConflict as e:
+            # 多機共用 DB 下的正常併發事件，不是程式異常：顯示白話訊息、
+            # 重載清單讓使用者看到最新狀態，不寫 error.log
+            msgWarning("結算衝突", str(e), parent=self)
+            self._load()
+            return
         except Exception as e:
             reportError("結算失敗", e, parent=self)
             return

@@ -6,10 +6,10 @@ from PySide6.QtWidgets import (
 )
 
 from lib.auth_manager import AuthManager
-from lib.base_tab import BaseTab
+from lib.base_tab import BaseTab, InputLockMixin
 from lib.db_utils import (
-    REWARD_ACTIVE_SQL, getResourcePath, loadActivePersonnel, nextDocId,
-    softDeleteDoc,
+    REWARD_ACTIVE_SQL, getResourcePath, isInputLocked, loadActivePersonnel,
+    nextDocId, softDeleteDoc,
 )
 from ui_utils import (
     RecipientCombo, RewardEditDialog, attachStickyScroll, confirmBox,
@@ -20,7 +20,7 @@ from ui_utils import (
 )
 
 
-class TabReward(BaseTab):
+class TabReward(BaseTab, InputLockMixin):
     PREVIEW_HEADERS = ["", "編號", "發文日期", "敘獎事由", "敘獎人員"]
 
     def __init__(self, tab_widget, db_path):
@@ -61,7 +61,25 @@ class TabReward(BaseTab):
         self.btn_clear.clicked.connect(self._form_clear)
         self.reward_personnel_list.itemClicked.connect(
             lambda item: self.reward_recipients._recipient_controller.add_person(item.text()))
-        self.tab_widget.currentChanged.connect(self._onShown)
+
+        # 唯讀橫幅（預設隱藏）＋跨年度唯讀鎖（共用 InputLockMixin）。
+        # 外層 layout 邊距為 0 → banner 直接插最上層即滿版。
+        # currentChanged→_onShown 由 _setupInputLock 統一掛（本頁 _onShown 覆寫成
+        # 呼叫 on_activated，內含 _applyInputLock），此處不得再自掛以免重複觸發。
+        banner = self._makeReadonlyBanner()
+        layout.insertWidget(0, banner)
+        self._setupInputLock(
+            tab_index,
+            lock_kind="reward",
+            lock_widgets=[
+                self.reward_reason,
+                self.reward_recipients,
+                self.reward_personnel_list,
+                self.btn_submit,
+                self.btn_clear,
+            ],
+            clear_tables=[self.reward_table],
+        )
         self.reward_reason.setFocus()
 
     def _setup_table(self):
@@ -109,6 +127,28 @@ class TabReward(BaseTab):
             # 人員改名／敘獎資料異動皆可能改變名條計數或姓名 → 重載一次計數。
             self._load_counts()
             self._rebuild_personnel_list()
+        # 切回本頁一律重讀唯讀設定並重套（唯讀狀態可能在他頁被改）。
+        self._applyInputLock()
+
+    def _onRoleClearList(self, *args):
+        """降權清空必須具『持續性』，故連本次登錄清單一併清掉。
+
+        基底 `InputLockMixin._onRoleClearList` 只把預覽表 widget 清成 0 列、
+        不動 `self._session_doc_ids`。本頁 `on_activated` 的 dirty-flag 守衛
+        只是「掩蓋」而非防線：`reward_data_dirty` 會被敘獎發文頁
+        （`tab_reward_issue.handleIssue`）無條件設為 True，而敘獎發文頁不設
+        角色 gate、一般使用者走得到；旗標一開，切回本頁就會
+        `_refresh_session_rows()` 依殘留的 `_session_doc_ids` 把整份清單從 DB
+        重建回來——降權後的一般使用者因此拿到「編輯（`_onEditRow`）／刪除
+        （`_deleteByDocId`）管理身分建立之敘獎」的入口，而同一筆資料在資料庫
+        瀏覽頁是僅 admin 可改（DEVELOPER §10 權限矩陣）。實測過的權限回歸，
+        勿只還原 widget。清 `_session_doc_ids` 不動 DB：資料仍在，只是不再
+        留在本頁的操作入口內（比照 `tab_ticket._onRoleClearList`）。
+        """
+        super()._onRoleClearList(*args)
+        if AuthManager.instance().is_manager():
+            return
+        self._session_doc_ids = []
 
     def _load_counts(self):
         """全表載入一次名條計數到 self._name_counts（開機／旗標刷新時呼叫）。"""
@@ -144,6 +184,11 @@ class TabReward(BaseTab):
         self.reward_reason.setFocus()
 
     def _submit(self):
+        # 硬性 guard：反灰只擋 UI 觸發，Enter／程式路徑仍會進來。
+        if (not AuthManager.instance().is_manager()
+                and isInputLocked(self.db_path, "reward")):
+            msgWarning("目前為唯讀", "此年度的敘獎登錄已鎖定，無法新增資料。")
+            return
         create_date = QDate.currentDate().toString("yyyy-MM-dd")
         reason = self.reward_reason.text().strip()
         names = parse_recipient_names(self.reward_recipients.currentText())

@@ -79,7 +79,7 @@ from lib.db_utils import getResourcePath
 from ui_utils import loadUi, msgInfo
 from lib.auth_manager import AuthManager
 from tabs import (TabDispatch, TabReceive, TabReport, TabReward,
-                  TabRewardIssue, TabPrint, TabDBBrowse, TabArchive,
+                  TabRewardIssue, TabTicket, TabPrint, TabDBBrowse, TabArchive,
                   TabSettings, TabAudit)
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）
 
@@ -100,11 +100,12 @@ class DocumentManager:
         2: TabReport,
         3: TabReward,
         4: TabRewardIssue,
-        5: TabPrint,
-        6: TabDBBrowse,
-        7: TabArchive,
-        8: TabSettings,
-        9: TabAudit,
+        5: TabTicket,
+        6: TabPrint,
+        7: TabDBBrowse,
+        8: TabArchive,
+        9: TabSettings,
+        10: TabAudit,
     }
 
     def __init__(self, tab_index=0, prefetch=None, progress=None):
@@ -291,9 +292,9 @@ class DocumentManager:
         logging.shutdown()
         os._exit(0)
 
-    _IDX_SETTINGS = 8          # 資料庫設定 Tab index
-    _IDX_DBBROWSE = 6          # 資料庫瀏覽 Tab index
-    _IDX_AUDIT    = 9          # 操作紀錄 Tab index
+    _IDX_SETTINGS = 9          # 資料庫設定 Tab index
+    _IDX_DBBROWSE = 7          # 資料庫瀏覽 Tab index
+    _IDX_AUDIT    = 10         # 操作紀錄 Tab index
 
     def _onTabChanged(self, index):
         from ui_utils import autoResizeTable
@@ -365,12 +366,13 @@ class MainMenu:
         'btn_receive_assignment': 1,
         'btn_report_case':        2,
         'btn_reward':             3,
-        'btn_ticket':             4,
-        'btn_generate_receipt':   5,
-        'btn_dbbrowse':           6,
-        'btn_archive':            7,
-        'btn_settings':           8,
-        'btn_audit':              9,
+        'btn_reward_issue':       4,
+        'btn_ticket':             5,
+        'btn_generate_receipt':   6,
+        'btn_dbbrowse':           7,
+        'btn_archive':            8,
+        'btn_settings':           9,
+        'btn_audit':              10,
     }
 
     # 各功能磚格圖示（qrc 別名 :/menu/，於程式內套用以免 QUiLoader 解析 resource 問題）
@@ -379,7 +381,8 @@ class MainMenu:
         'btn_receive_assignment': ':/menu/receive.svg',
         'btn_report_case':        ':/menu/report.svg',
         'btn_reward':             ':/menu/reward.svg',
-        'btn_ticket':             ':/menu/reward_issue.svg',
+        'btn_reward_issue':       ':/menu/reward_issue.svg',
+        'btn_ticket':             ':/menu/ticket.svg',
         'btn_generate_receipt':   ':/menu/print.svg',
         'btn_dbbrowse':           ':/menu/browse.svg',
         'btn_archive':            ':/menu/archive.svg',
@@ -560,6 +563,16 @@ if __name__ == "__main__":
         mgr.tab_widget.blockSignals(True)
         mgr.tab_widget.setCurrentIndex(menu.selected_tab)
         mgr.tab_widget.blockSignals(False)
+
+        # 開窗前先依「實際可用桌面範圍」（已扣工作列）收斂視窗尺寸／位置，
+        # 避免縮放倍率、螢幕解析度或投影機造成視窗一開就超出畫面。
+        # 用 primaryScreen()：此時 mgr.window 尚未 show()，視窗尚未 realize，
+        # 不依賴（可能還沒建立好的）winId／實際顯示監視器；本程式從不記憶或
+        # 搬動視窗到特定螢幕，開窗一律以主螢幕呈現，故用 primaryScreen() 在
+        # 這個時間點最穩定可靠。純收斂邏輯見 lib/window_geometry.py。
+        from lib.window_geometry import apply_startup_geometry
+        apply_startup_geometry(mgr.window, QApplication.primaryScreen())
+
         mgr.window.show()
         QTimer.singleShot(50, lambda: mgr._onTabChanged(menu.selected_tab))
 

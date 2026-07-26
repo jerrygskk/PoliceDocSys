@@ -13,7 +13,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QComboBox, QDateEdit, QLineEdit, QPushButton,
+    QApplication, QWidget, QComboBox, QDateEdit, QLabel, QLineEdit, QPushButton,
     QListWidget, QTableWidget, QVBoxLayout,
 )
 import res.resources_rc          # 註冊 qrc（.ui 內引用 :/ 資源），勿刪
@@ -33,7 +33,7 @@ class TestUiLoad(unittest.TestCase):
 
     def test_glob_finds_files(self):
         # 防呆：glob 到空清單會讓整組測試虛假通過
-        self.assertGreaterEqual(len(self._ui_files()), 11)  # Layout1~10 + main_menu
+        self.assertGreaterEqual(len(self._ui_files()), 12)  # Layout1~11 + main_menu
 
     def test_all_ui_files_load(self):
         for path in self._ui_files():
@@ -127,6 +127,49 @@ class TestUiLoad(unittest.TestCase):
         self.assertTrue(w.findChild(QComboBox, "reward_issue_sender").isEditable())
         root_css = w.findChild(QWidget, "centralwidget").styleSheet().lower()
         self.assertEqual(root_css, "")
+        w.deleteLater()
+
+    def test_ticket_layout_has_required_controls(self):
+        from PySide6.QtWidgets import QGroupBox
+        path = os.path.join(_LAYOUT_DIR, "Layout11.ui")
+        w = loadUi(path)
+        self.assertIsNotNone(w)
+        required = (
+            (QComboBox, "ticket_sender"),
+            (QLabel, "ticket_sender_hint"),
+            (QComboBox, "ticket_issuer"),
+            (QPushButton, "ticket_clear_issuer"),
+            (QLineEdit, "ticket_no"),
+            (QTableWidget, "ticket_table"),
+            (QPushButton, "ticket_add"),
+            (QGroupBox, "ticket_candidates"),
+            (QListWidget, "ticket_candidates_list"),
+        )
+        for cls, name in required:
+            with self.subTest(control=name):
+                self.assertIsNotNone(w.findChild(cls, name))
+        table = w.findChild(QTableWidget, "ticket_table")
+        self.assertEqual(
+            [table.horizontalHeaderItem(i).text()
+             for i in range(table.columnCount())],
+            ["", "編號", "登錄日期", "發文日期", "罰單編號", "開立人員", ""],
+        )
+        # 兩個人員下拉皆可打字（completer 篩選），高度與其他頁一致（LAY-6）；
+        # 寬度隨視窗拉伸（maximumWidth 不卡死），比照敘獎登錄。
+        for name in ("ticket_sender", "ticket_issuer"):
+            combo = w.findChild(QComboBox, name)
+            self.assertTrue(combo.isEditable())
+            self.assertEqual(combo.minimumWidth(), 220)
+            self.assertEqual(combo.maximumWidth(), 16777215)
+            self.assertEqual(combo.minimumHeight(), 36)
+            self.assertEqual(combo.maximumHeight(), 36)
+        ticket_no = w.findChild(QLineEdit, "ticket_no")
+        self.assertEqual(ticket_no.minimumWidth(), 220)
+        self.assertEqual(ticket_no.maximumWidth(), 16777215)
+        root_css = w.findChild(QWidget, "centralwidget").styleSheet().lower()
+        self.assertIn("background-color", root_css)
+        self.assertIn("#ffffff", root_css)
+        self.assertIn("#000000", root_css)
         w.deleteLater()
 
     def test_reward_issue_layout_uses_same_default_outer_margins_as_dispatch(self):

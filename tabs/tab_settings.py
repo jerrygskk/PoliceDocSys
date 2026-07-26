@@ -30,6 +30,7 @@ from lib.db_utils import (
     performYearEndReset, getSetting, ARCHIVE_ROOT_KEY,
     getConn, REWARD_ACTIVE_SQL, writeAudit, writeAuditSafe, buildDetail,
 )
+from lib.ticket_utils import TICKET_ACTIVE_SQL
 from ui_utils import (
     msgInfo, msgWarning, msgCritical, confirmBox, reportError,
     BTN_CONFIRM, BTN_CANCEL, loadUi,
@@ -184,6 +185,7 @@ def _resetDocCounts(conn):
         "crim": "SELECT COUNT(*) FROM Document_Criminal WHERE report_date IS NOT NULL",
         "gen": "SELECT COUNT(*) FROM Document_General WHERE report_date IS NOT NULL",
         "reward": f"SELECT COUNT(*) FROM Document_Reward WHERE {REWARD_ACTIVE_SQL}",
+        "ticket": f"SELECT COUNT(*) FROM Document_Ticket WHERE {TICKET_ACTIVE_SQL}",
     }
     return {key: conn.execute(sql).fetchone()[0] for key, sql in queries.items()}
 

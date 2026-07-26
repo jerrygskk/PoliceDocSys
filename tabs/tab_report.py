@@ -233,13 +233,6 @@ class TabReport(BaseTab, InputLockMixin):
         setupFilterCombo(self.crim_casetype,  self._case_types,
                          alias_map=self._casetype_alias_map)
         attachComboHint(self.crim_casetype, "輸入或下拉選擇")
-        self.crim_casetype.currentIndexChanged.connect(
-            lambda idx: self.crim_casetype.setStyleSheet(
-                "QComboBox { color: #a0a0a0; }" if idx == 0
-                else "QComboBox { color: #1c1c1e; }"
-            )
-        )
-        self.crim_casetype.setStyleSheet("QComboBox { color: #a0a0a0; }")
         setupFilterCombo(self.crim_processor, self._personnel)
         setupFilterCombo(self.crim_receiver,  self._personnel)
         setupFilterCombo(self.gen_dept,       self._depts)

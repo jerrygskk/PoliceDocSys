@@ -8,6 +8,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -51,6 +52,9 @@ def _make_db_file():
             VALUES('3','2026-07-01','P01','D01','GC01','一般主旨','P02',0,'');
         INSERT INTO Document_Reward(doc_id,create_date,register_date,reason,recipients)
             VALUES('4','2026-07-16','2026-07-17','協助查緝','王小明, 名單外甲');
+        INSERT INTO Document_Ticket(doc_id,create_date,register_date,sender_id,
+            issuer_id,ticket_no)
+            VALUES('5','2026-07-16','2026-07-17','P01','P02','D4RD15263');
     """)
     conn.commit()
     conn.close()
@@ -321,6 +325,169 @@ class TestEditDialogs(_DialogBase):
         dlg.deleteLater()
 
 
+class TestTicketEditDialog(_DialogBase):
+    """罰單登錄修改彈窗：建構、預填、只改開立人員與罰單編號。"""
+
+    def test_builds_and_prefills(self):
+        from PySide6.QtWidgets import QLabel
+        from ui_utils.ticket_dialog import TicketEditDialog
+        from ui_utils.edit_dialog import _BaseEditDialog
+        expected_w = (_BaseEditDialog._LABEL_W + _BaseEditDialog._FIELD_W
+                      + _BaseEditDialog._MARGIN)
+        dlg = TicketEditDialog(self.db, "5")
+        self.assertEqual(dlg.minimumWidth(), expected_w)
+        self.assertIsInstance(dlg.w_create_date, QLabel)
+        self.assertEqual(dlg.w_create_date.text(), "2026-07-16")
+        self.assertEqual(dlg.w_register_date.text(), "2026-07-17")
+        self.assertEqual(dlg.w_ticket_no.text(), "D4RD15263")
+        self.assertEqual(dlg.w_issuer.currentData(), "P02")
+        # Enter 不誤觸儲存（比照敘獎修改彈窗）
+        self.assertFalse(dlg.btn_save.isDefault())
+        self.assertFalse(dlg.btn_save.autoDefault())
+        dlg.deleteLater()
+
+    def test_unissued_row_shows_pending_label(self):
+        # register_date=''＝自助登錄未發文（NULL 才是刪除哨兵）
+        from ui_utils.ticket_dialog import TicketEditDialog
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Ticket SET register_date='',sender_id=NULL "
+                     "WHERE doc_id='5'")
+        conn.commit()
+        conn.close()
+        dlg = TicketEditDialog(self.db, "5")
+        self.assertEqual(dlg.w_register_date.text(), "未發文")
+        dlg.deleteLater()
+
+    def test_save_only_touches_issuer_and_ticket_no(self):
+        from ui_utils.ticket_dialog import TicketEditDialog
+        dlg = TicketEditDialog(self.db, "5")
+        dlg.w_issuer.setCurrentIndex(dlg.w_issuer.findData("P01"))
+        dlg.w_ticket_no.setText(" ab99 ")
+        dlg._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute(
+            "SELECT create_date,register_date,sender_id,issuer_id,ticket_no "
+            "FROM Document_Ticket WHERE doc_id='5'").fetchone()
+        conn.close()
+        self.assertEqual(row, ("2026-07-16", "2026-07-17", "P01", "P01", "AB99"))
+        dlg.deleteLater()
+
+    def test_open_on_deleted_row_does_not_raise_and_exec_cancels(self):
+        from unittest.mock import patch
+        from PySide6.QtWidgets import QDialog
+        from ui_utils.ticket_dialog import TicketEditDialog
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Ticket SET create_date=NULL,"
+                     "register_date=NULL,sender_id=NULL,issuer_id=NULL,"
+                     "ticket_no=NULL WHERE doc_id='5'")
+        conn.commit()
+        conn.close()
+        dlg = TicketEditDialog(self.db, "5")
+        self.assertTrue(dlg._row_missing)
+        with patch("ui_utils.ticket_dialog.msgWarning") as warn:
+            self.assertEqual(dlg.exec(), QDialog.Rejected)
+            warn.assert_called_once()
+        self.assertIsNone(dlg.get_updated())
+        dlg.deleteLater()
+
+    def test_invalid_source_raises(self):
+        from ui_utils.ticket_dialog import TicketEditDialog
+        # 傳錯／漏傳 source 必須明確失敗，不得靜默降級成唯讀版本
+        with self.assertRaises(ValueError):
+            TicketEditDialog(self.db, "5", source="bogus")
+
+    def test_browse_source_builds_editable_fields(self):
+        from ui_utils.ticket_dialog import TicketEditDialog
+        from ui_utils.widgets import NullableDateEdit
+        from PySide6.QtWidgets import QComboBox
+        dlg = TicketEditDialog(self.db, "5", source="browse")
+        # 瀏覽來源：登錄／發文日期為可空白日期框、發文者為可選下拉（皆可改）
+        self.assertIsInstance(dlg.w_create_date, NullableDateEdit)
+        self.assertIsInstance(dlg.w_register_date, NullableDateEdit)
+        self.assertIsInstance(dlg.w_sender, QComboBox)
+        self.assertEqual(dlg.w_ticket_no.text(), "D4RD15263")
+        dlg.deleteLater()
+
+    def test_browse_source_blocks_non_admin_save(self):
+        from unittest.mock import patch
+        from ui_utils.ticket_dialog import TicketEditDialog
+        dlg = TicketEditDialog(self.db, "5", source="browse")
+        dlg.w_ticket_no.setText("AB99")
+        with patch("lib.auth_manager.AuthManager.instance") as inst:
+            inst.return_value.is_admin.return_value = False
+            with patch("ui_utils.ticket_dialog.msgWarning") as warn:
+                dlg._on_save()
+                warn.assert_called_once()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute(
+            "SELECT ticket_no FROM Document_Ticket WHERE doc_id='5'").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "D4RD15263")   # 非 admin 未寫入
+        dlg.deleteLater()
+
+    def test_browse_source_admin_edits_all_fields(self):
+        from unittest.mock import patch
+        from PySide6.QtCore import QDate
+        from ui_utils.ticket_dialog import TicketEditDialog
+        dlg = TicketEditDialog(self.db, "5", source="browse")
+        dlg.w_issuer.setCurrentIndex(dlg.w_issuer.findData("P01"))
+        dlg.w_register_date.setDate(QDate(2026, 8, 1))
+        dlg.w_sender.setCurrentIndex(dlg.w_sender.findData("P01"))
+        dlg.w_ticket_no.setText("cd88")
+        with patch("lib.auth_manager.AuthManager.instance") as inst:
+            inst.return_value.is_admin.return_value = True
+            inst.return_value.current_role = "admin"
+            dlg._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute(
+            "SELECT register_date,sender_id,issuer_id,ticket_no "
+            "FROM Document_Ticket WHERE doc_id='5'").fetchone()
+        conn.close()
+        self.assertEqual(row, ("2026-08-01", "P01", "P01", "CD88"))
+        dlg.deleteLater()
+
+    def test_save_on_concurrently_deleted_row_is_not_false_success(self):
+        from unittest.mock import patch
+        from PySide6.QtWidgets import QDialog
+        from ui_utils.ticket_dialog import TicketEditDialog
+        dlg = TicketEditDialog(self.db, "5")
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Ticket SET create_date=NULL,"
+                     "register_date=NULL,sender_id=NULL,issuer_id=NULL,"
+                     "ticket_no=NULL WHERE doc_id='5'")
+        conn.commit()
+        conn.close()
+        dlg.w_ticket_no.setText("AB99")
+        with patch("ui_utils.ticket_dialog.msgWarning") as warn:
+            dlg._on_save()
+            warn.assert_called_once()
+        self.assertIsNone(dlg.get_updated())
+        self.assertTrue(dlg._row_missing)
+        self.assertNotEqual(dlg.result(), QDialog.Accepted)
+        dlg.deleteLater()
+
+    def test_duplicate_ticket_no_is_blocked(self):
+        from unittest.mock import patch
+        from ui_utils.ticket_dialog import TicketEditDialog
+        conn = sqlite3.connect(self.db)
+        conn.execute("INSERT INTO Document_Ticket(doc_id,create_date,"
+                     "register_date,sender_id,issuer_id,ticket_no) "
+                     "VALUES('6','2026-07-16','','P01','P02','ZZ9')")
+        conn.commit()
+        conn.close()
+        dlg = TicketEditDialog(self.db, "5")
+        dlg.w_ticket_no.setText("zz9")
+        with patch("ui_utils.ticket_dialog.msgWarning") as warn:
+            dlg._on_save()
+            warn.assert_called_once()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT ticket_no FROM Document_Ticket "
+                           "WHERE doc_id='5'").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "D4RD15263")   # 被擋下 → 未更動
+        dlg.deleteLater()
+
+
 class TestReportDateNullable(_DialogBase):
     """刑案／一般編輯彈窗陳報日期改用 NullableDateEdit 的 round-trip。
 
@@ -528,6 +695,69 @@ class TestSettleDialog(_DialogBase):
         # 名單空也要建得起來（現場常態）
         from ui_utils.settle_dialog import SettleDialog
         dlg = SettleDialog(self.db)
+        dlg.deleteLater()
+
+    def test_conflict_shows_warning_not_generic_error_and_reloads(self):
+        """C1：SettlementConflict 須走 msgWarning 顯示白話訊息並重載清單，
+        絕不能落到 reportError（泛用當機訊息＋寫 error.log）。"""
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL "
+                     "WHERE doc_id='2'")
+        conn.commit()
+        conn.close()
+        from ui_utils.settle_dialog import SettleDialog, SettlementConflict
+        dlg = SettleDialog(self.db)
+        dlg.cmb_sender.setCurrentIndex(1)  # 送文者（現行三型態皆需必填）
+
+        conflict_msg = ("刑案（編號 2）已由其他電腦發文或刪除，"
+                         "本次結算已全部取消，請重新開啟結算視窗。")
+        with mock.patch("ui_utils.settle_dialog.settle_selected",
+                         side_effect=SettlementConflict(conflict_msg)), \
+             mock.patch("ui_utils.settle_dialog.confirmBox", return_value=True), \
+             mock.patch("ui_utils.settle_dialog.msgWarning") as m_warn, \
+             mock.patch("ui_utils.settle_dialog.reportError") as m_report, \
+             mock.patch.object(SettleDialog, "_load", autospec=True) as m_load:
+            dlg._on_confirm()
+
+        m_report.assert_not_called()
+        m_warn.assert_called_once()
+        warn_text = m_warn.call_args[0][1]
+        self.assertIn("編號 2", warn_text)
+        m_load.assert_called_once()
+        self.assertFalse(dlg.settled())
+        dlg.deleteLater()
+
+    def test_processor_name_trimmed_and_search_matches_display(self):
+        """維護者裁決：結算彈窗承辦人姓名比照敘獎去 `-NN` 後綴顯示，
+        搜尋亦須比對「顯示值」而非原始值，避免「畫面顯示 A、搜尋要打 B」。"""
+        conn = sqlite3.connect(self.db)
+        conn.execute("INSERT INTO Ref_Personnel(staff_id,staff_name,is_active,sort_order) "
+                     "VALUES('P03','測試員-19.06',1,3)")
+        conn.execute("UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL, "
+                     "processor_id='P03' WHERE doc_id='2'")
+        conn.commit()
+        conn.close()
+
+        from ui_utils.settle_dialog import load_unissued
+        data = load_unissued(self.db)
+        self.assertEqual(data["crim"][0]["processor"], "測試員")
+
+        from ui_utils.settle_dialog import SettleDialog
+        dlg = SettleDialog(self.db)
+
+        # 顯示值即去後綴後的姓名
+        proc_texts = [dlg._tbl.item(r, dlg._tbl.COL_PROC).text()
+                      for r in range(dlg._tbl.rowCount())]
+        self.assertIn("測試員", proc_texts)
+        self.assertNotIn("測試員-19.06", proc_texts)
+
+        # 搜尋顯示值找得到
+        dlg.edit_kw.setText("測試員")
+        self.assertTrue(len(dlg._tbl.visible_rows()) >= 1)
+
+        # 搜尋原始（含後綴）值找不到——證明搜尋比對的是顯示值，不是原始值
+        dlg.edit_kw.setText("測試員-19.06")
+        self.assertEqual(dlg._tbl.visible_rows(), [])
         dlg.deleteLater()
 
 if __name__ == "__main__":

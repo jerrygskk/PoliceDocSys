@@ -64,6 +64,43 @@ _TABLES = (
     recipients TEXT,
     last_modified DATETIME
 )""",
+    # Document_Ticket（罰單登錄）
+    # 三態同 Document_Reward：register_date NULL＝軟刪除空殼、''＝自助登錄未發文、
+    # 非空日期＝發文者登錄。CHECK 保證「整列全空」或「業務欄齊備且編號為 ASCII 英數」
+    # 兩種狀態擇一，防止半殘列繞過 domain helper 寫進來。
+    # sender_id／issuer_id 為真外鍵（getConn 已開 PRAGMA foreign_keys=ON）。
+    """CREATE TABLE IF NOT EXISTS Document_Ticket (
+    doc_id TEXT PRIMARY KEY,
+    create_date TEXT,
+    register_date TEXT,
+    sender_id TEXT
+        REFERENCES Ref_Personnel(staff_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    issuer_id TEXT
+        REFERENCES Ref_Personnel(staff_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    ticket_no TEXT COLLATE NOCASE,
+    last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CHECK (
+        (
+            register_date IS NULL
+            AND create_date IS NULL
+            AND sender_id IS NULL
+            AND issuer_id IS NULL
+            AND ticket_no IS NULL
+        )
+        OR
+        (
+            register_date IS NOT NULL
+            AND create_date IS NOT NULL
+            AND create_date <> ''
+            AND issuer_id IS NOT NULL
+            AND ticket_no IS NOT NULL
+            AND ticket_no <> ''
+            AND ticket_no NOT GLOB '*[^A-Z0-9]*'
+        )
+    )
+)""",
     # Ref_CaseTypes
     """CREATE TABLE IF NOT EXISTS Ref_CaseTypes (case_type_id VARCHAR(10) PRIMARY KEY, case_type_name VARCHAR(100) NOT NULL, is_active BOOLEAN NOT NULL DEFAULT 1, sort_order INTEGER, alias TEXT)""",
     # Ref_Case_Status
@@ -170,6 +207,22 @@ LEFT JOIN Ref_Personnel  P1 ON T.sender_id    = P1.staff_id
 LEFT JOIN Ref_Personnel  P2 ON T.receive_id   = P2.staff_id
 LEFT JOIN Ref_Personnel  P3 ON T.processor_id = P3.staff_id
 LEFT JOIN Ref_Departments D  ON T.dept_id      = D.dept_id""",
+    # Document_Ticket_Full（罰單登錄；欄名用英文，供 Tab／瀏覽／結算／列印共用）
+    """CREATE VIEW IF NOT EXISTS Document_Ticket_Full AS
+SELECT
+    t.doc_id,
+    t.create_date,
+    t.register_date,
+    t.sender_id,
+    COALESCE(s.staff_name, t.sender_id) AS sender_name,
+    t.issuer_id,
+    COALESCE(i.staff_name, t.issuer_id) AS issuer_name,
+    COALESCE(i.sort_order, 999999) AS issuer_sort_order,
+    t.ticket_no,
+    t.last_modified
+FROM Document_Ticket AS t
+LEFT JOIN Ref_Personnel AS s ON s.staff_id = t.sender_id
+LEFT JOIN Ref_Personnel AS i ON i.staff_id = t.issuer_id""",
 )
 
 # 主表的 last_modified 自動更新 trigger。
@@ -218,6 +271,17 @@ WHEN NEW.last_modified IS OLD.last_modified
 BEGIN
     UPDATE Document_Reward SET last_modified = datetime('now','localtime') WHERE doc_id = NEW.doc_id;
 END""",
+    # trg_ticket_insert
+    """CREATE TRIGGER IF NOT EXISTS trg_ticket_insert AFTER INSERT ON Document_Ticket
+BEGIN
+    UPDATE Document_Ticket SET last_modified = datetime('now','localtime') WHERE doc_id = NEW.doc_id;
+END""",
+    # trg_ticket_update
+    """CREATE TRIGGER IF NOT EXISTS trg_ticket_update AFTER UPDATE ON Document_Ticket
+WHEN NEW.last_modified IS OLD.last_modified
+BEGIN
+    UPDATE Document_Ticket SET last_modified = datetime('now','localtime') WHERE doc_id = NEW.doc_id;
+END""",
 )
 
 # 主表 last_modified 與稽核 ts 的索引（加速依時間排序／範圍查詢）。全 IF NOT EXISTS、冪等。
@@ -226,6 +290,10 @@ _INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_crim_lastmod ON Document_Criminal(last_modified)",
     "CREATE INDEX IF NOT EXISTS idx_gen_lastmod ON Document_General(last_modified)",
     "CREATE INDEX IF NOT EXISTS idx_reward_lastmod ON Document_Reward(last_modified)",
+    "CREATE INDEX IF NOT EXISTS idx_ticket_lastmod ON Document_Ticket(last_modified)",
+    # 罰單編號業務唯一鍵（不分大小寫）；partial index 讓軟刪除空殼的 NULL 不受限。
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_no_active "
+    "ON Document_Ticket(ticket_no COLLATE NOCASE) WHERE ticket_no IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_audit_ts ON Audit_Log(ts)",
 )
 

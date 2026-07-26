@@ -109,6 +109,62 @@ class TestYearEndReset(_DbTestBase):
                   (ARCHIVE_ROOT_KEY,))
         c.commit()
 
+    def _insert_person(self, staff_id, staff_name, is_active=1, sort_order=9):
+        self.conn.execute(
+            "INSERT OR REPLACE INTO Ref_Personnel"
+            "(staff_id,staff_name,alias,is_active,sort_order) VALUES(?,?,'',?,?)",
+            (staff_id, staff_name, is_active, sort_order))
+        self.conn.commit()
+
+    def _insert_ticket(self, doc_id, issuer_id, ticket_no,
+                       create_date="2026-07-23"):
+        # 有效未發文列：register_date=''（NULL 才是軟刪除空殼）
+        self.conn.execute(
+            "INSERT INTO Document_Ticket"
+            "(doc_id,create_date,register_date,sender_id,issuer_id,ticket_no) "
+            "VALUES(?,?,'',NULL,?,?)",
+            (doc_id, create_date, issuer_id, ticket_no))
+        self.conn.execute(
+            "INSERT OR REPLACE INTO Seq_DocId VALUES('Document_Ticket', ?)",
+            (int(doc_id),))
+        self.conn.commit()
+
+    def test_year_end_reset_clears_ticket_before_personnel_reindex(self):
+        # P002 為停用且被 Ticket 引用；Ticket 必須先清空，之後才能刪 P002。
+        self._insert_person("P002", "停用人員", is_active=0)
+        self._insert_ticket("1", issuer_id="P002", ticket_no="D4RD15263")
+        performYearEndReset(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM Document_Ticket"
+            ).fetchone()[0], 0)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM Ref_Personnel WHERE is_active=0"
+            ).fetchone()[0], 0)
+            self.assertEqual(conn.execute(
+                "SELECT last_id FROM Seq_DocId WHERE table_name='Document_Ticket'"
+            ).fetchone()[0], 0)
+            # 重置後不得留下指向已刪除／已改號人員的孤兒關聯
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(),
+                             [])
+        finally:
+            conn.close()
+
+    def test_year_end_reset_leaves_no_orphan_when_issuer_is_reindexed(self):
+        # 存活人員也會被重編 id（P05→P01）；Ticket 若沒先清空即成孤兒。
+        self._seed()
+        self._insert_ticket("1", issuer_id="P05", ticket_no="AB123")
+        performYearEndReset(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM Document_Ticket").fetchone()[0], 0)
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(),
+                             [])
+        finally:
+            conn.close()
+
     def test_full_reset(self):
         self._seed()
         self.conn.execute(

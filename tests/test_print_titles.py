@@ -60,6 +60,13 @@ class TestPrintTitles(unittest.TestCase):
             db_utils.setSetting(self.db, key, "已設定值")
         self.assertFalse(db_utils.printTitlesUnset(self.db))
 
+    def test_unset_flag_true_when_only_ticket_blank(self):
+        # 其餘四表＋註記皆已設定，唯罰單標題未設 → 仍應為 True（新 key 須被檢查到）
+        for key in db_utils.PRINT_TITLE_DEFAULTS:
+            if key != "print_title_ticket":
+                db_utils.setSetting(self.db, key, "已設定值")
+        self.assertTrue(db_utils.printTitlesUnset(self.db))
+
 
 if __name__ == "__main__":
     unittest.main()

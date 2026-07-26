@@ -68,32 +68,60 @@ def _document_manager_tab_width_violations(source):
 class RewardIntegrationTests(unittest.TestCase):
     def test_document_tab_and_menu_mappings_are_complete(self):
         from main import DocumentManager, MainMenu
-        from tabs import TabReward, TabRewardIssue
+        from tabs import (TabDispatch, TabReceive, TabReport, TabReward,
+                          TabRewardIssue, TabTicket, TabPrint, TabDBBrowse,
+                          TabArchive, TabSettings, TabAudit)
 
-        self.assertEqual(list(DocumentManager.TAB_CLASSES), list(range(10)))
-        self.assertIs(DocumentManager.TAB_CLASSES[3], TabReward)
-        self.assertIs(DocumentManager.TAB_CLASSES[4], TabRewardIssue)
-        self.assertEqual(DocumentManager._IDX_DBBROWSE, 6)
-        self.assertEqual(DocumentManager._IDX_SETTINGS, 8)
-        self.assertEqual(set(MainMenu.BTN_MAP.values()), set(range(10)))
+        expected_tabs = {
+            0: TabDispatch,
+            1: TabReceive,
+            2: TabReport,
+            3: TabReward,
+            4: TabRewardIssue,
+            5: TabTicket,
+            6: TabPrint,
+            7: TabDBBrowse,
+            8: TabArchive,
+            9: TabSettings,
+            10: TabAudit,
+        }
+        self.assertEqual(DocumentManager.TAB_CLASSES, expected_tabs)
+        self.assertEqual(DocumentManager._IDX_DBBROWSE, 7)
+        self.assertEqual(DocumentManager._IDX_SETTINGS, 9)
+        self.assertEqual(DocumentManager._IDX_AUDIT, 10)
+        self.assertEqual(set(MainMenu.BTN_MAP.values()), set(range(11)))
         self.assertEqual(MainMenu.BTN_MAP["btn_reward"], 3)
-        self.assertEqual(MainMenu.BTN_MAP["btn_ticket"], 4)
+        self.assertEqual(MainMenu.BTN_MAP["btn_reward_issue"], 4)
+        self.assertEqual(MainMenu.BTN_MAP["btn_ticket"], 5)
         self.assertEqual(MainMenu.ICON_MAP["btn_reward"], ":/menu/reward.svg")
-        self.assertEqual(MainMenu.ICON_MAP["btn_ticket"], ":/menu/reward_issue.svg")
+        self.assertEqual(MainMenu.ICON_MAP["btn_reward_issue"], ":/menu/reward_issue.svg")
+        self.assertEqual(MainMenu.ICON_MAP["btn_ticket"], ":/menu/ticket.svg")
+
+    def _menu_button_positions(self):
+        menu = (ROOT / "layouts" / "main_menu.ui").read_text(encoding="utf-8")
+        cells = re.findall(
+            r'<item row="(\d+)" column="(\d+)">\s*<widget class="QToolButton" name="(btn_[^"]+)"',
+            menu)
+        return [(int(r), int(c), name) for r, c, name in cells]
 
     def test_ui_order_and_menu_grid(self):
         layout = (ROOT / "layouts" / "Layout1.ui").read_text(encoding="utf-8")
         names = re.findall(r'<widget class="QWidget" name="(tab_[^"]+)"', layout)
         self.assertEqual(names, [
-            "tab_dispatch", "tab_receive", "tab_report", "tab_reward", "tab_ticket",
-            "tab_print", "tab_dbbrowse", "tab_archive", "tab_settings", "tab_audit",
+            "tab_dispatch", "tab_receive", "tab_report", "tab_reward",
+            "tab_reward_issue", "tab_ticket", "tab_print", "tab_dbbrowse",
+            "tab_archive", "tab_settings", "tab_audit",
         ])
 
+        positions = self._menu_button_positions()
+        self.assertEqual(len(positions), 11)
+        self.assertEqual(
+            {(row, col) for row, col, _ in positions},
+            {(0, c) for c in range(4)} | {(1, c) for c in range(4)} | {(2, c) for c in range(3)},
+        )
+
         menu = (ROOT / "layouts" / "main_menu.ui").read_text(encoding="utf-8")
-        cells = re.findall(r'<item row="(\d+)" column="(\d+)">\s*<widget class="QToolButton" name="(btn_[^"]+)"', menu)
-        self.assertEqual(len(cells), 10)
-        self.assertEqual({(int(r), int(c)) for r, c, _ in cells}, {(r, c) for r in range(5) for c in range(2)})
-        for name in ("btn_reward", "btn_ticket"):
+        for name in ("btn_reward", "btn_reward_issue", "btn_ticket"):
             block = re.search(rf'<widget class="QToolButton" name="{name}">(.*?)</widget>', menu, re.S).group(1)
             self.assertNotIn('name="icon"', block)
 
@@ -126,21 +154,31 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertIn('id="reward-glyph"', ticket_svg)
         self.assertIn('id="outbound-arrow"', ticket_svg)
 
+        for filename in ("menu_ticket.svg",):
+            svg = (ROOT / "res" / "buttons" / filename).read_text(encoding="utf-8")
+            self.assertIn('viewBox="0 0 24 24"', svg)
+            self.assertIn('fill="none"', svg)
+            self.assertIn('stroke="#4977b1"', svg)
+            self.assertIn('stroke-width="1.7"', svg)
+            self.assertIn('stroke-linecap="round"', svg)
+            self.assertIn('stroke-linejoin="round"', svg)
+
         from res import resources_rc  # noqa: F401
-        for path in (":/menu/reward.svg", ":/menu/reward_issue.svg", ":/tab/reward.svg"):
+        for path in (":/menu/reward.svg", ":/menu/reward_issue.svg", ":/tab/reward.svg",
+                     ":/menu/ticket.svg"):
             f = QFile(path)
             self.assertTrue(f.exists(), path)
             self.assertTrue(f.open(QFile.ReadOnly), path)
             self.assertGreater(f.size(), 0)
             self.assertFalse(QIcon(path).isNull(), path)
 
-    def test_tab_overflow_default_width_1320_resizable_and_uses_qt_fallback(self):
+    def test_tab_overflow_default_width_1440_resizable_and_uses_qt_fallback(self):
         from ui_utils import loadUi
 
         app = QApplication.instance() or QApplication([])
         window = loadUi(str(ROOT / "layouts" / "Layout1.ui"))
         tab_widget = window.tabWidget
-        self.assertEqual(window.width(), 1320)
+        self.assertEqual(window.width(), 1440)
         window.show()
         QApplication.processEvents()
         tab_widget.resize(200, tab_widget.height())
@@ -171,21 +209,23 @@ class RewardIntegrationTests(unittest.TestCase):
     def test_help_and_quickstart_indexes(self):
         from ui_utils.help_content import (HELP_PAGES, HELP_TIPS, HELP_TITLES,
                                            QUICKSTART, render_review_text)
-        self.assertEqual(set(HELP_TITLES), set(range(10)))
-        self.assertEqual(set(HELP_PAGES), set(range(10)))
-        self.assertEqual(set(HELP_TIPS), set(range(10)))
+        self.assertEqual(set(HELP_TITLES), set(range(11)))
+        self.assertEqual(set(HELP_PAGES), set(range(11)))
+        self.assertEqual(set(HELP_TIPS), set(range(11)))
         self.assertEqual(HELP_TITLES[4], "敘獎發文")
-        self.assertEqual(set(QUICKSTART), set(range(9)))
+        self.assertEqual(HELP_TITLES[5], "罰單登錄")
+        self.assertEqual(set(QUICKSTART), set(range(10)))
         source = (ROOT / "tools" / "gen_quickstart.py").read_text(encoding="utf-8")
         self.assertIn("PAGE1 = [0, 1, 2]", source)
-        self.assertIn("PAGE2 = [3, 4, 5]", source)
-        self.assertIn("PAGE3 = [6, 7, 8]", source)
-        self.assertIn("九個分頁速查", source)
+        self.assertIn("PAGE2 = [3, 4, 5, 6]", source)
+        self.assertIn("PAGE3 = [7, 8, 9]", source)
+        self.assertIn("十個分頁速查", source)
         reward_help = render_review_text(3)
         issue_help = render_review_text(4)
-        print_help = render_review_text(5)
-        browse_help = render_review_text(6)
-        settings_help = render_review_text(8)
+        ticket_help = render_review_text(5)
+        print_help = render_review_text(6)
+        browse_help = render_review_text(7)
+        settings_help = render_review_text(9)
         self.assertIn("登錄日期由系統自動填入今天", reward_help)
         self.assertNotIn("選擇發文日期", reward_help)
         self.assertNotIn("自助取號模式", reward_help)
@@ -202,7 +242,20 @@ class RewardIntegrationTests(unittest.TestCase):
         reward_issue_quickstart = "\n".join(QUICKSTART[4][1])
         self.assertIn("或「輸入」", reward_issue_quickstart)
         self.assertNotIn("加入清單", reward_issue_quickstart)
-        self.assertIn("未發文的刑案／一般案件", print_help)
+        # 模式名稱必須與設定頁 radio 的字面一致（使用者要照著去設定頁找選項），
+        # 不可自創「發文者登錄模式」之類的同義詞。
+        self.assertIn("送文者輸入模式", ticket_help)
+        self.assertIn("自助取號模式", ticket_help)
+        self.assertIn("開立人員", ticket_help)
+        self.assertIn("取代", ticket_help)
+        self.assertIn("清空", ticket_help)
+        self.assertIn("罰單編號僅接受半形英文字母與數字", ticket_help)
+        self.assertIn("不可還原", ticket_help)
+        self.assertIn("文號（doc_id）直接作廢、不會再被使用；原罰單編號仍可重新登錄", ticket_help)
+        ticket_quickstart = "\n".join(QUICKSTART[5][1] + QUICKSTART[5][2])
+        self.assertIn("文號（doc_id）作廢不可再用，原罰單編號仍可重新登錄", ticket_quickstart)
+        self.assertIn("本頁不設身分限制", ticket_help)
+        self.assertIn("未發文的刑案／一般／罰單案件", print_help)
         self.assertNotIn("未發文的刑案／一般／敘獎案件", print_help)
         self.assertEqual(set(HELP_TIPS[3]), {
             "btn_reward_submit", "btn_reward_clear", "reward_personnel_list",
@@ -211,10 +264,16 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertEqual(set(HELP_TIPS[4]), {
             "btn_reward_input", "btn_reward_issue", "btn_reward_issue_clear",
         })
-        self.assertIn("自助取號模式只影響刑案與一般陳報", settings_help)
+        self.assertEqual(set(HELP_TIPS[5]), {
+            "ticket_add", "ticket_clear_issuer", "ticket_candidates_list",
+        })
+        # 罰單登錄同受陳報模式影響（Task 5 起），說明不可再宣稱「只影響刑案與一般」
+        self.assertIn("自助取號模式影響刑案與一般陳報，以及罰單登錄", settings_help)
         self.assertIn("敘獎登錄與敘獎發文不受陳報模式影響", settings_help)
         self.assertNotIn("此模式同時涵蓋敘獎登錄", settings_help)
         self.assertNotIn("一併於結算時補齊", settings_help)
+        self.assertIn("罰單簽收單的查詢基準", settings_help)
+        self.assertIn("登錄日期", settings_help)
         self.assertIn("一般使用者唯讀", browse_help)
         self.assertIn("歸檔管理可修改、不可刪除", browse_help)
         self.assertIn("管理者可修改、可刪除", browse_help)
@@ -231,7 +290,18 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertIn("只有陳報類輸入頁才依需求接 `report_input_mode`", developer)
         self.assertNotIn("SETTLE_META` reward", developer)
         self.assertNotIn("並對有 `reward_data_dirty` 屬性的 tab 設 True", developer)
-        self.assertIn("`SETTLE_META` 僅含刑案與一般", developer)
+        self.assertIn("成員為刑案／一般／罰單", developer)
+        self.assertIn("罰單 meta 帶 `strict=True`，任一衝突即整批 rollback", developer)
+        self.assertIn("`input_lock_reward`／`input_lock_ticket`", developer)
+        self.assertIn("`print_title_ticket`", developer)
+        self.assertIn("| **罰單登錄**（`Document_Ticket`／`print_title_ticket`）", developer)
+        self.assertIn("所有 CRUD 寫入唯一走 `lib/ticket_utils.py`；結算發文由 `SETTLE_META` 在共用 transaction 更新", developer)
+        self.assertIn("五張公文主表", developer)
+        views_section = developer.split("### Views", 1)[1].split("\n---\n", 1)[0]
+        for view_name in ("View_Task_Full", "View_Criminal_Full",
+                          "View_General_Full", "Document_Ticket_Full"):
+            self.assertIn(view_name, views_section)
+        self.assertIn("`idx_task/crim/gen/reward/ticket_lastmod`", developer)
 
     def test_quickstart_build_renders_only_approved_indexes(self):
         from reportlab.platypus import Spacer
@@ -254,8 +324,23 @@ class RewardIntegrationTests(unittest.TestCase):
               patch.object(gen_quickstart, "SimpleDocTemplate", FakeDocument)):
             gen_quickstart.build(str(ROOT / "docs" / "_test_quick_start.pdf"))
 
-        self.assertEqual(rendered, [0, 1, 2, 3, 4, 5, 6, 7, 8])
-        self.assertNotIn(9, rendered)
+        self.assertEqual(rendered, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+        self.assertNotIn(10, rendered)
+
+
+class TestThemeTicketAddButton(unittest.TestCase):
+    """`ticket_add`（罰單登錄「新增」鈕）須與其餘送出鈕同套墨藍樣式，
+    三段（base／:hover／:pressed）皆須列在白名單內，缺一段就退回預設灰。"""
+
+    def test_ticket_add_in_submit_button_palette(self):
+        theme_src = (ROOT / "lib" / "theme.py").read_text(encoding="utf-8")
+        start = theme_src.index("送出按鈕")
+        end = theme_src.index("只歸紙本禁用態", start)
+        block = theme_src[start:end]
+        for selector in ("QPushButton#ticket_add,",
+                         "QPushButton#ticket_add:hover,",
+                         "QPushButton#ticket_add:pressed,"):
+            self.assertIn(selector, block)
 
 
 if __name__ == "__main__":

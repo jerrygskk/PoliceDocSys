@@ -26,7 +26,30 @@ class TestInputLock(unittest.TestCase):
         os.remove(self.db)
 
     def test_keys_present(self):
-        self.assertEqual(set(INPUT_LOCK_KEYS), {"dispatch", "task", "crim", "gen"})
+        self.assertEqual(set(INPUT_LOCK_KEYS),
+                         {"dispatch", "task", "crim", "gen", "ticket", "reward"})
+
+    def test_ticket_and_reward_lock_keys_present(self):
+        self.assertEqual(INPUT_LOCK_KEYS["ticket"], "input_lock_ticket")
+        self.assertEqual(INPUT_LOCK_KEYS["reward"], "input_lock_reward")
+
+    def test_ticket_and_reward_round_trip(self):
+        # 走正式設定 API（無 setInputLocked helper，設定面板本身以 setSetting 寫入）。
+        setSetting(self.db, INPUT_LOCK_KEYS["ticket"], "1")
+        setSetting(self.db, INPUT_LOCK_KEYS["reward"], "1")
+        self.assertTrue(isInputLocked(self.db, "ticket"))
+        self.assertTrue(isInputLocked(self.db, "reward"))
+        # 兩把鎖互相獨立
+        setSetting(self.db, INPUT_LOCK_KEYS["ticket"], "")
+        self.assertFalse(isInputLocked(self.db, "ticket"))
+        self.assertTrue(isInputLocked(self.db, "reward"))
+
+    def test_ticket_and_reward_zero_and_junk_are_unlocked(self):
+        for kind in ("ticket", "reward"):
+            setSetting(self.db, INPUT_LOCK_KEYS[kind], "0")
+            self.assertFalse(isInputLocked(self.db, kind))
+            setSetting(self.db, INPUT_LOCK_KEYS[kind], "x")
+            self.assertFalse(isInputLocked(self.db, kind))
 
     def test_dispatch_key_independent(self):
         setSetting(self.db, INPUT_LOCK_KEYS["dispatch"], "1")

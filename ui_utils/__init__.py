@@ -15,7 +15,7 @@ from .widgets import (
     refreshFilterCombo, runWithBusy, preserveScroll, attachComboHint,
     RowHoverFilter, RowHoverDelegate, LinkCursorFilter, TwoLineElideLabel,
     parse_recipient_names, format_recipient_names, sort_reward_personnel,
-    count_recipient_names, sort_personnel_by_counts,
+    count_recipient_names, sort_personnel_by_counts, sort_personnel_by_id_counts,
     RecipientLineEditController, setupRecipientLineEdit,
     RecipientCombo, setupRecipientCombo, refreshRecipientComboItems,
 )
@@ -33,6 +33,7 @@ from .table   import (
 from .help_dialog import helpDialog, attachHelpButton
 from .edit_dialog import TaskEditDialog, CriminalEditDialog, GeneralEditDialog
 from .reward_dialog import RewardEditDialog
+from .ticket_dialog import TicketEditDialog
 from .convert_dialog import ConvertDialog
 from .settings_dialogs import (
     RefItemDialog, REF_PERSONNEL, REF_DEPT, REF_CASETYPE,
@@ -67,6 +68,7 @@ __all__ = [
     "sort_reward_personnel",
     "count_recipient_names",
     "sort_personnel_by_counts",
+    "sort_personnel_by_id_counts",
     "RecipientLineEditController",
     "setupRecipientLineEdit",
     "RecipientCombo",
@@ -85,6 +87,7 @@ __all__ = [
     "CriminalEditDialog",
     "GeneralEditDialog",
     "RewardEditDialog",
+    "TicketEditDialog",
     "ConvertDialog",
     "FIXED_COL_WIDTHS",
     "RefItemDialog", "REF_PERSONNEL", "REF_DEPT", "REF_CASETYPE",

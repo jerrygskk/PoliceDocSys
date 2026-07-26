@@ -19,14 +19,25 @@ class TestRewardIssueMenuAssets(unittest.TestCase):
 
     def test_tab4_and_menu_tile_are_named_reward_issue(self):
         layout = ET.parse(os.path.join(_ROOT, "layouts", "Layout1.ui"))
-        tab4 = layout.find(".//widget[@name='tab_ticket']/attribute[@name='title']/string")
+        tab4 = layout.find(".//widget[@name='tab_reward_issue']/attribute[@name='title']/string")
         self.assertIsNotNone(tab4)
         self.assertEqual(tab4.text, "敘獎發文")
 
         menu = ET.parse(os.path.join(_ROOT, "layouts", "main_menu.ui"))
-        tile = menu.find(".//widget[@name='btn_ticket']/property[@name='text']/string")
+        tile = menu.find(".//widget[@name='btn_reward_issue']/property[@name='text']/string")
         self.assertIsNotNone(tile)
         self.assertEqual(tile.text, "敘獎發文")
+
+    def test_tab5_and_menu_tile_are_named_ticket(self):
+        layout = ET.parse(os.path.join(_ROOT, "layouts", "Layout1.ui"))
+        tab5 = layout.find(".//widget[@name='tab_ticket']/attribute[@name='title']/string")
+        self.assertIsNotNone(tab5)
+        self.assertEqual(tab5.text, "罰單登錄")
+
+        menu = ET.parse(os.path.join(_ROOT, "layouts", "main_menu.ui"))
+        tile = menu.find(".//widget[@name='btn_ticket']/property[@name='text']/string")
+        self.assertIsNotNone(tile)
+        self.assertEqual(tile.text, "罰單登錄")
 
     def test_ticket_menu_resource_is_reward_glyph_with_dispatch_palette_and_arrow(self):
         qrc = ET.parse(os.path.join(_ROOT, "res", "resources.qrc"))

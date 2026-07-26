@@ -11,6 +11,7 @@ from lib.db_utils import (
     REWARD_ACTIVE_SQL, getResourcePath, rewardActiveSql,
     resolveArchivedPdf, getSetting, ARCHIVE_ROOT_KEY, softDeleteDoc,
 )
+from lib.ticket_utils import TICKET_ACTIVE_SQL, TicketNotFoundError, deleteTicket
 from ui_utils import loadUi, msgInfo, msgWarning, msgCritical, confirmBox, reportError
 from lib.auth_manager import AuthManager
 from ui_utils import (
@@ -19,6 +20,7 @@ from ui_utils import (
     LinkCursorFilter,
 )
 from ui_utils.reward_dialog import RewardEditDialog
+from ui_utils.ticket_dialog import TicketEditDialog
 
 
 class _WatermarkFitter(QObject):
@@ -108,7 +110,17 @@ REWARD_COLS = [
     {"header": "敘獎事由", "view_col": "reason", "slim": True, "search": True, "stretch": True, "w": 300},
     {"header": "敘獎人員", "view_col": "recipients", "slim": True, "search": True, "w": 240},
 ]
-BROWSE_KEYS = ("task", "crim", "gen", "reward")
+TICKET_COLS = [
+    {"header": "", "delete": True, "slim": True, "w": 32},
+    {"header": "編號", "view_col": "doc_id", "slim": True, "link": True, "search": True, "w": 64},
+    {"header": "登錄日期", "view_col": "create_date", "slim": True, "search": True, "w": 140},
+    {"header": "發文日期", "view_col": "register_date", "slim": True, "search": True, "w": 140},
+    {"header": "發文者", "view_col": "sender_name", "slim": True, "search": True, "w": 120, "ref_col": True},
+    {"header": "開立人員", "view_col": "issuer_name", "slim": True, "search": True, "w": 120, "ref_col": True},
+    {"header": "罰單編號", "view_col": "ticket_no", "slim": True, "search": True, "stretch": True, "w": 160},
+]
+
+BROWSE_KEYS = ("task", "crim", "gen", "reward", "ticket")
 PRELOAD_KEYS = ("task", "crim", "gen")
 
 
@@ -131,9 +143,17 @@ TABLE_META = {
     },
     "reward": {
         "cols": REWARD_COLS, "base": "Document_Reward", "id_col": "doc_id",
-        "dialog": RewardEditDialog, "raw": True,
+        "dialog": RewardEditDialog, "raw": True, "dialog_kwargs": {"source": "browse"},
         "active_where": REWARD_ACTIVE_SQL, "sort_numeric": True,
         "pending_date_col": "register_date",
+    },
+    "ticket": {
+        "cols": TICKET_COLS, "view": "Document_Ticket_Full",
+        "base": "Document_Ticket", "proc_fk": "issuer_id", "id_col": "doc_id",
+        "dialog": TicketEditDialog, "dialog_kwargs": {"source": "browse"},
+        "active_where": TICKET_ACTIVE_SQL, "sort_numeric": True,
+        "pending_date_col": "register_date",
+        "admin_only_edit": True, "delete_handler": deleteTicket,
     },
 }
 
@@ -160,6 +180,7 @@ def queryBrowseRows(conn, key):
         FROM {meta['view']} v
         LEFT JOIN {meta['base']} b ON v."{meta['id_col']}" = b.doc_id
         LEFT JOIN Ref_Personnel p ON b.{meta['proc_fk']} = p.staff_id
+        ORDER BY CAST(v."{meta['id_col']}" AS INTEGER)
     """
     cur = conn.execute(sql)
     names = [d[0] for d in cur.description]
@@ -300,14 +321,16 @@ class TabDBBrowse(BaseTab):
         # 身分切換時即時更新各表的刪除鈕與編號連結可用狀態
         AuthManager.instance().role_changed.connect(self._onRolePerm)
 
-    # 交辦單(task)與敘獎(reward)：僅最高權限管理者可改，歸檔管理不可（走各自的
-    # 收發文／敘獎發文流程，不由歸檔管理在此改動）。刑案/一般(crim/gen)歸檔管理仍可。
+    # 交辦單(task)、敘獎(reward)、罰單(ticket)：僅最高權限管理者可改，歸檔管理不可
+    # （走各自的收發文／敘獎發文／罰單登錄流程，不由歸檔管理在此改動）。
+    # 刑案/一般(crim/gen)歸檔管理仍可。資料化來源：TABLE_META[key]["admin_only_edit"]
+    # （task/reward 尚未搬遷到 meta，維持既有 tuple 亦一併判斷，避免遺漏）。
     _ADMIN_ONLY_EDIT_KEYS = ("task", "reward")
 
     def _canEditKey(self, key):
         """該子頁的編輯（編號連結／編輯彈窗）是否可用於當前身分。"""
         am = AuthManager.instance()
-        if key in self._ADMIN_ONLY_EDIT_KEYS:
+        if key in self._ADMIN_ONLY_EDIT_KEYS or TABLE_META[key].get("admin_only_edit"):
             return am.is_admin()
         return am.is_manager()
 
@@ -496,9 +519,11 @@ class TabDBBrowse(BaseTab):
             return
         meta = TABLE_META[key]
         btn = u.get("overdue")
-        overdue_on = bool(key == "task" and btn and btn.isChecked())
+        overdue_on = bool(btn and btn.isChecked())
+        pending_col = meta.get("pending_date_col")
 
         order = getattr(self, "_docorder", {}).get(key, [])
+        all_rows = getattr(self, "_allRows", {}).get(key, [])
         matched_map = getattr(self, "_matchedCols", {}).get(key, {})
         if not hasattr(self, "_lastSearch"):
             self._lastSearch = {}
@@ -511,9 +536,14 @@ class TabDBBrowse(BaseTab):
                 did = order[row_idx] if row_idx < len(order) else ""
                 matched = matched_map.get(did)
                 filter_ok = bool(matched) if kw else True
-                if overdue_on:
+                if overdue_on and key == "task":
                     hi = table.verticalHeaderItem(row_idx)
                     overdue_ok = bool(hi and hi.data(Qt.UserRole))
+                elif overdue_on and pending_col:
+                    # 「未發文」篩選（罰單等）：以待發日期欄空白判定，資料化、
+                    # 不另建每列旗標（task 的逾期天數計算才需要，這裡是布林即可）。
+                    r = all_rows[row_idx] if row_idx < len(all_rows) else {}
+                    overdue_ok = not str(r.get(pending_col) or "").strip()
                 else:
                     overdue_ok = True
                 show = filter_ok and overdue_ok
@@ -983,16 +1013,31 @@ class TabDBBrowse(BaseTab):
                 confirm_text="刪除", confirm_danger=True, default_confirm=False):
             return
         am = AuthManager.instance()
+        meta = TABLE_META[key]
         conn = None
         try:
             conn = self._getConn()
-            # 瀏覽頁刪除僅 admin、與資料列的人脫鉤 → operator 一律留空
-            # （audit_operator=False）；回收筒對象人仍取承辦人（helper 內處理）。
-            softDeleteDoc(conn, table=TABLE_META[key]["base"], doc_id=doc_id,
-                          role=am.current_role, is_admin=am.is_admin(),
-                          audit_operator=False)
+            handler = meta.get("delete_handler")
+            if handler:
+                # 罰單等有專屬 domain 刪除 helper 的表：不走 softDeleteDoc／
+                # 不寫 Trash_Documents（該 helper 內部界線已載明）。
+                handler(conn, doc_id=doc_id, role=am.current_role)
+            else:
+                # 瀏覽頁刪除僅 admin、與資料列的人脫鉤 → operator 一律留空
+                # （audit_operator=False）；回收筒對象人仍取承辦人（helper 內處理）。
+                softDeleteDoc(conn, table=meta["base"], doc_id=doc_id,
+                              role=am.current_role, is_admin=am.is_admin(),
+                              audit_operator=False)
             conn.commit()
+        except TicketNotFoundError as e:
+            # 併發刪除：白話訊息，非未預期錯誤，不走 reportError。
+            if conn:
+                conn.rollback()
+            msgWarning("資料已刪除", str(e))
+            return
         except Exception as e:
+            if conn:
+                conn.rollback()
             reportError("刪除失敗", e)
             return
         finally:
@@ -1013,8 +1058,9 @@ class TabDBBrowse(BaseTab):
     def _onEdit(self, key, row, doc_id):
         if not self._canEditKey(key):
             return
-        dialog_cls = TABLE_META[key]["dialog"]
-        kwargs = {"source": "browse"} if key == "reward" else {}
+        meta = TABLE_META[key]
+        dialog_cls = meta["dialog"]
+        kwargs = meta.get("dialog_kwargs", {})
         dlg = dialog_cls(self.db_path, doc_id, self._ui[key]["table"], **kwargs)
         if dlg.exec():
             if getattr(dlg, "converted", False):
