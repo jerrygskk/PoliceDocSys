@@ -571,7 +571,11 @@ class InputLockPanel(_SettingsPanel):
         ("reward_issue", "唯讀敘獎發文"),
     ]
 
-    def __init__(self, db_path, parent=None):
+    def __init__(self, db_path, parent=None, flow_keys=None):
+        # flow_keys=None 時維持完整版既有全部列（零變化）；獨立版傳入白名單，
+        # 只建立、只讀寫這些 key 的 App_Settings（見 _build／_save）。
+        self.flow_keys = (tuple(flow_keys) if flow_keys is not None
+                          else tuple(k for k, _ in self._ROWS))
         super().__init__("唯讀設定", db_path, parent)
 
     def _build(self):
@@ -588,12 +592,17 @@ class InputLockPanel(_SettingsPanel):
         hint.setWordWrap(True)
         v.addWidget(hint)
 
+        allowed = set(self.flow_keys)
         self._checks = {}
+        self._row_labels = {}
         for kind, label in self._ROWS:
+            if kind not in allowed:
+                continue
             cb = QCheckBox(label)
             cb.stateChanged.connect(self._updateSaveBtn)
             v.addWidget(cb)
             self._checks[kind] = cb
+            self._row_labels[kind] = label
 
         self._btn_save = _save_row(v)
         self._btn_save.clicked.connect(self._save)
@@ -612,7 +621,8 @@ class InputLockPanel(_SettingsPanel):
         return {k: cb.isChecked() for k, cb in self._checks.items()}
 
     def _save(self):
-        """存檔成功回 True、被擋回 False。"""
+        """存檔成功回 True、被擋回 False。
+        只讀寫 self._checks 內建立的 flow key，未列出的流程 App_Settings 不動。"""
         from lib.auth_manager import AuthManager
         from lib.db_utils import (setSetting, getSetting, INPUT_LOCK_KEYS,
                                   writeAuditSafe, buildDetail)
@@ -620,8 +630,9 @@ class InputLockPanel(_SettingsPanel):
         if not AuthManager.instance().is_admin():
             return False
         changes = []
-        for kind, label in self._ROWS:
-            new = "1" if self._checks[kind].isChecked() else ""
+        for kind, cb in self._checks.items():
+            label = self._row_labels[kind]
+            new = "1" if cb.isChecked() else ""
             old = (getSetting(self.db_path, INPUT_LOCK_KEYS[kind], "") or "").strip()
             if (new == "1") != (old == "1"):
                 changes.append(f"{label} {'開啟' if new == '1' else '關閉'}")
@@ -797,7 +808,11 @@ class InputModePanel(_SettingsPanel):
 
     _ROWS = (("crim", "刑案陳報"), ("gen", "一般陳報"), ("ticket", "罰單登錄"))
 
-    def __init__(self, db_path, parent=None):
+    def __init__(self, db_path, parent=None, flow_keys=None):
+        # flow_keys=None 時維持完整版既有全部列（零變化）；獨立版傳入白名單，
+        # 只建立、只讀寫這些 key 的 App_Settings（見 _build／reload／_save）。
+        self.flow_keys = (tuple(flow_keys) if flow_keys is not None
+                          else tuple(k for k, _ in self._ROWS))
         super().__init__("陳報模式", db_path, parent)
 
     def _build(self):
@@ -824,9 +839,12 @@ class InputModePanel(_SettingsPanel):
         hint_self.setContentsMargins(0, 0, 0, 6)
         v.addWidget(hint_self)
 
+        allowed = set(self.flow_keys)
         self._groups = {}
         self._radios = {}
         for kind, label_text in self._ROWS:
+            if kind not in allowed:
+                continue
             row = QHBoxLayout()
             row.setSpacing(12)
             lbl = QLabel(label_text)
@@ -867,8 +885,7 @@ class InputModePanel(_SettingsPanel):
 
     def reload(self):
         from lib.db_utils import isSelfServiceMode
-        for kind, _label in self._ROWS:
-            rb_sender, rb_self = self._radios[kind]
+        for kind, (rb_sender, rb_self) in self._radios.items():
             is_self = isSelfServiceMode(self.db_path, kind)
             for rb in (rb_sender, rb_self):
                 rb.blockSignals(True)
@@ -879,18 +896,21 @@ class InputModePanel(_SettingsPanel):
         self._markLoaded()
 
     def _values(self):
-        return {kind: ("1" if self._radios[kind][1].isChecked() else "0")
-                for kind, _label in self._ROWS}
+        return {kind: ("1" if radios[1].isChecked() else "0")
+                for kind, radios in self._radios.items()}
 
     def _save(self):
+        """只讀寫 self._radios 內建立的 flow key，未列出的流程 App_Settings 不動。"""
         from lib.auth_manager import AuthManager
         from lib.db_utils import (setSetting, isSelfServiceMode, REPORT_MODE_KEYS,
                                   writeAuditSafe, buildDetail)
         if not AuthManager.instance().is_admin():
             return False
         am = AuthManager.instance()
-        for kind, label_text in self._ROWS:
-            new_self = self._radios[kind][1].isChecked()
+        labels = dict(self._ROWS)
+        for kind, (rb_sender, rb_self) in self._radios.items():
+            label_text = labels[kind]
+            new_self = rb_self.isChecked()
             old_self = isSelfServiceMode(self.db_path, kind)
             setSetting(self.db_path, REPORT_MODE_KEYS[kind], "1" if new_self else "0")
             if new_self != old_self:

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate, QStyle,
 )
 
+from lib.app_profile import AppProfile, FULL_PROFILE
 from lib.base_tab import BaseTab
 from lib.auth_manager import AuthManager
 from lib.db_backup import formatDocCounts
@@ -205,6 +206,21 @@ class TabSettings(BaseTab):
     _PAGE_TRASH     = 4
     _PAGE_BACKUP    = 5
 
+    # 固定 .ui 骨架的 page key 順序／索引對照；不論 profile 為何都不刪頁、不重排。
+    _PAGE_KEY_ORDER  = ("personnel", "dept", "casetype", "system", "trash", "backup")
+    _PAGE_KEYS_BY_IDX = {
+        0: "personnel", 1: "dept", 2: "casetype",
+        3: "system", 4: "trash", 5: "backup",
+    }
+    # 系統設定子頁六個嵌入面板的固定順序（與 profile.system_panels 對照）。
+    _SYSTEM_PANEL_ORDER = (
+        "archive_root", "print_title", "idle", "input_lock", "backup", "input_mode",
+    )
+
+    def __init__(self, tab_widget, db_path, profile: AppProfile = FULL_PROFILE):
+        super().__init__(tab_widget, db_path)
+        self.profile = profile
+
     def setup(self, tab_index):
         tab = self.tab_widget.widget(tab_index)
         if not tab:
@@ -214,6 +230,21 @@ class TabSettings(BaseTab):
         self._ref_dirty    = False
         # 排序暫存狀態：每頁一份 {鍵: {'rows': [...], 'dirty': bool, 'save_btn': btn, 'table': tbl}}
         self._sort_state = {}
+
+        # ── 依 profile 決定本次要組裝的頁與系統設定面板 ──
+        # 保留 .ui 六個 stack page 與固定索引，不刪頁、不重排；只依此白名單
+        # 決定要不要建立內容、要不要顯示 nav button。
+        self.enabled_page_keys = tuple(
+            k for k in self._PAGE_KEY_ORDER if k in self.profile.settings_pages)
+        self.enabled_system_panel_keys = tuple(
+            k for k in self._SYSTEM_PANEL_ORDER if k in self.profile.system_panels)
+        self._enabled_page_indices = {
+            idx for idx, key in self._PAGE_KEYS_BY_IDX.items()
+            if key in self.enabled_page_keys}
+        # 跨年度重置屬最高風險破壞性功能：僅當回收筒與備份還原兩頁皆核准時才允許
+        # （目前兩種 profile 剛好以此完整區分 full／entry，未來新增 profile 需重新檢視）。
+        self._allow_year_reset = (
+            "trash" in self.enabled_page_keys and "backup" in self.enabled_page_keys)
 
         # ── 載入 .ui 靜態骨架 ──
         ui = loadUi(getResourcePath("layouts/Layout7.ui"))
@@ -250,6 +281,12 @@ class TabSettings(BaseTab):
         self._btn_year_reset = btn_year_reset
         btn_logout     = inner.findChild(QPushButton, "btn_logout")
 
+        # 未核准的 nav 頁：先隱藏（_applyRolePermissions 之後每次角色變動也不得
+        # 再顯示，見該方法內對 trash／backup 的 profile 檢查）。
+        for idx, btn in enumerate(self._nav_btns):
+            if btn and idx not in self._enabled_page_indices:
+                btn.setVisible(False)
+
         # 三子頁的表格、新增/修改/儲存排序按鈕
         self.tbl_personnel = inner.findChild(QTableWidget, "tbl_personnel")
         self.tbl_dept      = inner.findChild(QTableWidget, "tbl_dept")
@@ -281,8 +318,12 @@ class TabSettings(BaseTab):
             "QPushButton:hover { background-color: #B8D8E8; }"
         )
         btn_change_pwd.setStyleSheet(_NAV_BOTTOM)
-        btn_year_reset.setStyleSheet(_NAV_DANGER)
         btn_logout.setStyleSheet(_NAV_BOTTOM)
+        if self._allow_year_reset:
+            btn_year_reset.setStyleSheet(_NAV_DANGER)
+        else:
+            # 獨立版：不得存在可觸發跨年度重置的路徑，連鈕帶 signal 一併不建立。
+            btn_year_reset.setVisible(False)
 
         # ── 綁定 signal ──
         self.w_password.returnPressed.connect(self._doLogin)
@@ -290,19 +331,23 @@ class TabSettings(BaseTab):
         for i, btn in enumerate(self._nav_btns):
             btn.clicked.connect(lambda _=False, idx=i: self._switchPage(idx))
         btn_change_pwd.clicked.connect(self._changePassword)
-        btn_year_reset.clicked.connect(self._doReset)
+        if self._allow_year_reset:
+            btn_year_reset.clicked.connect(self._doReset)
         btn_logout.clicked.connect(self._doLogout)
 
-        # ── 初始化三頁的表格與排序暫存狀態 ──
-        self._initRefPage("personnel", self.tbl_personnel,
-                          self.btn_add_personnel, self.btn_edit_personnel,
-                          self.btn_save_personnel)
-        self._initRefPage("dept", self.tbl_dept,
-                          self.btn_add_dept, self.btn_edit_dept,
-                          self.btn_save_dept)
-        self._initRefPage("casetype", self.tbl_casetype,
-                          self.btn_add_casetype, self.btn_edit_casetype,
-                          self.btn_save_casetype)
+        # ── 初始化參照頁表格與排序暫存狀態（只建立 profile 核准的頁）──
+        if "personnel" in self.enabled_page_keys:
+            self._initRefPage("personnel", self.tbl_personnel,
+                              self.btn_add_personnel, self.btn_edit_personnel,
+                              self.btn_save_personnel)
+        if "dept" in self.enabled_page_keys:
+            self._initRefPage("dept", self.tbl_dept,
+                              self.btn_add_dept, self.btn_edit_dept,
+                              self.btn_save_dept)
+        if "casetype" in self.enabled_page_keys:
+            self._initRefPage("casetype", self.tbl_casetype,
+                              self.btn_add_casetype, self.btn_edit_casetype,
+                              self.btn_save_casetype)
 
         # 提示字（用 inner 查找，避免 btn.parent() 在 QUiLoader 環境觸發 GC 刪 C++ widget）
         for _key in ("personnel", "dept", "casetype"):
@@ -311,19 +356,22 @@ class TabSettings(BaseTab):
                 _lbl.setText("可拖拉列或點序號欄數字調整排序，完成後按「儲存排序」")
                 _lbl.setStyleSheet("color: #8e8e93; font-size: 11pt;")
 
-        # ── 資源回收筒：抽成獨立面板（ui_utils/trash_panel.py）──
-        self._trash_panel = TrashPanel(
-            db_path=self.db_path,
-            table=self.tbl_trash,
-            filter_edit=self.w_trash_filter,
-            restore_btn=self.btn_restore_trash,
-            reload_btn=self.btn_reload_trash,
-            count_label=self.lbl_trash_count,
-            hint_label=self._lbl_hint_trash,
-            parent=self.tab_widget,
-            sibling_reload=self._flagSiblingReload)
+        # ── 資源回收筒：抽成獨立面板（ui_utils/trash_panel.py）；未核准頁不建立 ──
+        self._trash_panel = None
+        if "trash" in self.enabled_page_keys:
+            self._trash_panel = TrashPanel(
+                db_path=self.db_path,
+                table=self.tbl_trash,
+                filter_edit=self.w_trash_filter,
+                restore_btn=self.btn_restore_trash,
+                reload_btn=self.btn_reload_trash,
+                count_label=self.lbl_trash_count,
+                hint_label=self._lbl_hint_trash,
+                parent=self.tab_widget,
+                sibling_reload=self._flagSiblingReload)
 
-        # ── 系統設定子頁：三個嵌入面板掛進捲動容器（ui_utils/settings_panels.py）──
+        # ── 系統設定子頁：嵌入面板掛進捲動容器（ui_utils/settings_panels.py）；
+        #    只建立 profile.system_panels 核准的面板，其餘屬性明確設 None ──
         scroll = inner.findChild(QWidget, "system_scroll")
         if scroll:
             # 捲動區透明化，沿用頁面底色（QScrollArea 預設灰底會突兀）
@@ -331,29 +379,66 @@ class TabSettings(BaseTab):
                 "QScrollArea { background: transparent; border: none; }"
                 "QScrollArea > QWidget > QWidget { background: transparent; }")
         sys_content = inner.findChild(QWidget, "system_scroll_content")
-        self._panel_archive_root = ArchiveRootPanel(self.db_path, sys_content)
-        self._panel_print_title  = PrintTitlePanel(self.db_path, sys_content)
-        self._panel_idle         = IdleTimeoutPanel(self.db_path, sys_content)
-        self._panel_input_lock   = InputLockPanel(self.db_path, sys_content)
-        self._panel_backup       = BackupPanel(self.db_path, sys_content)
-        self._panel_input_mode   = InputModePanel(self.db_path, sys_content)
+        enabled_panels = self.enabled_system_panel_keys
+        # 唯讀設定／陳報模式：完整版 flow_keys 與白名單完全一致時傳 None，
+        # 維持既有全部列（零變化）；其餘 profile 傳實際白名單，只建立那些列。
+        lock_flow_keys = (None if self.profile.input_lock_flows
+                                  == FULL_PROFILE.input_lock_flows
+                          else self.profile.input_lock_flows)
+        mode_flow_keys = (None if self.profile.input_mode_flows
+                                  == FULL_PROFILE.input_mode_flows
+                          else self.profile.input_mode_flows)
+        self._panel_archive_root = (
+            ArchiveRootPanel(self.db_path, sys_content)
+            if "archive_root" in enabled_panels else None)
+        self._panel_print_title = (
+            PrintTitlePanel(self.db_path, sys_content)
+            if "print_title" in enabled_panels else None)
+        self._panel_idle = (
+            IdleTimeoutPanel(self.db_path, sys_content)
+            if "idle" in enabled_panels else None)
+        self._panel_input_lock = (
+            InputLockPanel(self.db_path, sys_content, flow_keys=lock_flow_keys)
+            if "input_lock" in enabled_panels else None)
+        self._panel_backup = (
+            BackupPanel(self.db_path, sys_content)
+            if "backup" in enabled_panels else None)
+        self._panel_input_mode = (
+            InputModePanel(self.db_path, sys_content, flow_keys=mode_flow_keys)
+            if "input_mode" in enabled_panels else None)
         if sys_content and sys_content.layout():
             sys_lay = sys_content.layout()
-            sys_lay.addWidget(self._panel_archive_root)
-            sys_lay.addWidget(self._panel_print_title)
-            sys_lay.addWidget(self._panel_idle)
-            sys_lay.addWidget(self._panel_input_lock)
-            sys_lay.addWidget(self._panel_backup)
-            sys_lay.addWidget(self._panel_input_mode)
+            for p in (self._panel_archive_root, self._panel_print_title,
+                      self._panel_idle, self._panel_input_lock,
+                      self._panel_backup, self._panel_input_mode):
+                if p:
+                    sys_lay.addWidget(p)
             sys_lay.addStretch()
 
-        # ── 備份還原子頁（僅 admin；內容於程式建立、掛進 page_backup 的 backupLayout）──
+        # ── 備份還原子頁（僅 admin；內容於程式建立、掛進 page_backup 的 backupLayout）；
+        #    未核准頁不建立物件，也不連接還原 action ──
         backup_content = inner.findChild(QWidget, "backup_content")
         self._panel_restore = None
-        if backup_content and backup_content.layout():
+        if ("backup" in self.enabled_page_keys
+                and backup_content and backup_content.layout()):
             self._panel_restore = BackupRestorePanel(
                 self.db_path, restart_cb=self._restartApp, parent=backup_content)
             backup_content.layout().addWidget(self._panel_restore)
+
+        # ── 頁面切換 loader：只登記已建立的頁，未核准頁不映射（_switchPage 據此拒絕）──
+        self._page_loaders = {}
+        if "personnel" in self.enabled_page_keys:
+            self._page_loaders[self._PAGE_PERSONNEL] = self._loadPersonnel
+        if "dept" in self.enabled_page_keys:
+            self._page_loaders[self._PAGE_DEPT] = self._loadDept
+        if "casetype" in self.enabled_page_keys:
+            self._page_loaders[self._PAGE_CASETYPE] = self._loadCaseType
+        if "system" in self.enabled_page_keys:
+            self._page_loaders[self._PAGE_SYSTEM] = self._loadSystem
+        if "trash" in self.enabled_page_keys:
+            self._page_loaders[self._PAGE_TRASH] = self._loadTrash
+        if "backup" in self.enabled_page_keys:
+            self._page_loaders[self._PAGE_BACKUP] = self._loadBackup
 
         self._outer_stack.setCurrentIndex(0)
 
@@ -519,6 +604,10 @@ class TabSettings(BaseTab):
 
     # ── 左側導航切換 ────────────────────────────────────────────
     def _switchPage(self, idx):
+        # 未核准的 page key（未建立 loader）一律拒絕：不切頁、不跑 loader。
+        loader = self._page_loaders.get(idx)
+        if loader is None:
+            return
         # 切子頁前：若有未儲存排序，先詢問。取消則不切頁、保留排序（回原狀）
         if hasattr(self, "_sort_state") and self._sort_state:
             if not self._promptUnsaved(context="switch"):
@@ -526,10 +615,7 @@ class TabSettings(BaseTab):
         self._inner_stack.setCurrentIndex(idx)
         for i, btn in enumerate(self._nav_btns):
             btn.setStyleSheet(_NAV_ACTIVE if i == idx else _NAV_INACTIVE)
-        loaders = [self._loadPersonnel, self._loadDept,
-                   self._loadCaseType, self._loadSystem, self._loadTrash,
-                   self._loadBackup]
-        loaders[idx]()
+        loader()
 
     def on_activated(self):
         """被切回設定 Tab 時重載當前子頁，確保畫面與 DB 一致
@@ -544,11 +630,9 @@ class TabSettings(BaseTab):
         self._maybeWarnArchiveRoot()
 
         idx = self._inner_stack.currentIndex()
-        loaders = [self._loadPersonnel, self._loadDept,
-                   self._loadCaseType, self._loadSystem, self._loadTrash,
-                   self._loadBackup]
-        if 0 <= idx < len(loaders):
-            loaders[idx]()
+        loader = self._page_loaders.get(idx)
+        if loader:
+            loader()
 
     # ── 登入 ────────────────────────────────────────────────────
     def _doLogin(self):
@@ -600,19 +684,27 @@ class TabSettings(BaseTab):
                 QAbstractItemView.InternalMove if is_admin
                 else QAbstractItemView.NoDragDrop)
 
-        # 跨年度重置（破壞性，僅管理者）
+        # 跨年度重置（破壞性，僅管理者；獨立版不核准則鈕本就隱藏、未連 signal）
         if self._btn_year_reset:
-            self._btn_year_reset.setEnabled(is_admin)
+            self._btn_year_reset.setEnabled(is_admin and self._allow_year_reset)
 
-        # 資源回收筒：admin 可用；歸檔管理可見但停用（反灰，與其他維護功能一致）
+        # 資源回收筒：admin 可用；歸檔管理可見但停用（反灰，與其他維護功能一致）。
+        # 獨立版未核准回收筒頁時，nav button 必須持續隱藏，不得再被 setVisible(True)。
         if self._nav_btns[self._PAGE_TRASH]:
-            self._nav_btns[self._PAGE_TRASH].setVisible(True)
-            self._nav_btns[self._PAGE_TRASH].setEnabled(is_admin)
+            if "trash" in self.enabled_page_keys:
+                self._nav_btns[self._PAGE_TRASH].setVisible(True)
+                self._nav_btns[self._PAGE_TRASH].setEnabled(is_admin)
+            else:
+                self._nav_btns[self._PAGE_TRASH].setVisible(False)
 
-        # 備份還原：破壞性，僅 admin；歸檔管理可見但停用（反灰）
+        # 備份還原：破壞性，僅 admin；歸檔管理可見但停用（反灰）。
+        # 獨立版未核准備份還原頁時，nav button 必須持續隱藏，不得再被 setVisible(True)。
         if self._nav_btns[self._PAGE_BACKUP]:
-            self._nav_btns[self._PAGE_BACKUP].setVisible(True)
-            self._nav_btns[self._PAGE_BACKUP].setEnabled(is_admin)
+            if "backup" in self.enabled_page_keys:
+                self._nav_btns[self._PAGE_BACKUP].setVisible(True)
+                self._nav_btns[self._PAGE_BACKUP].setEnabled(is_admin)
+            else:
+                self._nav_btns[self._PAGE_BACKUP].setVisible(False)
 
         # 系統設定子頁：兩身分都可進；簽收表標題／閒置逾時面板僅 admin
         # （setEnabled(False) 停用整塊含所有輸入路徑；面板 _save 另有權限 guard 保底）
@@ -653,7 +745,10 @@ class TabSettings(BaseTab):
 
     # ── 歸檔資料夾設定 ──────────────────────────────────────────
     def _maybeWarnArchiveRoot(self):
-        """歸檔根目錄未設定時，登入後彈出一次警示（每次登入最多一次）。"""
+        """歸檔根目錄未設定時，登入後彈出一次警示（每次登入最多一次）。
+        沒有歸檔資料夾面板的 profile（如獨立版）沒有地方可設定，不彈此警示。"""
+        if "archive_root" not in self.enabled_system_panel_keys:
+            return
         if getattr(self, "_arch_warn_shown", False):
             return
         if getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip():

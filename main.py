@@ -103,11 +103,13 @@ TAB_CLASSES = {
 }
 
 # key → factory(tab_widget, db_path, profile)：只有需要額外接收 profile 能力設定
-# （瀏覽白名單／設定模組）的 Tab 才登記於此。TabSettings 建構子尚未改造（見 Task 4），
-# 其餘 Tab 一律走 TAB_CLASSES[key](tabs, db_path)。
+# （瀏覽白名單／設定模組）的 Tab 才登記於此；其餘 Tab 一律走
+# TAB_CLASSES[key](tabs, db_path)，不在建立迴圈散落 if 判斷。
 TAB_FACTORIES = {
     "browse": lambda tabs, db_path, profile: TabDBBrowse(
         tabs, db_path, allowed_keys=profile.browse_keys),
+    "settings": lambda tabs, db_path, profile: TabSettings(
+        tabs, db_path, profile=profile),
 }
 
 
