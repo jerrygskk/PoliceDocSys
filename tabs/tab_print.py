@@ -1076,17 +1076,24 @@ class TabPrint(BaseTab):
         """依輸入模式決定是否顯示結算群組，並更新未發文計數。"""
         if not hasattr(self, "_settle_group"):
             return
-        is_self = anySelfServiceMode(self.db_path)
-        self._settle_group.setVisible(is_self)
-        if is_self:
-            self._refresh_unissued()
+        from ui_utils.settle_dialog import count_unissued, settle_entry_visible
 
-    def _refresh_unissued(self):
+        try:
+            counts = count_unissued(self.db_path)
+        except Exception:
+            counts = None
+        show = settle_entry_visible(self.db_path, counts)
+        self._settle_group.setVisible(show)
+        if show:
+            self._refresh_unissued(counts)
+
+    def _refresh_unissued(self, counts=None):
         """重算未發文計數並更新 lbl_unissued（依 SETTLE_META 逐型態列出，
         新增結算型態時本處自動涵蓋，不需另改）。"""
         try:
             from ui_utils.settle_dialog import SETTLE_META, count_unissued
-            counts = count_unissued(self.db_path)
+            if counts is None:
+                counts = count_unissued(self.db_path)
             per_type = {m["key"]: counts.get(m["key"], 0) for m in SETTLE_META}
             total = sum(per_type.values())
             parts = "／".join(

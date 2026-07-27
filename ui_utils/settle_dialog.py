@@ -203,6 +203,29 @@ def count_unissued(db_path):
     return {k: len(v) for k, v in load_unissued(db_path).items()}
 
 
+def visible_chip_keys(modes, counts):
+    """Return settlement type chips needed by self-service modes or rows."""
+    return {
+        meta["key"]
+        for meta in SETTLE_META
+        if modes.get(meta["key"], False) or counts.get(meta["key"], 0) > 0
+    }
+
+
+def settle_entry_visible(db_path, counts=None):
+    """Return whether the settlement entry should be available for *db_path*."""
+    from lib.db_utils import anySelfServiceMode
+
+    try:
+        if anySelfServiceMode(db_path):
+            return True
+        if counts is None:
+            counts = count_unissued(db_path)
+        return sum(counts.values()) > 0
+    except Exception:
+        return False
+
+
 class SettlementConflict(Exception):
     """結算時偵測到 `strict` 型態已由他機搶先發文或刪除（rowcount!=1）。
 
@@ -571,7 +594,19 @@ class SettleDialog(QDialog):
         self._apply_filters()
 
     def _update_chip_labels(self):
+        from lib.db_utils import isSelfServiceMode
+
         counts = self._tbl.type_counts()
+        modes = {
+            meta["key"]: isSelfServiceMode(self.db_path, meta["key"])
+            for meta in SETTLE_META
+        }
+        visible = visible_chip_keys(modes, counts)
+        for meta in SETTLE_META:
+            chip = self._chips[meta["key"]]
+            chip.setVisible(meta["key"] in visible)
+            if meta["key"] not in visible and chip.isChecked():
+                self._chips["all"].setChecked(True)
         total = sum(counts.values())
         self._chips["all"].setText(f"全部 {total}")
         for meta in SETTLE_META:
