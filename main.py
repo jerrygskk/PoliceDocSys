@@ -541,6 +541,28 @@ class MainMenu:
 # ──────────────────────────────────────────────
 # 進入點
 # ──────────────────────────────────────────────
+def handleCorruptDb(profile: AppProfile, db_path) -> int:
+    """DB 完整性檢查失敗時的處置；回傳 runApplication 要用的 exit code。
+
+    還原＝覆蓋共用 dbfile.db，屬破壞性作業。完整版沿用既有開機救援（「備份還原」
+    子頁在程式內，DB 壞到開不了時進不去，故把還原路徑前移到開機期）；獨立版依
+    規格完全不提供還原能力（連設定頁的備份還原子頁都不建立），因此這裡也不得
+    開救援視窗，只提示改用完整版處理，避免從開機路徑繞過該限制。
+
+    抽成獨立函式是為了讓「哪個 profile 會不會開救援視窗」能被直接測到——
+    runApplication 本身跑起來會開視窗、寫鎖檔、動真實 DB，測不得。
+    """
+    if not profile.allows_db_rescue:
+        from ui_utils import msgCritical as _msgCritical
+        _msgCritical("資料庫需要修復",
+                     "資料庫檔案損毀或無法讀取，本程式不提供還原功能。\n\n"
+                     "請改用完整的「公文管理系統」進行備份還原。")
+        return 1
+    from ui_utils.rescue_dialog import runStartupRescue
+    runStartupRescue(db_path)   # 內部處理還原＋提示；不論結果都結束程式
+    return 0
+
+
 def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
     app = QApplication(sys.argv)
     app.setFont(QFont("Microsoft JhengHei", 14))
@@ -615,19 +637,7 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
     #   還原路徑前移到此。不論還原與否都不繼續載入壞 DB（硬繼續只會在載入階段二次崩潰）。
     from lib import db_backup as _backup
     if not _backup.quick_check(db_path) or not _backup.deep_check_if_due(db_path):
-        # 還原＝覆蓋共用 dbfile.db，屬破壞性作業。獨立版依規格完全不提供還原
-        # 能力（連設定頁的備份還原子頁都不建立），故此處也不得開救援視窗，
-        # 只提示改用完整版處理，避免從開機路徑繞過該限制。
-        if not profile.allows_db_rescue:
-            from ui_utils import msgCritical as _msgCritical
-            _msgCritical("資料庫無法使用",
-                         "資料庫檔案損毀或無法讀取。\n\n"
-                         "請改用「公文管理系統」進行備份還原，"
-                         "本程式不提供還原功能。")
-            return 1
-        from ui_utils.rescue_dialog import runStartupRescue
-        runStartupRescue(db_path)   # 內部處理還原＋提示；不論結果都結束程式
-        return 0
+        return handleCorruptDb(profile, db_path)
 
     # ── 冪等確保附加式結構（建表／加欄，只增不改；失敗不擋開程式）──
     from lib import db_schema as _schema
@@ -716,7 +726,8 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
     _preheat = tuple(TAB_CLASSES[k][0] for k in profile.preheat_keys
                      if k in TAB_CLASSES)
     loading = LoadingScreen(db_path, browse_preload_keys=profile.preload_keys,
-                            preheat_modules=_preheat)
+                            preheat_modules=_preheat,
+                            banner_path=profile.banner_path)
     _refs.append(loading)
     loading.dataReady.connect(_on_data_ready)
     loading.loadFailed.connect(_on_load_failed)

@@ -144,14 +144,30 @@ def test_entry_profile_forbids_startup_db_rescue():
     assert ENTRY_PROFILE.allows_db_rescue is False
 
 
-def test_runapplication_rescue_branch_is_profile_gated():
-    """靜態檢查 runApplication 內的救援分支確實被 allows_db_rescue 擋住
-    （不實際執行：跑起來會開視窗、寫鎖檔、動真實 DB）。"""
-    import inspect
-    src = inspect.getsource(runApplication)
-    rescue_at = src.index("runStartupRescue")
-    guard_at = src.index("allows_db_rescue")
-    assert guard_at < rescue_at, "救援呼叫必須在 profile guard 之後"
+def test_full_profile_corrupt_db_opens_startup_rescue(monkeypatch):
+    """完整版：DB 損毀→開既有開機救援（行為驗證，非只看原始碼順序）。"""
+    import ui_utils.rescue_dialog as rescue_mod
+    called = {}
+    monkeypatch.setattr(rescue_mod, "runStartupRescue",
+                        lambda db: called.setdefault("db", db))
+    assert main_module.handleCorruptDb(FULL_PROFILE, "X:/fake.db") == 0
+    assert called["db"] == "X:/fake.db"
+
+
+def test_entry_profile_corrupt_db_never_opens_rescue(monkeypatch):
+    """獨立版：DB 損毀→只出正式提示並結束，絕不建立／開啟救援視窗。"""
+    import ui_utils.rescue_dialog as rescue_mod
+    import ui_utils
+
+    def _boom(*a, **k):
+        raise AssertionError("獨立版不得開啟開機救援視窗")
+
+    monkeypatch.setattr(rescue_mod, "runStartupRescue", _boom)
+    shown = {}
+    monkeypatch.setattr(ui_utils, "msgCritical",
+                        lambda title, text: shown.update(title=title, text=text))
+    assert main_module.handleCorruptDb(ENTRY_PROFILE, "X:/fake.db") == 1
+    assert "公文管理系統" in shown["text"]
 
 
 def test_profile_menu_labels_cannot_be_mutated_in_place():

@@ -1,3 +1,4 @@
+import ast
 import re
 import sys
 from pathlib import Path
@@ -11,6 +12,19 @@ from main import TAB_CLASSES
 from lib.app_profile import ENTRY_PROFILE
 
 
+def _spec_datas(spec_name: str) -> list[tuple[str, str]]:
+    tree = ast.parse((ROOT / spec_name).read_text(encoding="utf-8"))
+    analysis = next(
+        node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and getattr(node.value.func, "id", None) == "Analysis"
+    )
+    datas = next(keyword.value for keyword in analysis.keywords if keyword.arg == "datas")
+    return ast.literal_eval(datas)
+
+
 def test_full_program_devlog_hidden_imports_cover_all_tab_modules():
     text = (ROOT / "DEVELOPER.md").read_text(encoding="utf-8")
     start = text.index("### 打包指令")
@@ -20,6 +34,13 @@ def test_full_program_devlog_hidden_imports_cover_all_tab_modules():
         assert f"--hidden-import {module_path} ^" in block, (
             f"missing --hidden-import {module_path} in DEVELOPER.md 打包指令"
         )
+
+
+def _full_build_block() -> str:
+    text = (ROOT / "DEVELOPER.md").read_text(encoding="utf-8")
+    start = text.index("### 打包指令")
+    end = text.index("### 獨立版打包指令", start)
+    return text[start:end]
 
 
 def _entry_build_block() -> str:
@@ -46,6 +67,18 @@ def test_entry_build_command_excludes_heavy_print_deps():
         assert f"--exclude-module {mod} ^" in block, f"獨立版打包指令未排除 {mod}"
 
 
+def test_entry_build_command_excludes_startup_rescue_module():
+    """規格禁止獨立版執行資料庫還原。除了 handleCorruptDb 的 profile guard，
+    打包時也不收救援視窗模組，讓「獨立版不可能開啟還原」成為結構性保證。"""
+    block = _entry_build_block()
+    assert "--exclude-module ui_utils.rescue_dialog ^" in block
+
+    full_start = (ROOT / "DEVELOPER.md").read_text(encoding="utf-8")
+    full_block = full_start[full_start.index("### 打包指令"):
+                            full_start.index("### 獨立版打包指令")]
+    assert "ui_utils.rescue_dialog" not in full_block, "大程式仍須保留開機救援"
+
+
 def test_entry_build_command_does_not_bundle_full_only_tabs():
     """列印／歸檔等完整版專屬分頁不得出現在獨立版指令：列進去等於把
     matplotlib 一整串拉回來，體積優化直接白做。"""
@@ -65,6 +98,27 @@ def test_entry_build_command_contract():
     assert "--windowed" in block
     assert "--onefile" in block
     assert "police_badge.ico" in block
+
+
+def test_build_commands_bundle_their_profile_banner():
+    full_block = _full_build_block()
+    entry_block = _entry_build_block()
+    assert '--add-data "res/buttons/banner.png;res/buttons" ^' in full_block
+    assert "reward_ticket_banner.png" not in full_block
+    assert '--add-data "res/buttons/reward_ticket_banner.png;res/buttons" ^' in entry_block
+    assert '--add-data "res/buttons/banner.png;res/buttons" ^' not in entry_block
+
+
+def test_full_spec_bundles_only_full_profile_banner():
+    datas = _spec_datas("Police-Document-Manager.spec")
+    assert ("res/buttons/banner.png", "res/buttons") in datas
+    assert ("res/buttons/reward_ticket_banner.png", "res/buttons") not in datas
+
+
+def test_entry_spec_bundles_only_entry_profile_banner():
+    datas = _spec_datas("Police-Entry-Manager.spec")
+    assert ("res/buttons/reward_ticket_banner.png", "res/buttons") in datas
+    assert ("res/buttons/banner.png", "res/buttons") not in datas
 
 
 def test_entry_version_info_contract():

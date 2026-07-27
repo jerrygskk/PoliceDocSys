@@ -16,6 +16,7 @@ class AppProfile:
     key: str
     product_name: str
     exe_name: str
+    banner_path: str
     tab_keys: tuple[str, ...]
     menu_keys: tuple[str, ...]
     menu_labels: Mapping[str, str]
@@ -46,6 +47,7 @@ FULL_PROFILE = AppProfile(
     key="full",
     product_name="公文管理系統",
     exe_name="Police-Document-Manager.exe",
+    banner_path="res/buttons/banner.png",
     tab_keys=(
         "assignment_issue", "assignment_receive", "report", "reward",
         "reward_issue", "ticket", "print", "browse", "archive",
@@ -88,6 +90,7 @@ ENTRY_PROFILE = AppProfile(
     key="entry",
     product_name="警政快速登錄系統",
     exe_name="Police-Entry-Manager.exe",
+    banner_path="res/buttons/reward_ticket_banner.png",
     tab_keys=("reward", "ticket", "browse", "settings"),
     menu_keys=("reward", "ticket", "browse", "settings"),
     menu_labels=_frozen_labels({

@@ -142,5 +142,77 @@ class TestPreheatStaysInsideProfileBundle(unittest.TestCase):
         self.assertNotIn("archive", ENTRY_PROFILE.preheat_keys)
 
 
+
+
+class TestLoadWorkerSurvivesPackagedEntryEnvironment(unittest.TestCase):
+    """模擬「獨立版打包後的環境」：完整版三個分頁模組**根本不存在**。
+
+    這正是 Codex 抓到的致命情境——原始碼樹裡模組都在，測試永遠測不出來，
+    但獨立版 EXE 沒打包它們，載入步驟 11 會 ImportError、進不了主選單。
+    本測試在子行程用 meta_path finder 擋掉那三個模組的匯入，證明：
+      1. 獨立版預熱設定不會去碰它們；
+      2. 就算預熱清單有壞項，載入流程也不得中斷（預熱純為加速）。
+    """
+
+    def test_entry_preheat_completes_without_full_only_modules(self):
+        script = textwrap.dedent("""
+            import sys, sqlite3, tempfile, os
+
+            BLOCKED = {"tabs.tab_dispatch", "tabs.tab_receive", "tabs.tab_report"}
+
+            class _Blocker:
+                def find_module(self, name, path=None):
+                    return self if name in BLOCKED else None
+                def find_spec(self, name, path=None, target=None):
+                    if name in BLOCKED:
+                        raise ModuleNotFoundError("packaged entry app lacks " + name)
+                    return None
+            sys.meta_path.insert(0, _Blocker())
+
+            from lib.app_profile import ENTRY_PROFILE
+            from lib.db_schema import applySchema
+            from lib.loading_screen import LoadWorker
+            from main import TAB_CLASSES
+
+            tmp = tempfile.mkdtemp()
+            db = os.path.join(tmp, "entry.db")
+            conn = sqlite3.connect(db); applySchema(conn); conn.commit(); conn.close()
+
+            preheat = tuple(TAB_CLASSES[k][0] for k in ENTRY_PROFILE.preheat_keys)
+            worker = LoadWorker(db,
+                                browse_preload_keys=ENTRY_PROFILE.preload_keys,
+                                preheat_modules=preheat)
+            done = {}
+            worker.finished.connect(lambda res: done.update(res=res))
+            worker._run()
+            print("finished=" + str("res" in done))
+            print("blocked_loaded=" + str(bool(BLOCKED & set(sys.modules))))
+        """)
+        out = _run_subprocess_check(script)
+        lines = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+        self.assertEqual(lines["finished"], "True",
+                         "獨立版載入流程必須能在缺少完整版分頁模組時跑完")
+        self.assertEqual(lines["blocked_loaded"], "False")
+
+    def test_broken_preheat_entry_does_not_break_loading(self):
+        script = textwrap.dedent("""
+            import sqlite3, tempfile, os
+            from lib.db_schema import applySchema
+            from lib.loading_screen import LoadWorker
+
+            tmp = tempfile.mkdtemp()
+            db = os.path.join(tmp, "entry.db")
+            conn = sqlite3.connect(db); applySchema(conn); conn.commit(); conn.close()
+
+            worker = LoadWorker(db, browse_preload_keys=(),
+                                preheat_modules=("tabs.tab_does_not_exist",))
+            done = {}
+            worker.finished.connect(lambda res: done.update(res=res))
+            worker._run()
+            print("finished=" + str("res" in done))
+        """)
+        out = _run_subprocess_check(script)
+        self.assertIn("finished=True", out)
+
 if __name__ == "__main__":
     unittest.main()

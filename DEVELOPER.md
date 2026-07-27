@@ -544,7 +544,7 @@ del /q Police-Entry-Manager.spec 2>nul & rmdir /s /q build\Police-Entry-Manager 
   --version-file version_info_entry.txt ^
   --add-data "layouts/*.ui;layouts" ^
   --add-data "res/buttons/police_badge.svg;res/buttons" ^
-  --add-data "res/buttons/banner.png;res/buttons" ^
+  --add-data "res/buttons/reward_ticket_banner.png;res/buttons" ^
   --hidden-import lib.db_utils ^
   --hidden-import lib.base_tab ^
   --hidden-import lib.auth_manager ^
@@ -570,11 +570,13 @@ del /q Police-Entry-Manager.spec 2>nul & rmdir /s /q build\Police-Entry-Manager 
   --exclude-module dateutil ^
   --exclude-module pyparsing ^
   --exclude-module tkinter ^
+  --exclude-module ui_utils.rescue_dialog ^
   --name Police-Entry-Manager standalone_main.py
 ```
 
 - ⚠️ **只刪獨立版自己的產物**（指令開頭已寫成 `build\Police-Entry-Manager` 與 `dist\Police-Entry-Manager.exe`），**別照抄大程式那句 `rmdir /s /q build dist`**，會連帶清掉大程式的產物
 - ⚠️ **hidden-import 只列獨立版四個分頁**（敘獎／罰單／瀏覽／設定）。分頁類別已改為動態載入，PyInstaller 掃不到；列多了會把列印頁連同 matplotlib 一起拉回來，列少了則點到該分頁才炸
+- ⚠️ **`--exclude-module ui_utils.rescue_dialog`＝獨立版連開機救援視窗的程式碼都不收**：規格禁止獨立版執行資料庫還原，`main.handleCorruptDb()` 已依 `profile.allows_db_rescue` 擋住，排除模組是第二層保險（即使日後程式改壞，獨立版也沒有還原視窗可開）。**大程式絕不可加這行**
 - ⚠️ **`--exclude-module matplotlib`／`numpy`／`PIL` 是整包排除**（大程式只排除 matplotlib 的多餘 backend），這是獨立版體積減半的關鍵；若哪天獨立版要加列印功能，這幾行要一併拿掉
 - 進入點 `standalone_main.py`；`--version-file` 走 `version_info_entry.txt`（與 `version_info.txt` 同由 `tools/bump_version.py` 一次產生，**兩支 EXE 版號永遠同步**，勿手改）
 - `dbfile.db` 同樣不打包；兩支 EXE 可放同一資料夾共用一份，檔名不同、不互相覆蓋

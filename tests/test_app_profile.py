@@ -38,3 +38,27 @@ def test_profiles_are_immutable():
 def test_full_profile_separates_preload_from_browse_keys():
     assert FULL_PROFILE.preload_keys != FULL_PROFILE.browse_keys
     assert FULL_PROFILE.preload_keys == ("task", "crim", "gen")
+
+
+def test_profiles_select_their_own_loading_banner():
+    assert FULL_PROFILE.banner_path == "res/buttons/banner.png"
+    assert ENTRY_PROFILE.banner_path == "res/buttons/reward_ticket_banner.png"
+
+
+def test_menu_labels_reject_every_mutation_kind():
+    """frozen dataclass 只擋「重新指定欄位」，擋不住就地改內容——那會污染
+    全域 profile。修改／新增／刪除三種都必須被擋（Codex 驗證指出）。"""
+    for profile in (FULL_PROFILE, ENTRY_PROFILE):
+        with pytest.raises(TypeError):
+            profile.menu_labels["settings"] = "改掉"
+        with pytest.raises(TypeError):
+            profile.menu_labels["新key"] = "新增"
+        with pytest.raises(TypeError):
+            del profile.menu_labels["settings"]
+
+
+def test_menu_labels_still_readable_after_hardening():
+    assert FULL_PROFILE.menu_labels["settings"] == "資料庫設定"
+    assert ENTRY_PROFILE.menu_labels["settings"] == "系統設定"
+    assert FULL_PROFILE.menu_labels["print"] == "簽收單列印"
+    assert set(ENTRY_PROFILE.menu_labels) == set(ENTRY_PROFILE.menu_keys)
