@@ -92,7 +92,7 @@ graph LR
 | **新增 App_Settings key**（通用步驟） | db_utils 常數＋讀取 helper（含 fallback 預設）；`db_seed` 要不要播種；Reset 清不清（`performYearEndReset`）；生效時機（即時讀 vs 重啟） | §6 App_Settings 那一列；對應 tests |
 | **系統設定新面板** | `settings_panels.py` 新類別＋`ui_utils/__init__` 匯出；tab_settings **四份清單**（建立/`_applyRolePermissions`/`_loadSystem`/`_dirtyPanels`）；`_save()` 開頭權限 guard；儲存鈕 dirty UX（亮/灰/clearFocus） | §5 面板表；HELP 設定頁；QUICKSTART |
 | **參照表結構／改名行為** | `_ref_changed` 旗標路徑（PITFALLS SQL 組）；預覽表 `_refreshPreviewNames`；歸檔比對 `_loadNameDict`；`RefItemDialog` 三份 config | §10「參照項對話框」；HELP 設定頁 |
-| **應用 Profile／獨立版**（`lib/app_profile.py`） | `FULL_PROFILE`／`ENTRY_PROFILE` 兩份設定；`DocumentManager`（`tab_keys` 組裝分頁、`tab_index_by_key`、頁籤文字取 `menu_labels`）；`MainMenu`（`menu_keys`／`menu_labels`／磚格依允許數量重排）；`TabDBBrowse(allowed_keys=)`；`TabSettings(profile=)`；`InputLockPanel`／`InputModePanel` 的 `flow_keys`；`LoadingScreen(browse_preload_keys=, preheat_modules=, banner_path=)`；`main.handleCorruptDb`（`allows_db_rescue`） | §1「兩個進入點與 AppProfile」；§5「新增 Tab 標準流程」；§7 兩份打包指令的 hidden-import；§10「獨立版：警政快速登錄系統」；`tests/test_app_profile`／`test_standalone_*`／`test_lazy_tab_loading` |
+| **應用 Profile／獨立版**（`lib/app_profile.py`） | `FULL_PROFILE`／`ENTRY_PROFILE` 兩份設定；`DocumentManager`（`tab_keys` 組裝分頁、`tab_index_by_key`、頁籤文字取 `menu_labels`）；`MainMenu`（`menu_keys`／`menu_labels`／磚格依允許數量重排）；`TabDBBrowse(allowed_keys=)`；`TabSettings(profile=)`；`InputLockPanel`／`InputModePanel` 的 `flow_keys`；`LoadingScreen(browse_preload_keys=, preheat_modules=, banner_path=)`；`main.handleCorruptDb`（`allows_db_rescue`） | §1「兩個進入點與 AppProfile」；§5「新增 Tab 標準流程」；§7 兩份 spec 的 hiddenimports；§10「獨立版：警政快速登錄系統」；`tests/test_app_profile`／`test_standalone_*`／`test_lazy_tab_loading` |
 
 > **發版前固定檢查**：HELP（`help_content.py` 的 `HELP_PAGES`）與速查卡（同檔 `QUICKSTART`，改後跑 `gen_quickstart.py` 重產 PDF）是歷來最常漏的兩處；發布流程第 1 步寫文件時，對照本表右欄逐列確認。
 
@@ -213,7 +213,7 @@ graph LR
 3. `main.py` 的 `TAB_CLASSES` 登記 `key: (模組路徑, 類別名)`（同樣是延遲載入的模組座標，建立分頁當下才解析）
 4. 在 `FULL_PROFILE.tab_keys`／`menu_labels`（`lib/app_profile.py`）排入該 key；獨立版（`ENTRY_PROFILE`）是否也開放另行判斷，不預設兩邊都要加
 5. 新增對應 `layouts/LayoutN.ui`（**每個大 Tab 都必須有 .ui**；彈窗才用 code 動態建）
-6. ⚠️ **兩份打包指令（§7）都要補 `--hidden-import tabs.tab_xxx`**：分頁類別是動態載入，PyInstaller 靜態掃描掃不到，漏補的症狀是**打包版點到該分頁才炸、啟動與原始碼跑都正常**（見 PITFALLS PKG 組）；獨立版**只在該分頁屬於 `ENTRY_PROFILE.tab_keys` 時**才補這行
+6. ⚠️ **兩份 spec（§7）的 `hiddenimports` 都要補 `tabs.tab_xxx`**：分頁類別是動態載入，PyInstaller 靜態掃描掃不到，漏補的症狀是**打包版點到該分頁才炸、啟動與原始碼跑都正常**（見 PITFALLS PKG 組）；獨立版**只在該分頁屬於 `ENTRY_PROFILE.tab_keys` 時**才補這行
 7. 若該分頁要進啟動預熱，`preheat_keys`（`AppProfile`）必須是自己 profile 的子集——寫進不屬於自己 profile 的模組，打包版會在載入畫面階段 `ImportError`、進不了主選單（見 PITFALLS PKG 組）
 8. 若有人員/部門/案類下拉，override `on_activated()` 刷新（`refreshFilterCombo` 保留當前選值、值已不存在則清空）；觸發為從設定 Tab 切出＋`_ref_dirty=True`
 9. **對照 §2「跨功能影響對照表」左欄逐列掃一遍**：只有陳報類輸入頁才依需求接 `report_input_mode`；敘獎登錄／發文是明確例外，與陳報模式完全脫鉤。有「受限身分不可做」要接權限 gate、有輸入表單要評估唯讀鎖……每列都問「這個新 Tab 沾不沾」
@@ -487,127 +487,79 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 > ⚠️ **順序鐵則**：文件／release note 要在「版號進版 commit」**之前**寫好，tag 才指向含完整文件的 commit；先打 tag 事後補文件＝退版重做。
 > ⚠️ tag 已 push 後要移動：本地 `git tag -f` 後，遠端**先刪再推**（`git push origin :refs/tags/v{版號}` 再 push）。
 
-### 打包指令
+### 打包（spec 檔，2026-07 起）
 
-```cmd
-del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyinstaller --clean --onefile --windowed --icon=res/buttons/police_badge.ico ^
-  --version-file version_info.txt ^
-  --add-data "layouts/*.ui;layouts" ^
-  --add-data "res/buttons/police_badge.svg;res/buttons" ^
-  --add-data "res/buttons/banner.png;res/buttons" ^
-  --hidden-import PySide6.QtPrintSupport ^
-  --hidden-import lib.db_utils ^
-  --hidden-import lib.base_tab ^
-  --hidden-import lib.auth_manager ^
-  --hidden-import lib.app_lock ^
-  --hidden-import lib.db_backup ^
-  --hidden-import lib.db_schema ^
-  --hidden-import lib.theme ^
-  --hidden-import lib.loading_screen ^
-  --hidden-import lib.version ^
-  --hidden-import lib.archive_text ^
-  --hidden-import res.resources_rc ^
-  --hidden-import tabs.tab_dispatch ^
-  --hidden-import tabs.tab_receive ^
-  --hidden-import tabs.tab_report ^
-  --hidden-import tabs.tab_reward ^
-  --hidden-import tabs.tab_reward_issue ^
-  --hidden-import tabs.tab_ticket ^
-  --hidden-import tabs.tab_print ^
-  --hidden-import tabs.tab_dbbrowse ^
-  --hidden-import tabs.tab_archive ^
-  --hidden-import tabs.tab_settings ^
-  --hidden-import tabs.tab_audit ^
-  --exclude-module matplotlib.backends.backend_cairo ^
-  --exclude-module matplotlib.backends.backend_gtk3 ^
-  --exclude-module matplotlib.backends.backend_gtk3agg ^
-  --exclude-module matplotlib.backends.backend_gtk3cairo ^
-  --exclude-module matplotlib.backends.backend_gtk4 ^
-  --exclude-module matplotlib.backends.backend_gtk4agg ^
-  --exclude-module matplotlib.backends.backend_gtk4cairo ^
-  --exclude-module matplotlib.backends.backend_macosx ^
-  --exclude-module matplotlib.backends.backend_nbagg ^
-  --exclude-module matplotlib.backends.backend_pgf ^
-  --exclude-module matplotlib.backends.backend_ps ^
-  --exclude-module matplotlib.backends.backend_qt ^
-  --exclude-module matplotlib.backends.backend_qt5 ^
-  --exclude-module matplotlib.backends.backend_qt5agg ^
-  --exclude-module matplotlib.backends.backend_qt5cairo ^
-  --exclude-module matplotlib.backends.backend_qtagg ^
-  --exclude-module matplotlib.backends.backend_qtcairo ^
-  --exclude-module matplotlib.backends.backend_svg ^
-  --exclude-module matplotlib.backends.backend_template ^
-  --exclude-module matplotlib.backends.backend_tkagg ^
-  --exclude-module matplotlib.backends.backend_tkcairo ^
-  --exclude-module matplotlib.backends.backend_webagg ^
-  --exclude-module matplotlib.backends.backend_webagg_core ^
-  --exclude-module matplotlib.backends.backend_wx ^
-  --exclude-module matplotlib.backends.backend_wxagg ^
-  --exclude-module matplotlib.backends.backend_wxcairo ^
-  --exclude-module tkinter ^
-  --name Police-Document-Manager main.py
+兩支 exe 各有一份**已入庫**的 spec：`Police-Document-Manager.spec`（完整版）、`Police-Entry-Manager.spec`（獨立版）。build 一律：
+
+```powershell
+python -m PyInstaller --clean --noconfirm Police-Document-Manager.spec
+python -m PyInstaller --clean --noconfirm Police-Entry-Manager.spec
 ```
 
-### 獨立版打包指令（警政快速登錄系統／`Police-Entry-Manager.exe`）
+> ⚠️ **spec 現在是原始碼、不是產物**。舊做法（`.gitignore` 排除 `*.spec`、每次砍掉用一長串 CLI 旗標重生）已廢止：CLI 沒有任何旗標砍得掉 hook 以「binary」身分收進來的 DLL 與語系檔，那些只有 spec 做得到；設定不入庫也等於無法重現舊版本的 build。改動 spec 走 commit，有版本紀錄。
 
-與大程式相同做法：**spec 不入庫，每次砍掉重建**（`.gitignore` 排除 `*.spec`）。差別只在進入點、名稱、版本資訊檔，以及**多排除列印相依**（獨立版沒有簽收單列印）。
+### 打包瘦身與兩支檢查工具
 
-```cmd
-del /q Police-Entry-Manager.spec 2>nul & rmdir /s /q build\Police-Entry-Manager 2>nul & del /q dist\Police-Entry-Manager.exe 2>nul & pyinstaller --clean --onefile --windowed --icon=res/buttons/police_badge.ico ^
-  --version-file version_info_entry.txt ^
-  --add-data "layouts/*.ui;layouts" ^
-  --add-data "res/buttons/police_badge.svg;res/buttons" ^
-  --add-data "res/buttons/reward_ticket_banner.png;res/buttons" ^
-  --hidden-import lib.db_utils ^
-  --hidden-import lib.base_tab ^
-  --hidden-import lib.auth_manager ^
-  --hidden-import lib.app_lock ^
-  --hidden-import lib.db_backup ^
-  --hidden-import lib.db_schema ^
-  --hidden-import lib.theme ^
-  --hidden-import lib.loading_screen ^
-  --hidden-import lib.version ^
-  --hidden-import lib.archive_text ^
-  --hidden-import tabs.tab_reward ^
-  --hidden-import tabs.tab_ticket ^
-  --hidden-import tabs.tab_dbbrowse ^
-  --hidden-import tabs.tab_settings ^
-  --hidden-import res.resources_rc ^
-  --exclude-module matplotlib ^
-  --exclude-module numpy ^
-  --exclude-module PIL ^
-  --exclude-module contourpy ^
-  --exclude-module fontTools ^
-  --exclude-module kiwisolver ^
-  --exclude-module cycler ^
-  --exclude-module dateutil ^
-  --exclude-module pyparsing ^
-  --exclude-module tkinter ^
-  --exclude-module ui_utils.rescue_dialog ^
-  --name Police-Entry-Manager standalone_main.py
+排除清單的**唯一來源是 `tools/pyi_prune.py`**，兩份 spec 共用（`prune(a)`），不要在個別 spec 裡另開清單。它負責三件 CLI 做不到的事：
+
+- 剔除 `opengl32sw.dll`（Qt 軟體 OpenGL 後備，純 QWidget 程式用不到）與 QtQuick／QML 相關 DLL
+- 只保留 `zh_TW` 的 Qt 語系檔，其餘數十國全砍
+- 濾掉來源路徑在 `Program Files\Git` 的 binary——打包機器 PATH 上若有 Git for Windows，PyInstaller 會撿到 mingw64 的 OpenSSL 混進來（見 PITFALLS PKG 組）
+
+`force_qt_binaries()` 則相反：把「Python 綁定層已被 excludes 排除、但仍是連結期硬相依」的 Qt DLL 強制收回來（目前是 `Qt6OpenGL.dll`／`Qt6OpenGLWidgets.dll`）。
+
+⚠️ **改動排除清單後必跑這兩支**（不跑就是拿打包版當測試場）：
+
+```powershell
+python tools/check_excludes.py
+python tools/check_bundle_deps.py
 ```
 
-- ⚠️ **只刪獨立版自己的產物**（指令開頭已寫成 `build\Police-Entry-Manager` 與 `dist\Police-Entry-Manager.exe`），**別照抄大程式那句 `rmdir /s /q build dist`**，會連帶清掉大程式的產物
-- ⚠️ **hidden-import 只列獨立版四個分頁**（敘獎／罰單／瀏覽／設定）。分頁類別已改為動態載入，PyInstaller 掃不到；列多了會把列印頁連同 matplotlib 一起拉回來，列少了則點到該分頁才炸
-- ⚠️ **`--exclude-module ui_utils.rescue_dialog`＝獨立版連開機救援視窗的程式碼都不收**：規格禁止獨立版執行資料庫還原，`main.handleCorruptDb()` 已依 `profile.allows_db_rescue` 擋住，排除模組是第二層保險（即使日後程式改壞，獨立版也沒有還原視窗可開）。**大程式絕不可加這行**
-- ⚠️ **`--exclude-module matplotlib`／`numpy`／`PIL` 是整包排除**（大程式只排除 matplotlib 的多餘 backend），這是獨立版體積減半的關鍵；若哪天獨立版要加列印功能，這幾行要一併拿掉
-- 進入點 `standalone_main.py`；`--version-file` 走 `version_info_entry.txt`（與 `version_info.txt` 同由 `tools/bump_version.py` 一次產生，**兩支 EXE 版號永遠同步**，勿手改）
-- `dbfile.db` 同樣不打包；兩支 EXE 可放同一資料夾共用一份，檔名不同、不互相覆蓋
-- **建置後檢查 Windows 詳細資料**（產品名稱／檔案描述＝警政快速登錄系統、原始檔名＝`Police-Entry-Manager.exe`、版號＝`lib/version.py`）：
+- `check_excludes.py`：讀 spec 自己的 `excludes`／`hiddenimports`，把排除的模組擋掉後逐一 import，抓 **Python 層**的間接相依。**不需要 build**，改完 spec 立刻能跑
+- `check_bundle_deps.py`：解析包內每個 DLL／pyd 的 import table，確認連結期相依都在包裡，抓 **DLL 層**的間接相依。build 之後跑
+
+### 新增分頁時要改的地方
+
+分頁類別是動態載入（見 §5），PyInstaller 靜態分析掃不到，兩份 spec 的 `hiddenimports` 都要補 `tabs.tab_xxx`——**獨立版只補屬於 `ENTRY_PROFILE.tab_keys` 的分頁**，多列會把列印頁連同 matplotlib 一起拉回來，少列則點到該分頁才炸（PITFALLS PKG 組）。
+
+### 兩份 spec 的差異
+
+| | 完整版 | 獨立版 |
+|---|---|---|
+| 進入點 | `main.py` | `standalone_main.py` |
+| 版本資訊 | `version_info.txt` | `version_info_entry.txt` |
+| 橫幅圖 | `banner.png` | `reward_ticket_banner.png` |
+| 分頁 | 11 個 | 敘獎／罰單／瀏覽／設定 4 個 |
+| matplotlib／numpy／PIL | 收（列印頁要用） | **整包排除**，體積減半的關鍵 |
+| `ui_utils.rescue_dialog` | 收 | **排除**（規格禁止獨立版做資料庫還原，這是 `profile.allows_db_rescue` 之外的第二層保險）|
+
+- ⚠️ 若哪天獨立版要加列印功能，`matplotlib`／`numpy`／`PIL` 那幾行要一併拿掉
+- ⚠️ **PIL 不可整包排除**：`matplotlib/colors.py` 在 module 層就 `from PIL import Image`（踩過）。只排除 `PIL._avif`（AVIF 支援，7.5MB，PIL 外掛缺席本來就是合法狀態）
+- 兩支 exe 版號永遠同步（`tools/bump_version.py` 一次產生兩份 version_info），勿手改
+- `dbfile.db` 不打包；兩支 exe 可放同一資料夾共用一份
+- **建置後檢查 Windows 詳細資料**：
   ```powershell
   (Get-Item 'dist\Police-Entry-Manager.exe').VersionInfo
   ```
+
+### 體積參考（2026-07 瘦身後）
+
+| | 瘦身前 | 瘦身後 |
+|---|---|---|
+| 完整版 | 81.0 MB | 57.2 MB |
+| 獨立版 | 52.3 MB | 32.7 MB |
+
+大程式剩餘最大單項是 numpy 的 OpenBLAS（未壓縮 19.5MB），要處理得先讓列印頁脫離 matplotlib，屬於另立計畫的範圍。
 
 ### 注意事項
 
 - `dbfile.db` 不打包，與 exe 同資料夾（真實資料）
 - 共用 icon（`arrow`／`icon_pdf`／`icon_archive`／`icon_paper`／`icon_help`）及 `res/buttons/*.svg`（`:/btn/`）、`res/tabs/*.svg`（`:/tab/`）已透過 `resources_rc.py` 內嵌、不需 `--add-data`；改了要重編 qrc（`pyside6-rcc res/resources.qrc -o res/resources_rc.py`）。`res/buttons/*.svg`／`res/tabs/*.svg` 由 `tools/gen_buttons.py` 產出
 - matplotlib 只用 `backend_agg`（PNG）+ `backend_pdf`（存 PDF），其餘全排除
-- 指令開頭 `del ...spec & rmdir build dist` 是刻意的（不信任殘留 spec 的過期設定，每次砍掉全新生成）；`2>nul` 讓首次執行不報錯。⚠️ **build 一律用 PowerShell tool 執行**：`del /q`／`rmdir /s /q` 是 CMD 語法，Git Bash 不識別會靜默失敗
+- **build 前先砍 `build/`／`dist/`**（`--clean` 只清 PyInstaller 快取，不清舊產物）。⚠️ **build 一律用 PowerShell tool 執行**
 - ⚠️ **跨年度重啟**：onefile 版重啟新程序前必設 `PYINSTALLER_RESET_ENVIRONMENT=1`（否則 `Failed to load Python DLL`／`unicodedata` 缺，`_restartApp()` 已處理，見 PITFALLS PKG 組）
-- 打包報 `No module named res`／`lib.xxx` → 補對應 `--hidden-import`
-- ⚠️ **分頁類別已改為動態載入**（`main.py` 建立分頁當下才 `importlib`），PyInstaller 靜態分析掃不到 `tabs.tab_*` 模組；新增分頁時務必同步補 `--hidden-import`（大程式 CLI，本節上方）與 `hiddenimports`（獨立版 `Police-Entry-Manager.spec`），否則打包版不是啟動就炸，而是**點到該分頁才炸**
-- **exe 檔案資訊**由 `--version-file version_info.txt` 帶入；該檔由 `tools/bump_version.py` 進版時連同版號產生（已收進 git），改顯示文字改該腳本頂部常數
+- 打包報 `No module named res`／`lib.xxx` → 補進對應 spec 的 `hiddenimports`
+- **exe 檔案資訊**由 spec 的 `version=` 帶入（`version_info.txt`／`version_info_entry.txt`）；該檔由 `tools/bump_version.py` 進版時連同版號產生（已收進 git），改顯示文字改該腳本頂部常數
 - GitHub release 上傳用英文檔名
 
 ### 發 GitHub Release（4 個 asset，比照歷版）
@@ -839,8 +791,8 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 - **明確不提供**：發文（交辦／敘獎發文）、簽收單列印、結算、簽收單列印頁的「結算發文」、歸檔、資源回收筒還原、備份還原、跨年度重置、部門／案類管理、簽收表標題自訂。這些能力對應的 `tab_keys`／`settings_pages`／`system_panels`／`browse_keys` 皆未列入 `ENTRY_PROFILE`，不是程式內另外攔
 - **權限完全比照大程式**：三角色與 §10「權限（AuthManager，單例）」權限矩陣同一套，獨立版沒有另一份權限邏輯，只是少了幾個 Tab 可套用
 - **設定頁 .ui 固定六頁不刪頁**（`tab_settings._PAGE_KEY_ORDER`，見 §5「系統設定子頁」）：未核准的頁（`trash`／`backup` 等）**不建物件、不接 signal**，`_page_loaders` 只登記 `profile.settings_pages` 核准的頁。⚠️ **`_applyRolePermissions` 必須先檢查 profile 再決定 nav 按鈕可見性**：資源回收筒／備份還原兩顆 nav 鈕在該 profile 未核准時要持續 `setVisible(False)`，若只憑角色判斷（如「is_admin 就顯示」）會把已核准隱藏的按鈕在角色切換時重新 `setVisible(True)`，繞過 profile 白名單
-- **DB 損毀時的處置分岔**（`main.handleCorruptDb`）：完整版走既有開機救援（`ui_utils.rescue_dialog.runStartupRescue`）；**獨立版只提示「請改用完整的公文管理系統進行備份還原」，不開任何還原視窗**（`profile.allows_db_rescue=False`）。第二層保險在打包指令（`--exclude-module ui_utils.rescue_dialog`，見 §7）：獨立版連救援視窗的程式碼都不收，即使程式改壞也開不出還原畫面
+- **DB 損毀時的處置分岔**（`main.handleCorruptDb`）：完整版走既有開機救援（`ui_utils.rescue_dialog.runStartupRescue`）；**獨立版只提示「請改用完整的公文管理系統進行備份還原」，不開任何還原視窗**（`profile.allows_db_rescue=False`）。第二層保險在獨立版 spec（`excludes` 含 `ui_utils.rescue_dialog`，見 §7）：獨立版連救援視窗的程式碼都不收，即使程式改壞也開不出還原畫面
 - **載入畫面橫幅由 `profile.banner_path` 決定**：完整版 `res/buttons/banner.png`、獨立版 `res/buttons/reward_ticket_banner.png`，`LoadingScreen(banner_path=)` 不再靠 EXE 名稱猜
-- **輕量化**：分頁延遲載入（`tabs/__init__.py` PEP 562）讓獨立版不必為了 import 就連帶付出完整版分頁的代價，獨立版打包不含 matplotlib／numpy／PIL（§7 打包指令整包排除）；實測 EXE 80.2MB→52.3MB，`import main` 冷啟動 1.65s→0.27s
+- **輕量化**：分頁延遲載入（`tabs/__init__.py` PEP 562）讓獨立版不必為了 import 就連帶付出完整版分頁的代價，獨立版打包不含 matplotlib／numpy／PIL（§7 獨立版 spec 整包排除）；實測 EXE 80.2MB→52.3MB，2026-07 進一步瘦身至 32.7MB，`import main` 冷啟動 1.65s→0.27s
 - **app lock 沿用單一鎖檔**：兩支 exe 共用同一份 `dbfile.lock`，同時開啟會互相輪流覆寫心跳；其中一支關閉後鎖檔殘留提示最久約五分鐘（`app_lock.STALE_SECONDS`）。**這是已知限制，不是 bug**，不做雙鎖檔或分辨「哪支 exe」的機制
 - **版號**：與大程式共用 `lib/version.py` 單一來源，`tools/bump_version.py` 進版一次同時產出 `version_info.txt`／`version_info_entry.txt` 兩份，兩支 exe 版號永遠同步
