@@ -154,9 +154,12 @@ class LoadingScreen(QWidget):
     WIN_W = 700
     WIN_H = 319   # 圖片等比例高度 279 + 進度區 40
 
-    def __init__(self, db_path):
+    def __init__(self, db_path, browse_preload_keys=("task", "crim", "gen")):
         super().__init__()
         self.db_path = db_path
+        # 瀏覽白名單與預載範圍各自獨立；預設維持完整版現行三表，獨立版由
+        # 呼叫端傳入 profile.preload_keys（空 tuple＝不預查任何瀏覽表）。
+        self.browse_preload_keys = tuple(browse_preload_keys)
         self._setup_ui()
         self._start_worker()
 
@@ -247,7 +250,7 @@ class LoadingScreen(QWidget):
         )
 
     def _start_worker(self):
-        self.worker = LoadWorker(self.db_path)
+        self.worker = LoadWorker(self.db_path, browse_preload_keys=self.browse_preload_keys)
         self.worker.step_done.connect(self._on_step)
         self.worker.finished.connect(self._on_finished)
         self.worker.failed.connect(self._on_failed)

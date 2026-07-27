@@ -15,7 +15,8 @@ except ModuleNotFoundError as exc:  # 讓 unittest discover 在缺 pytest 時記
 from lib.app_profile import ENTRY_PROFILE, FULL_PROFILE
 from lib.db_schema import applySchema
 import main as main_module
-from main import DocumentManager, MainMenu
+import standalone_main
+from main import DocumentManager, MainMenu, runApplication
 
 
 @pytest.fixture
@@ -86,3 +87,33 @@ def test_full_menu_still_shows_all_eleven_actions(qtbot):
     qtbot.addWidget(menu.ui)
     assert menu.ui.titleLabel.text() == "公文管理系統"
     assert _visible_menu_keys(menu) == set(FULL_PROFILE.menu_keys)
+
+
+def test_standalone_main_delegates_to_shared_runner(monkeypatch):
+    seen = {}
+
+    def fake_run_application(profile):
+        seen["profile"] = profile
+        return 0
+
+    monkeypatch.setattr(standalone_main, "runApplication", fake_run_application)
+    assert standalone_main.main() == 0
+    assert seen["profile"] is ENTRY_PROFILE
+
+
+def test_run_application_default_profile_is_full():
+    import inspect
+
+    sig = inspect.signature(runApplication)
+    assert sig.parameters["profile"].default is FULL_PROFILE
+
+
+def test_entry_manager_never_builds_full_only_tabs(qtbot, shell_db):
+    from tabs import TabRewardIssue, TabPrint, TabArchive
+
+    manager = DocumentManager(profile=ENTRY_PROFILE)
+    qtbot.addWidget(manager.window)
+    tab_types = {type(tab) for tab in manager.tabs.values()}
+    assert TabRewardIssue not in tab_types
+    assert TabPrint not in tab_types
+    assert TabArchive not in tab_types

@@ -524,7 +524,7 @@ class MainMenu:
 # ──────────────────────────────────────────────
 # 進入點
 # ──────────────────────────────────────────────
-if __name__ == "__main__":
+def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
     app = QApplication(sys.argv)
     app.setFont(QFont("Microsoft JhengHei", 14))
     app.setStyleSheet(APPLE_STYLE)
@@ -556,7 +556,7 @@ if __name__ == "__main__":
             confirm_danger=True, default_confirm=False,
             informative="空間不足可能導致儲存、備份失敗，且錯誤可能無法留下紀錄。\n"
                         "建議清理磁碟空間後再開啟。"):
-        sys.exit(0)
+        return 0
 
     # ── APP 層軟性互斥：開啟時偵測是否已有人在用（純勸導，不擋 DB）──
     from datetime import datetime as _dt
@@ -582,7 +582,7 @@ if __name__ == "__main__":
                 confirm_text="仍要開啟", cancel_text="取消離開",
                 confirm_danger=True, default_confirm=False,
                 informative="多人同時編輯可能造成資料毀損，建議稍後再開。" + _idle_info):
-            sys.exit(0)
+            return 0
 
     # 寫入自己的鎖檔並啟動心跳；正常結束時清掉（含閒置自動關）。
     _lock.write_lock(_lock_path, _machine, _user, _opened_iso,
@@ -600,7 +600,7 @@ if __name__ == "__main__":
     if not _backup.quick_check(db_path) or not _backup.deep_check_if_due(db_path):
         from ui_utils.rescue_dialog import runStartupRescue
         runStartupRescue(db_path)   # 內部處理還原＋提示；不論結果都結束程式
-        sys.exit(0)
+        return 0
 
     # ── 冪等確保附加式結構（建表／加欄，只增不改；失敗不擋開程式）──
     from lib import db_schema as _schema
@@ -635,16 +635,18 @@ if __name__ == "__main__":
     def _on_data_ready(results):
         # 進度條期間就把整個主視窗建好（含三表建表）；建完才出主選單，選完秒進。
         mgr = DocumentManager(tab_index=0, prefetch=results, progress=loading.setStep,
-                              profile=FULL_PROFILE)
+                              profile=profile)
         _refs.append(mgr)
         mgr._cleanup_lock_cb = _cleanup_lock   # 閒置自動關閉 os._exit 前用它清鎖檔
         loading.finishAndClose()
         if not (hasattr(mgr, 'window') and mgr.window):
+            # 仍在 Qt callback 內：這裡的結束語意本就是「直接終止行程」而非把
+            # 值往上傳回 runApplication 的呼叫端，保留 sys.exit 不改行為。
             sys.exit(1)
         mgr.window.setWindowIcon(QIcon(icon_path))
 
         # 一切就緒後才顯示主選單，使用者選功能後直接切到該頁
-        menu = MainMenu(profile=FULL_PROFILE, tab_index_by_key=mgr.tab_index_by_key)
+        menu = MainMenu(profile=profile, tab_index_by_key=mgr.tab_index_by_key)
         _refs.append(menu)
         # 打包版偶爾因 Windows 前景鎖，主選單被壓到別的視窗後面：
         # exec() 進事件迴圈、dialog 顯示後立刻清最小化狀態並搶到最前。
@@ -655,6 +657,7 @@ if __name__ == "__main__":
             w.activateWindow()
         QTimer.singleShot(0, _bringMenuFront)
         if menu.ui.exec() != QDialog.Accepted or menu.selected_tab < 0:
+            # 仍在 Qt callback 內，保留既有 sys.exit 結束語意（見上方註解）。
             sys.exit(0)
         mgr.tab_widget.blockSignals(True)
         mgr.tab_widget.setCurrentIndex(menu.selected_tab)
@@ -678,9 +681,10 @@ if __name__ == "__main__":
         logging.error("".join(traceback.format_exception(exc_type, exc_value, exc_value.__traceback__)))
         from ui_utils import msgCritical as _msgCritical
         _msgCritical("系統錯誤", _friendly(exc_type, exc_value))
+        # 仍在 Qt callback 內，保留既有 sys.exit 結束語意（見上方註解）。
         sys.exit(1)
 
-    loading = LoadingScreen(db_path)
+    loading = LoadingScreen(db_path, browse_preload_keys=profile.preload_keys)
     _refs.append(loading)
     loading.dataReady.connect(_on_data_ready)
     loading.loadFailed.connect(_on_load_failed)
@@ -690,4 +694,8 @@ if __name__ == "__main__":
     loading.raise_()
     loading.activateWindow()
 
-    sys.exit(app.exec())
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(runApplication(FULL_PROFILE))
