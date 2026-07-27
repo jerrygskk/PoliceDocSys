@@ -22,26 +22,49 @@ def test_full_program_devlog_hidden_imports_cover_all_tab_modules():
         )
 
 
-def test_entry_spec_hiddenimports_cover_entry_profile_tabs():
-    text = (ROOT / "Police-Entry-Manager.spec").read_text(encoding="utf-8")
+def _entry_build_block() -> str:
+    """DEVELOPER.md 的獨立版打包指令區塊。獨立版與大程式一樣 spec 不入庫、
+    每次砍掉重建，故**文件裡的這串指令就是唯一建置定義**，測試以它為準。"""
+    text = (ROOT / "DEVELOPER.md").read_text(encoding="utf-8")
+    start = text.index("### 獨立版打包指令")
+    end = text.index("### 注意事項", start)
+    return text[start:end]
+
+
+def test_entry_build_command_covers_entry_profile_tabs():
+    block = _entry_build_block()
     for key in ENTRY_PROFILE.tab_keys:
         module_path, _class_name = TAB_CLASSES[key]
-        assert f"'{module_path}'" in text, f"missing hiddenimports entry for {module_path}"
+        assert f"--hidden-import {module_path} ^" in block, (
+            f"獨立版打包指令缺 --hidden-import {module_path}"
+        )
 
 
-def test_entry_spec_excludes_heavy_print_deps():
-    text = (ROOT / "Police-Entry-Manager.spec").read_text(encoding="utf-8")
-    assert "'matplotlib'" in text
-    assert "'numpy'" in text
+def test_entry_build_command_excludes_heavy_print_deps():
+    block = _entry_build_block()
+    for mod in ("matplotlib", "numpy", "PIL"):
+        assert f"--exclude-module {mod} ^" in block, f"獨立版打包指令未排除 {mod}"
 
 
-def test_entry_spec_contract():
-    text = (ROOT / "Police-Entry-Manager.spec").read_text(encoding="utf-8")
-    assert "['standalone_main.py']" in text
-    assert "name='Police-Entry-Manager'" in text
-    assert "console=False" in text
-    assert "version='version_info_entry.txt'" in text
-    assert "police_badge.ico" in text
+def test_entry_build_command_does_not_bundle_full_only_tabs():
+    """列印／歸檔等完整版專屬分頁不得出現在獨立版指令：列進去等於把
+    matplotlib 一整串拉回來，體積優化直接白做。"""
+    block = _entry_build_block()
+    entry_modules = {TAB_CLASSES[k][0] for k in ENTRY_PROFILE.tab_keys}
+    for module_path, _class_name in TAB_CLASSES.values():
+        if module_path not in entry_modules:
+            assert f"--hidden-import {module_path} " not in block, (
+                f"獨立版打包指令不該含 {module_path}"
+            )
+
+
+def test_entry_build_command_contract():
+    block = _entry_build_block()
+    assert "--name Police-Entry-Manager standalone_main.py" in block
+    assert "--version-file version_info_entry.txt" in block
+    assert "--windowed" in block
+    assert "--onefile" in block
+    assert "police_badge.ico" in block
 
 
 def test_entry_version_info_contract():

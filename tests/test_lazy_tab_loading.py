@@ -117,5 +117,30 @@ class LazyTabLoadingSubprocessTests(unittest.TestCase):
         self.assertIn("ok=True", out)
 
 
+class TestPreheatStaysInsideProfileBundle(unittest.TestCase):
+    """⚠️ 打包版特有的雷（已踩過）：載入畫面的「預熱」原本寫死完整版三個分頁，
+    原始碼跑得動（模組都在），但獨立版 EXE 只打包自己的四個分頁，打包後會在
+    載入步驟 11 ImportError、連主選單都進不去。故預熱範圍必須是該 profile
+    tab_keys 的子集——本測試釘住這條不變式，任何 profile 都適用。"""
+
+    def test_every_profile_preheats_only_its_own_tabs(self):
+        from lib.app_profile import ENTRY_PROFILE, FULL_PROFILE
+        for profile in (FULL_PROFILE, ENTRY_PROFILE):
+            with self.subTest(profile=profile.key):
+                self.assertTrue(set(profile.preheat_keys) <= set(profile.tab_keys),
+                                f"{profile.key} 預熱了不屬於自己的分頁："
+                                f"{set(profile.preheat_keys) - set(profile.tab_keys)}")
+
+    def test_full_profile_keeps_existing_preheat_set(self):
+        from lib.app_profile import FULL_PROFILE
+        self.assertEqual(FULL_PROFILE.preheat_keys,
+                         ("assignment_issue", "assignment_receive", "report"))
+
+    def test_entry_preheat_does_not_pull_print_or_archive(self):
+        from lib.app_profile import ENTRY_PROFILE
+        self.assertNotIn("print", ENTRY_PROFILE.preheat_keys)
+        self.assertNotIn("archive", ENTRY_PROFILE.preheat_keys)
+
+
 if __name__ == "__main__":
     unittest.main()

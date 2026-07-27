@@ -134,3 +134,29 @@ def test_entry_manager_never_builds_full_only_tabs(qtbot, shell_db):
     assert TabRewardIssue not in tab_types
     assert TabPrint not in tab_types
     assert TabArchive not in tab_types
+
+
+def test_entry_profile_forbids_startup_db_rescue():
+    """規格 §8：獨立版遇到需要還原的情況只提示改用完整版，不得開啟還原工具。
+    開機救援會覆蓋共用 dbfile.db，屬破壞性作業；獨立版連設定頁的備份還原子頁
+    都不建立，開機路徑自然也不能成為繞道。"""
+    assert FULL_PROFILE.allows_db_rescue is True
+    assert ENTRY_PROFILE.allows_db_rescue is False
+
+
+def test_runapplication_rescue_branch_is_profile_gated():
+    """靜態檢查 runApplication 內的救援分支確實被 allows_db_rescue 擋住
+    （不實際執行：跑起來會開視窗、寫鎖檔、動真實 DB）。"""
+    import inspect
+    src = inspect.getsource(runApplication)
+    rescue_at = src.index("runStartupRescue")
+    guard_at = src.index("allows_db_rescue")
+    assert guard_at < rescue_at, "救援呼叫必須在 profile guard 之後"
+
+
+def test_profile_menu_labels_cannot_be_mutated_in_place():
+    """frozen dataclass 只擋重新指定欄位，擋不住就地改 dict 內容——
+    那會污染全域 profile（Codex 驗證指出）。menu_labels 必須是唯讀 mapping。"""
+    with pytest.raises(TypeError):
+        ENTRY_PROFILE.menu_labels["settings"] = "其他文字"
+    assert ENTRY_PROFILE.menu_labels["settings"] == "系統設定"

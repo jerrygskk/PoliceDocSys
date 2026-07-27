@@ -43,12 +43,17 @@ class LoadWorker(QThread):
     finished  = Signal(object)     # 載入完成，回傳結果 dict
     failed    = Signal(object, object)   # (exc_type, exc_value)，背景執行緒例外（如磁碟空間不足）
 
-    def __init__(self, db_path, browse_preload_keys=("task", "crim", "gen")):
+    _DEFAULT_PREHEAT = ("tabs.tab_dispatch", "tabs.tab_receive", "tabs.tab_report")
+
+    def __init__(self, db_path, browse_preload_keys=("task", "crim", "gen"),
+                 preheat_modules=_DEFAULT_PREHEAT):
         super().__init__()
         self.db_path = db_path
         # 瀏覽白名單與預載範圍是兩個獨立欄位，不得互相推導；獨立版由呼叫端
         # 傳入空 tuple，代表背景不預查任何瀏覽表（不發對應的步驟訊號）。
         self.browse_preload_keys = tuple(browse_preload_keys)
+        # 預熱模組（dotted path）：由呼叫端依 profile 傳入自己打包的分頁模組。
+        self.preheat_modules = tuple(preheat_modules)
 
     def run(self):
         # QThread 內未捕捉例外不保證乾淨走到 sys.excepthook（容易把整支程式悶死、
@@ -129,8 +134,18 @@ class LoadWorker(QThread):
         conn.close()
 
         # 步驟 11：預熱 Tab 類別 import + Layout 路徑
-        from tabs import TabDispatch, TabReceive, TabReport  # noqa
-        results['tabs'] = (TabDispatch, TabReceive, TabReport)
+        # ⚠️ 預熱模組必須由呼叫端依 profile 指定：分頁類別已改為動態載入，
+        #    各 profile 只打包自己會用到的 tabs.*。若在此寫死完整版三頁，
+        #    獨立版打包後會在這一步 ImportError、進不了主選單（已踩過）。
+        #    預熱純粹是加速，失敗不得擋開程式，故整段包 try。
+        import importlib
+        preheated = []
+        for mod_path in self.preheat_modules:
+            try:
+                preheated.append(importlib.import_module(mod_path))
+            except Exception:
+                pass
+        results['tabs'] = tuple(preheated)
         results['layout1_path'] = getResourcePath("layouts/Layout1.ui")
         self.step_done.emit(*LOAD_STEPS[10])
         time.sleep(DEBUG_DELAY)
@@ -154,12 +169,15 @@ class LoadingScreen(QWidget):
     WIN_W = 700
     WIN_H = 319   # 圖片等比例高度 279 + 進度區 40
 
-    def __init__(self, db_path, browse_preload_keys=("task", "crim", "gen")):
+    def __init__(self, db_path, browse_preload_keys=("task", "crim", "gen"),
+                 preheat_modules=LoadWorker._DEFAULT_PREHEAT):
         super().__init__()
         self.db_path = db_path
         # 瀏覽白名單與預載範圍各自獨立；預設維持完整版現行三表，獨立版由
         # 呼叫端傳入 profile.preload_keys（空 tuple＝不預查任何瀏覽表）。
         self.browse_preload_keys = tuple(browse_preload_keys)
+        # 預熱模組同樣由呼叫端依 profile 指定（見 LoadWorker 內註解）。
+        self.preheat_modules = tuple(preheat_modules)
         self._setup_ui()
         self._start_worker()
 
@@ -250,7 +268,9 @@ class LoadingScreen(QWidget):
         )
 
     def _start_worker(self):
-        self.worker = LoadWorker(self.db_path, browse_preload_keys=self.browse_preload_keys)
+        self.worker = LoadWorker(self.db_path,
+                                 browse_preload_keys=self.browse_preload_keys,
+                                 preheat_modules=self.preheat_modules)
         self.worker.step_done.connect(self._on_step)
         self.worker.finished.connect(self._on_finished)
         self.worker.failed.connect(self._on_failed)

@@ -537,23 +537,51 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 
 ### 獨立版打包指令（警政快速登錄系統／`Police-Entry-Manager.exe`）
 
-獨立版**改用入庫的 spec 檔**，不用 CLI 旗標（與大程式不同）：`Police-Entry-Manager.spec` 已 `git add -f` 強制入庫（`.gitignore` 排除 `*.spec`，但獨立版沒有等價 CLI 指令，spec 本身即唯一建置定義，不入庫等於遺失）。**勿刪掉重建**。
+與大程式相同做法：**spec 不入庫，每次砍掉重建**（`.gitignore` 排除 `*.spec`）。差別只在進入點、名稱、版本資訊檔，以及**多排除列印相依**（獨立版沒有簽收單列印）。
 
-```powershell
-Remove-Item -Recurse -Force build\Police-Entry-Manager -ErrorAction SilentlyContinue
-Remove-Item -Force dist\Police-Entry-Manager.exe -ErrorAction SilentlyContinue
-pyinstaller --clean --noconfirm Police-Entry-Manager.spec
+```cmd
+del /q Police-Entry-Manager.spec 2>nul & rmdir /s /q build\Police-Entry-Manager 2>nul & del /q dist\Police-Entry-Manager.exe 2>nul & pyinstaller --clean --onefile --windowed --icon=res/buttons/police_badge.ico ^
+  --version-file version_info_entry.txt ^
+  --add-data "layouts/*.ui;layouts" ^
+  --add-data "res/buttons/police_badge.svg;res/buttons" ^
+  --add-data "res/buttons/banner.png;res/buttons" ^
+  --hidden-import lib.db_utils ^
+  --hidden-import lib.base_tab ^
+  --hidden-import lib.auth_manager ^
+  --hidden-import lib.app_lock ^
+  --hidden-import lib.db_backup ^
+  --hidden-import lib.db_schema ^
+  --hidden-import lib.theme ^
+  --hidden-import lib.loading_screen ^
+  --hidden-import lib.version ^
+  --hidden-import lib.archive_text ^
+  --hidden-import tabs.tab_reward ^
+  --hidden-import tabs.tab_ticket ^
+  --hidden-import tabs.tab_dbbrowse ^
+  --hidden-import tabs.tab_settings ^
+  --hidden-import res.resources_rc ^
+  --exclude-module matplotlib ^
+  --exclude-module numpy ^
+  --exclude-module PIL ^
+  --exclude-module contourpy ^
+  --exclude-module fontTools ^
+  --exclude-module kiwisolver ^
+  --exclude-module cycler ^
+  --exclude-module dateutil ^
+  --exclude-module pyparsing ^
+  --exclude-module tkinter ^
+  --name Police-Entry-Manager standalone_main.py
 ```
 
-- ⚠️ **只刪獨立版自己的產物**（`build\Police-Entry-Manager`、`dist\Police-Entry-Manager.exe`），別整個砍 `build`／`dist`，會連帶清掉大程式的產物
+- ⚠️ **只刪獨立版自己的產物**（指令開頭已寫成 `build\Police-Entry-Manager` 與 `dist\Police-Entry-Manager.exe`），**別照抄大程式那句 `rmdir /s /q build dist`**，會連帶清掉大程式的產物
+- ⚠️ **hidden-import 只列獨立版四個分頁**（敘獎／罰單／瀏覽／設定）。分頁類別已改為動態載入，PyInstaller 掃不到；列多了會把列印頁連同 matplotlib 一起拉回來，列少了則點到該分頁才炸
+- ⚠️ **`--exclude-module matplotlib`／`numpy`／`PIL` 是整包排除**（大程式只排除 matplotlib 的多餘 backend），這是獨立版體積減半的關鍵；若哪天獨立版要加列印功能，這幾行要一併拿掉
 - 進入點 `standalone_main.py`；`--version-file` 走 `version_info_entry.txt`（與 `version_info.txt` 同由 `tools/bump_version.py` 一次產生，**兩支 EXE 版號永遠同步**，勿手改）
-- icon、`console=False`、`upx=True`、`runtime_tmpdir=None`、hidden imports 與 datas 均比照大程式；`dbfile.db` 同樣不打包、與 exe 同資料夾
-- 兩支 EXE 可放同一資料夾共用一份 `dbfile.db`；檔名不同、不互相覆蓋
+- `dbfile.db` 同樣不打包；兩支 EXE 可放同一資料夾共用一份，檔名不同、不互相覆蓋
 - **建置後檢查 Windows 詳細資料**（產品名稱／檔案描述＝警政快速登錄系統、原始檔名＝`Police-Entry-Manager.exe`、版號＝`lib/version.py`）：
   ```powershell
   (Get-Item 'dist\Police-Entry-Manager.exe').VersionInfo
   ```
-- 分頁類別已改為建立分頁當下才 `importlib` 動態載入（見 `main.py` `TAB_CLASSES`／`_resolve_tab_class`），不再於模組載入時整批 import；獨立版 spec 的 `excludes` 已整包排除 matplotlib／numpy／PIL 系列，獨立版不再包含這些相依
 
 ### 注意事項
 

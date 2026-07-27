@@ -163,6 +163,14 @@ class DocumentManager:
             key: idx for idx, key in enumerate(self.profile.tab_keys)
         }
 
+        # 頁籤文字與主選單同一來源（menu_labels），避免出現「主選單寫系統設定、
+        # 進去卻叫資料庫設定」的不一致；完整版 labels 與 .ui 逐字相同＝無變化。
+        if self.tab_widget:
+            for key, idx in self.tab_index_by_key.items():
+                label = self.profile.menu_labels.get(key)
+                if label:
+                    self.tab_widget.setTabText(idx, label)
+
         self.tabs = {}
         for key, idx in self.tab_index_by_key.items():
             tab = create_tab(key, self.tab_widget, self.db_path, self.profile)
@@ -607,6 +615,16 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
     #   還原路徑前移到此。不論還原與否都不繼續載入壞 DB（硬繼續只會在載入階段二次崩潰）。
     from lib import db_backup as _backup
     if not _backup.quick_check(db_path) or not _backup.deep_check_if_due(db_path):
+        # 還原＝覆蓋共用 dbfile.db，屬破壞性作業。獨立版依規格完全不提供還原
+        # 能力（連設定頁的備份還原子頁都不建立），故此處也不得開救援視窗，
+        # 只提示改用完整版處理，避免從開機路徑繞過該限制。
+        if not profile.allows_db_rescue:
+            from ui_utils import msgCritical as _msgCritical
+            _msgCritical("資料庫無法使用",
+                         "資料庫檔案損毀或無法讀取。\n\n"
+                         "請改用「公文管理系統」進行備份還原，"
+                         "本程式不提供還原功能。")
+            return 1
         from ui_utils.rescue_dialog import runStartupRescue
         runStartupRescue(db_path)   # 內部處理還原＋提示；不論結果都結束程式
         return 0
@@ -693,7 +711,12 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
         # 仍在 Qt callback 內，保留既有 sys.exit 結束語意（見上方註解）。
         sys.exit(1)
 
-    loading = LoadingScreen(db_path, browse_preload_keys=profile.preload_keys)
+    # 預熱模組由 profile 決定：各 profile 只打包自己的分頁，寫死完整版三頁會讓
+    # 獨立版打包後在載入階段 ImportError（見 lib/loading_screen.py 內註解）。
+    _preheat = tuple(TAB_CLASSES[k][0] for k in profile.preheat_keys
+                     if k in TAB_CLASSES)
+    loading = LoadingScreen(db_path, browse_preload_keys=profile.preload_keys,
+                            preheat_modules=_preheat)
     _refs.append(loading)
     loading.dataReady.connect(_on_data_ready)
     loading.loadFailed.connect(_on_load_failed)
