@@ -13,6 +13,7 @@ except ModuleNotFoundError as exc:  # 讓 unittest discover 在缺 pytest 時記
     raise unittest.SkipTest("需 pytest/pytest-qt，請以 pytest 執行此檔")
 
 from lib.app_profile import ENTRY_PROFILE, FULL_PROFILE
+from lib.auth_manager import AuthManager
 from lib.db_schema import applySchema
 import main as main_module
 import standalone_main
@@ -38,6 +39,22 @@ def shell_db(tmp_path, monkeypatch):
 
     monkeypatch.setattr(main_module, "getResourcePath", fake_get_resource_path)
     return str(db_path)
+
+
+@pytest.fixture(autouse=True)
+def _detach_manager_signals():
+    """AuthManager 是單例，DocumentManager 會把 _updateTitle 掛上 role_changed。
+    正式程式只建立一個 manager 且活到程式結束，故不受影響；但測試會反覆建立
+    manager，widget 被回收後連線仍留在單例上，之後任何測試切換身分都會打到
+    已釋放的視窗（RuntimeError: Internal C++ object already deleted），
+    在 pytest-qt 的例外攔截下會讓「別支」測試莫名紅燈。故每支測試後拆掉本次
+    新增的連線，回到乾淨狀態。"""
+    signal = AuthManager.instance().role_changed
+    yield
+    try:
+        signal.disconnect()
+    except (RuntimeError, TypeError):
+        pass   # 本來就沒有連線
 
 
 def test_full_manager_keeps_all_current_tab_keys(qtbot, shell_db):
