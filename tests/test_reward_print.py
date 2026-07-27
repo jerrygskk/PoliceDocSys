@@ -79,12 +79,13 @@ class TestRewardPrint(unittest.TestCase):
         fake = SimpleNamespace(
             db_path=self.db, tab_widget=None, date_edit=None,
             _manager=SimpleNamespace(tabs={"reward": reward_tab}),
-            _refresh_unissued=Mock(), _on_generate=Mock())
+            _refresh_settle_group=Mock(), _on_generate=Mock())
         dialog = Mock()
         dialog.settled.return_value = True
         with patch("ui_utils.settle_dialog.SettleDialog", return_value=dialog):
             tab_print.TabPrint._on_settle(fake)
         self.assertFalse(reward_tab.reward_data_dirty)
+        fake._refresh_settle_group.assert_called_once_with()
         fake._on_generate.assert_called_once_with()
 
     def _insert_print_rows(self, *, task=True, criminal=True, general=True,
