@@ -644,5 +644,63 @@ class TestInputModePanelSave(unittest.TestCase):
         self.assertIsNone(getSetting(self._path, REPORT_MODE_KEYS["crim"], None))
 
 
+class TestResetLegacyKeyCleanup(unittest.TestCase):
+    """跨年度重置僅在三種新 key 都存在時移除舊 fallback key。"""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _db(self, settings):
+        from lib.db_schema import applySchema
+        path = os.path.join(self._tmp, "t.db")
+        conn = sqlite3.connect(path)
+        applySchema(conn)
+        for k, v in settings.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO App_Settings (key, value) VALUES (?,?)",
+                (k, v))
+        conn.commit()
+        conn.close()
+        return path
+
+    def _keys(self, path):
+        conn = sqlite3.connect(path)
+        rows = conn.execute("SELECT key FROM App_Settings").fetchall()
+        conn.close()
+        return {r[0] for r in rows}
+
+    def test_legacy_key_removed_when_all_new_keys_present(self):
+        from lib.db_utils import performYearEndReset
+        path = self._db({"report_input_mode": "1",
+                         "report_mode_crim": "1",
+                         "report_mode_gen": "0",
+                         "report_mode_ticket": "0"})
+        performYearEndReset(path)
+        keys = self._keys(path)
+        self.assertNotIn("report_input_mode", keys)
+        self.assertIn("report_mode_crim", keys)
+
+    def test_legacy_key_kept_when_a_new_key_missing(self):
+        from lib.db_utils import performYearEndReset
+        path = self._db({"report_input_mode": "1",
+                         "report_mode_crim": "1"})
+        performYearEndReset(path)
+        self.assertIn("report_input_mode", self._keys(path))
+
+    def test_new_keys_survive_reset(self):
+        from lib.db_utils import getSetting, performYearEndReset
+        path = self._db({"report_mode_crim": "1",
+                         "report_mode_gen": "0",
+                         "report_mode_ticket": "1"})
+        performYearEndReset(path)
+        self.assertEqual(getSetting(path, "report_mode_crim", None), "1")
+        self.assertEqual(getSetting(path, "report_mode_ticket", None), "1")
+
+
 if __name__ == "__main__":
     unittest.main()

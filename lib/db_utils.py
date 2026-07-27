@@ -543,6 +543,16 @@ def performYearEndReset(db_path):
                 "INSERT INTO App_Settings(key, value) VALUES(?,'')"
                 " ON CONFLICT(key) DO UPDATE SET value=''", (_k,))
 
+        # 僅在所有新 key 已存在時，移除已完成遷移的舊 fallback key。
+        # 若任一新 key 尚缺，舊 key 仍須保留以供 fallback 使用。
+        have = conn.execute(
+            "SELECT COUNT(*) FROM App_Settings WHERE key IN (?,?,?)",
+            tuple(REPORT_MODE_KEYS[k] for k in ("crim", "gen", "ticket"))
+        ).fetchone()[0]
+        if have == 3:
+            conn.execute("DELETE FROM App_Settings WHERE key=?",
+                         (REPORT_INPUT_MODE_KEY,))
+
         # 7. 清空稽核紀錄（重置前已整庫備份，歷史 log 留在備份檔；當前庫歸零）
         try:
             conn.execute("DELETE FROM Audit_Log")
