@@ -566,13 +566,13 @@ python tools/check_bundle_deps.py
 
 CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入獨立版 exe，速查卡改帶版號）：
 
-1. `Police-Document-Manager_v{版號}.exe`（本次 build 的 onefile；⚠️ **上傳前把 `dist/Police-Document-Manager.exe` 複製成帶版號的檔名**再傳，例：`Police-Document-Manager_v1.2.0.exe`，方便使用者辨識版本。`gh` 以本機檔名當 asset 名，故改檔名即改 asset 名。**PACKED.zip 內的 exe 維持不帶版號**（見下），只有 standalone exe asset 帶版號）
+1. `Police-Document-Manager_v{版號}.exe`（本次 build 的 onefile；⚠️ **上傳前把 `dist/Police-Document-Manager.exe` 複製成帶版號的檔名**再傳，例：`Police-Document-Manager_v1.2.0.exe`，方便使用者辨識版本。`gh` 以本機檔名當 asset 名，故改檔名即改 asset 名。**PACKED.zip 內的 exe 維持不帶版號**（見下），只有單獨上傳的 exe asset 帶版號）
 2. `dbfile.db`（**乾淨空殼**——用 `python tools/gen_shell_db.py <暫存路徑> --force` 產生。schema 來自 `lib/db_schema.py`、種子來自 `lib/db_seed.py`，兩者是唯一來源，產出即與程式碼一致。例：`python tools/gen_shell_db.py 暫存/dbfile.db --force`。**不要用工作區根目錄那份**（真實測試資料）；`gen_shell_db.py` 的暫存產物是發版來源。）
-3. `PACKED.zip`（= exe + dbfile.db **兩檔扁平放根目錄**，無子資料夾）
-4. `Police-Entry-Manager_v{版號}.exe`（獨立版「公文快速登錄系統」的 onefile；同樣**複製成帶版號的檔名**再傳。不放進 PACKED.zip）
+3. `PACKED.zip`（= 兩支 exe + dbfile.db **三檔扁平放根目錄**，無子資料夾）
+4. `Police-Entry-Manager_v{版號}.exe`（獨立版「公文快速登錄系統」的 onefile；同樣**複製成帶版號的檔名**再傳）
 5. `Quick_Start_v{版號}.pdf`（速查卡）——⚠️ `docs/` 已 gitignore，發版前先跑 `python tools/gen_quickstart.py` 重產到 `docs/Quick_Start.pdf`，**複製成 `Quick_Start_v{版號}.pdf`** 再上傳（內容單一來源 `ui_utils/help_content.py` 的 `QUICKSTART`）
 
-- **打包 zip（PowerShell）**：`Compress-Archive -Path 暫存\dbfile.db,暫存\Police-Document-Manager.exe -DestinationPath 暫存\PACKED.zip -Force`（zip 內 exe 用**不帶版號**的原名，解壓後與 dbfile.db 並放即可執行）
+- **打包 zip（PowerShell）**：`Compress-Archive -Path 暫存\dbfile.db,暫存\Police-Document-Manager.exe,暫存\Police-Entry-Manager.exe -DestinationPath 暫存\PACKED.zip -Force`（zip 內兩支 exe 都用**不帶版號**的原名，解壓後三檔並放即可執行；兩支共用同一份 `dbfile.db`）
 - **兩支 exe 與速查卡都帶版號**：
   ```
   cp dist/Police-Document-Manager.exe 暫存/Police-Document-Manager_v{版號}.exe

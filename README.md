@@ -89,15 +89,15 @@
 
 ### 1. 下載
 
-到 [**最新版下載頁**](https://github.com/jerrygskk/PoliceDocSys/releases/latest)，下載 **`PACKED.zip`**（裡面已含程式與空白資料庫兩個檔案）。
+到 [**最新版下載頁**](https://github.com/jerrygskk/PoliceDocSys/releases/latest)，下載 **`PACKED.zip`**（裡面已含主程式、公文快速登錄系統與空白資料庫三個檔案）。
 
 > 也可以分開下載：`Police-Document-Manager.exe`（主程式）＋ `dbfile.db`（空白資料庫）。
 
 ### 2. 擺放
 
-把 **`Police-Document-Manager.exe`** 和 **`dbfile.db`** 放在**同一個資料夾**（例如桌面新增一個「公文系統」資料夾）。
+把解壓出來的檔案放在**同一個資料夾**（例如桌面新增一個「公文系統」資料夾）：**`Police-Document-Manager.exe`**、**`dbfile.db`**，以及要用快速登錄系統時的 **`Police-Entry-Manager.exe`**。
 
-> ⚠️ 兩個檔案必須在一起。`dbfile.db` 是你所有公文資料的所在，請當成重要檔案保管、定期另存備份。
+> ⚠️ 程式與 `dbfile.db` 必須在一起。兩支程式共用同一份 `dbfile.db`，不需要各放一份。`dbfile.db` 是你所有公文資料的所在，請當成重要檔案保管、定期另存備份。
 
 ### 3. 開啟與初次設定
 
@@ -192,7 +192,7 @@
 
 | 檔案 | 用途 |
 |------|------|
-| `PACKED.zip` | 程式＋空白資料庫打包，**新使用者下載這個** |
+| `PACKED.zip` | 兩支程式＋空白資料庫打包，**新使用者下載這個** |
 | `Police-Document-Manager_v版號.exe` | 主程式（單一執行檔，檔名帶版本號） |
 | `Police-Entry-Manager_v版號.exe` | 公文快速登錄系統（只登錄敘獎與罰單，見上方說明） |
 | `dbfile.db` | 空白資料庫（全新安裝用） |
