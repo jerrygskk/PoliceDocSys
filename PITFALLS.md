@@ -63,3 +63,11 @@
 #### PKG：打包／重啟
 - **PKG-1**: **重置後重啟、打包版跳 `Failed to load Python DLL`／`unicodedata` 缺** → 啟動新程序前設 `PYINSTALLER_RESET_ENVIRONMENT=1`（新程序沿用舊 `_MEI` 所致；見 `tab_settings._restartApp()`，別用 cmd ping 延遲歪招）。
 - **PKG-2**: **C 槽空間不足時 onefile 解壓階段失敗（已知無法攔截）** → onefile 開機會先把整包解壓到 C 槽 `%TEMP%`（實測峰值約 216~250MB，視 exe 大小而定），這發生在 `main.py` 任何程式碼執行**之前**（PyInstaller bootloader 階段），我們自己的 `error.log` 機制與 2026-07 加的開機磁碟空間檢查（`lib/db_utils.diskSpaceThreshold` + `main.py` 開頭 `confirmBox`）都攔不到、也留不下紀錄。已與維護者議定不處理（不想為此動 `--runtime-tmpdir` 改打包設定），剩餘風險留給維護者自行注意 C 槽可用空間。執行期間（`main.py` 已開始跑之後）的磁碟空間不足，已用上述檢查＋`LoadWorker` try/except＋`friendlyErrorMessage` 的 `isDiskFullError` 專屬訊息攔住。
+- **PKG-3**: **打包版點到某分頁才炸、啟動時完全正常、原始碼跑得動測試也抓不到** → 分頁類別已改動態載入（`tabs/__init__.py` PEP 562＋`main.py` `_resolve_tab_class` 建立當下才 `importlib`），PyInstaller 靜態分析掃不到 `tabs.tab_*` 模組。新增／調整分頁時，兩份打包指令（大程式、獨立版）都要補對應 `--hidden-import tabs.tab_xxx`；獨立版只補屬於 `ENTRY_PROFILE.tab_keys` 的分頁（見 DEVELOPER §5、§7）。
+- **PKG-4**: **打包版在載入畫面階段 `ImportError`、進不了主選單** → 載入畫面預熱模組（`LoadingScreen`/`LoadWorker` 的 `preheat_modules`）由 `AppProfile.preheat_keys` 決定，若寫死或誤填不屬於該 profile 打包範圍的分頁，該分頁模組不在這支 exe 裡、預熱階段就地炸掉。`preheat_keys` 必須是自己 `profile.tab_keys` 的子集（本案獨立版曾誤填完整版三頁）。
+
+#### TST：測試技巧（本案各踩一次）
+- **TST-1**: **`patch.object(Cls, "_method")` 攔不到已連上 signal 的 bound method** → Qt signal 的 `connect()` 記的是連線當下那個 bound method 物件，事後 patch 類別上的方法不會反映到已連線的那個。改攔它內部會開啟的 Dialog／子物件類別，而不是攔外層被 connect 掉的方法。
+- **TST-2**: **`patch("mod.Dialog")` 換不掉已經存進 dict 的類別參考**（如 `TABLE_META[key]["dialog"] = SomeDialog`，模組載入時就把類別存進去了）→ 一般 `patch` 換的是模組屬性，dict 裡存的是舊參考不會跟著變；改用 `patch.dict` 直接換 dict 裡那個 key 的值。
+- **TST-3**: **`@dataclass(frozen=True)` 擋不住巢狀可變內容**（`profile.menu_labels["k"] = "v"` 能直接改成功，污染全域共用的 `FULL_PROFILE`/`ENTRY_PROFILE`）→ `frozen=True` 只擋「重新指定欄位」，擋不住欄位內容本身是可變物件（dict／list）時的就地修改；欄位型別改用 `types.MappingProxyType`（`lib/app_profile.py` 的 `menu_labels`）從根本擋寫入。
+- **TST-4**: **離線測試誤觸大程式 modal 流程會永遠卡住**（本案 `ResetDialog` 卡住約 20 分鐘才發現）→ Qt modal `exec()` 在無人互動的離線環境會無限等待，測試看起來像掛住而非報錯。用 `faulthandler.dump_traceback_later(45, exit=True)` 設一個上限，逾時自動印出當下呼叫堆疊並結束程序，用來定位卡在哪一行；別乾等超時。

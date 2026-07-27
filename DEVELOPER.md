@@ -28,6 +28,12 @@ main.py
 - ⚠️ **主選單拉到最前**：打包版偶因 Windows 前景鎖，`MainMenu` 的 `exec()` dialog 被壓到別視窗後。修法 `QTimer.singleShot(0, …)` 在 exec 進事件迴圈後 `raise_()`＋`activateWindow()`＋清最小化（`main.py` `_on_data_ready`）
 - ⚠️ **LOADING 畫面不掛 `WindowStaysOnTopHint`**：splash 若置頂，會把載入/建表階段冒出的 modal 錯誤視窗（excepthook 或各 Tab setup 的 DB 錯誤）壓在後面、使用者看不到也點不到。故 `LoadingScreen` 只用 `FramelessWindowHint`，開機前景改由 `main.py` `loading.show()` 後 `raise_()`＋`activateWindow()` 保證（與上一條主選單同招）。全專案不再有 always-on-top 視窗。**勿再加回置頂旗標。**
 
+### 兩個進入點與 AppProfile
+
+- **`main.py`（完整版）與 `standalone_main.py`（獨立版「警政快速登錄系統」）共用同一條 `runApplication(profile)`**：兩支入口都只是薄殼，各自帶自己的 `AppProfile` 呼叫它，流程本身不分支、不判斷是哪支 exe
+- **能力差異全部集中在 `lib/app_profile.py` 的 `AppProfile`**（`FULL_PROFILE`／`ENTRY_PROFILE` 兩份設定）：`tab_keys`／`menu_keys`／`menu_labels`／`browse_keys`／`preload_keys`／`settings_pages`／`system_panels`／`input_lock_flows`／`input_mode_flows`／`preheat_keys`／`banner_path`／`allows_db_rescue`。**模組本身不判斷 EXE 名稱、不寫散落的 standalone 布林**——新增能力差異一律加 profile 欄位，不寫 `if is_entry` 之類分支。詳見 §10「獨立版：警政快速登錄系統」
+- **Tab 由 `profile.tab_keys` 組裝**：`DocumentManager.TAB_CLASSES` 現為 `{key: (模組路徑, 類別名)}` 的**模組座標**，`create_tab()`／`_resolve_tab_class()` 在建立分頁當下才 `importlib` 動態載入並快取（避免獨立版僅因 import 就連帶付出完整版分頁的載入成本，如 `tab_print` 的 matplotlib）；`TAB_FACTORIES` 只登記需要額外收 profile 能力設定的分頁（`browse` 傳 `allowed_keys=profile.browse_keys`、`settings` 傳 `profile=profile`），其餘分頁一律走預設路徑，不在建立迴圈散落 if 判斷
+
 ### 資料流
 
 - **五張公文主表**：`Document_Task`（交辦）、`Document_Criminal`（刑案）、`Document_General`（一般）、`Document_Reward`（敘獎）、`Document_Ticket`（罰單）
@@ -86,6 +92,7 @@ graph LR
 | **新增 App_Settings key**（通用步驟） | db_utils 常數＋讀取 helper（含 fallback 預設）；`db_seed` 要不要播種；Reset 清不清（`performYearEndReset`）；生效時機（即時讀 vs 重啟） | §6 App_Settings 那一列；對應 tests |
 | **系統設定新面板** | `settings_panels.py` 新類別＋`ui_utils/__init__` 匯出；tab_settings **四份清單**（建立/`_applyRolePermissions`/`_loadSystem`/`_dirtyPanels`）；`_save()` 開頭權限 guard；儲存鈕 dirty UX（亮/灰/clearFocus） | §5 面板表；HELP 設定頁；QUICKSTART |
 | **參照表結構／改名行為** | `_ref_changed` 旗標路徑（PITFALLS SQL 組）；預覽表 `_refreshPreviewNames`；歸檔比對 `_loadNameDict`；`RefItemDialog` 三份 config | §10「參照項對話框」；HELP 設定頁 |
+| **應用 Profile／獨立版**（`lib/app_profile.py`） | `FULL_PROFILE`／`ENTRY_PROFILE` 兩份設定；`DocumentManager`（`tab_keys` 組裝分頁、`tab_index_by_key`、頁籤文字取 `menu_labels`）；`MainMenu`（`menu_keys`／`menu_labels`／磚格依允許數量重排）；`TabDBBrowse(allowed_keys=)`；`TabSettings(profile=)`；`InputLockPanel`／`InputModePanel` 的 `flow_keys`；`LoadingScreen(browse_preload_keys=, preheat_modules=, banner_path=)`；`main.handleCorruptDb`（`allows_db_rescue`） | §1「兩個進入點與 AppProfile」；§5「新增 Tab 標準流程」；§7 兩份打包指令的 hidden-import；§10「獨立版：警政快速登錄系統」；`tests/test_app_profile`／`test_standalone_*`／`test_lazy_tab_loading` |
 
 > **發版前固定檢查**：HELP（`help_content.py` 的 `HELP_PAGES`）與速查卡（同檔 `QUICKSTART`，改後跑 `gen_quickstart.py` 重產 PDF）是歷來最常漏的兩處；發布流程第 1 步寫文件時，對照本表右欄逐列確認。
 
@@ -141,9 +148,11 @@ graph LR
 
 ```
 專案根/
-├── main.py          進入點（從專案根目錄啟動）
+├── main.py          完整版進入點（從專案根目錄啟動）
+├── standalone_main.py  獨立版「警政快速登錄系統」進入點（薄殼，帶 ENTRY_PROFILE 呼叫 main.runApplication）
 ├── lib/             核心模組（package）：db_utils／base_tab／auth_manager／app_lock／
 │                    db_backup／db_schema／db_seed／archive_text／theme／version／loading_screen／
+│                    app_profile（完整版／獨立版能力設定唯一來源，見 §1）／
 │                    ticket_utils（罰單 domain 層，唯一寫入入口）／window_geometry（開窗尺寸收斂）
 ├── layouts/         所有 .ui（Layout1~11、main_menu；Layout1＝主視窗，其餘依 Tab 對應）
 ├── res/             圖片／SVG／qrc（package）：resources.qrc／resources_rc.py／buttons／tabs
@@ -159,6 +168,7 @@ graph LR
 - ⚠️ 一次性／現場交付腳本（`fix_audit_setup.py`／`fix_cat_status.py`／`seed_*.py`）刻意**不入庫、留根目錄**：`fix_*` 打包成 exe 發給現場放 `dbfile.db` 旁執行（靠「找腳本旁的 db」邏輯，不可改），`seed_*` 為本機壓測／塞假料丟棄腳本（git add 時跳過，見 CLAUDE）
 - `lib/`、`res/` 都是 package（有 `__init__.py`）：用 `from lib.db_utils import …`／`from res import resources_rc`
 - `tools/` 各腳本錨定 repo 根但**一律從專案根目錄執行**；皆不 import 核心模組
+- `version_info_entry.txt`（獨立版打包 `--version-file`）與 `version_info.txt` 同由 `tools/bump_version.py` 一次產生，兩支 exe 版號永遠同步，勿手改
 
 ### 路徑解析（getResourcePath，打包相容）
 
@@ -199,12 +209,15 @@ graph LR
 ### 新增 Tab 的標準流程
 
 1. 新增 `tabs/tab_xxx.py`，`class TabXxx(BaseTab)` 實作 `setup(tab_index)`
-2. `tabs/__init__.py` 加 `from .tab_xxx import TabXxx`
-3. `main.py` 的 `TAB_CLASSES` 登記一行
-4. 新增對應 `layouts/LayoutN.ui`（**每個大 Tab 都必須有 .ui**；彈窗才用 code 動態建）
-5. 若有人員/部門/案類下拉，override `on_activated()` 刷新（`refreshFilterCombo` 保留當前選值、值已不存在則清空）；觸發為從設定 Tab 切出＋`_ref_dirty=True`
-6. **對照 §2「跨功能影響對照表」左欄逐列掃一遍**：只有陳報類輸入頁才依需求接 `report_input_mode`；敘獎登錄／發文是明確例外，與陳報模式完全脫鉤。有「受限身分不可做」要接權限 gate、有輸入表單要評估唯讀鎖……每列都問「這個新 Tab 沾不沾」
-7. **新元件必套樣式**：所有程式建立的 QDialog/QWidget 明確設背景＋文字色（見「新增 UI 元件注意」的 setStyleSheet 樣板），別依賴預設——曾多次忘記套、上機才發現黑底黑字
+2. `tabs/__init__.py` 現為 PEP 562 延遲載入（見檔頭註解）：在 `_TAB_MODULES` 對照表登記 `{類別名: 子模組名}`，**不是**直接 `from .tab_xxx import TabXxx`——分頁類別只在被存取當下才 `importlib` 動態載入
+3. `main.py` 的 `TAB_CLASSES` 登記 `key: (模組路徑, 類別名)`（同樣是延遲載入的模組座標，建立分頁當下才解析）
+4. 在 `FULL_PROFILE.tab_keys`／`menu_labels`（`lib/app_profile.py`）排入該 key；獨立版（`ENTRY_PROFILE`）是否也開放另行判斷，不預設兩邊都要加
+5. 新增對應 `layouts/LayoutN.ui`（**每個大 Tab 都必須有 .ui**；彈窗才用 code 動態建）
+6. ⚠️ **兩份打包指令（§7）都要補 `--hidden-import tabs.tab_xxx`**：分頁類別是動態載入，PyInstaller 靜態掃描掃不到，漏補的症狀是**打包版點到該分頁才炸、啟動與原始碼跑都正常**（見 PITFALLS PKG 組）；獨立版**只在該分頁屬於 `ENTRY_PROFILE.tab_keys` 時**才補這行
+7. 若該分頁要進啟動預熱，`preheat_keys`（`AppProfile`）必須是自己 profile 的子集——寫進不屬於自己 profile 的模組，打包版會在載入畫面階段 `ImportError`、進不了主選單（見 PITFALLS PKG 組）
+8. 若有人員/部門/案類下拉，override `on_activated()` 刷新（`refreshFilterCombo` 保留當前選值、值已不存在則清空）；觸發為從設定 Tab 切出＋`_ref_dirty=True`
+9. **對照 §2「跨功能影響對照表」左欄逐列掃一遍**：只有陳報類輸入頁才依需求接 `report_input_mode`；敘獎登錄／發文是明確例外，與陳報模式完全脫鉤。有「受限身分不可做」要接權限 gate、有輸入表單要評估唯讀鎖……每列都問「這個新 Tab 沾不沾」
+10. **新元件必套樣式**：所有程式建立的 QDialog/QWidget 明確設背景＋文字色（見「新增 UI 元件注意」的 setStyleSheet 樣板），別依賴預設——曾多次忘記套、上機才發現黑底黑字
 
 > ⚠️ **預覽表名稱不會自動跟 rename 更新**：預覽表存「當下抓的字串」，rename 後顯示舊名。新 Tab 若預覽表有參照字串欄，須仿 `tab_dispatch._refreshPreviewNames()` 寫刷新方法並在 `on_activated()` 末尾呼叫
 
@@ -817,3 +830,17 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 ### 歸檔頁「檔名過濾」（Tab8）
 
 候選 PDF 的關鍵字框（`{key}_kw`，標籤「檔名過濾」）做**檔名子字串過濾、不分大小寫**：`_rematch` 只保留 `os.path.basename(fp)` 含該串者（非重排、非斷詞）。關鍵字不混入評分；評分排序仍照 `match_cols` 斷詞交集。觸發為 Enter 或「比對」鈕。
+
+### 獨立版：警政快速登錄系統
+
+第二支入口 `standalone_main.py`／`ENTRY_PROFILE`（見 §1「兩個進入點與 AppProfile」），與完整版共用同一份 `dbfile.db` 與全部業務邏輯，只是開放的分頁與設定面板不同，不是另一套程式。
+
+- **只開放四項**：敘獎登錄、罰單登錄、資料庫瀏覽（限敘獎與罰單子頁，`browse_keys`）、系統設定（僅人員與精簡版「系統設定」子頁，`settings_pages`）
+- **明確不提供**：發文（交辦／敘獎發文）、簽收單列印、結算、簽收單列印頁的「結算發文」、歸檔、資源回收筒還原、備份還原、跨年度重置、部門／案類管理、簽收表標題自訂。這些能力對應的 `tab_keys`／`settings_pages`／`system_panels`／`browse_keys` 皆未列入 `ENTRY_PROFILE`，不是程式內另外攔
+- **權限完全比照大程式**：三角色與 §10「權限（AuthManager，單例）」權限矩陣同一套，獨立版沒有另一份權限邏輯，只是少了幾個 Tab 可套用
+- **設定頁 .ui 固定六頁不刪頁**（`tab_settings._PAGE_KEY_ORDER`，見 §5「系統設定子頁」）：未核准的頁（`trash`／`backup` 等）**不建物件、不接 signal**，`_page_loaders` 只登記 `profile.settings_pages` 核准的頁。⚠️ **`_applyRolePermissions` 必須先檢查 profile 再決定 nav 按鈕可見性**：資源回收筒／備份還原兩顆 nav 鈕在該 profile 未核准時要持續 `setVisible(False)`，若只憑角色判斷（如「is_admin 就顯示」）會把已核准隱藏的按鈕在角色切換時重新 `setVisible(True)`，繞過 profile 白名單
+- **DB 損毀時的處置分岔**（`main.handleCorruptDb`）：完整版走既有開機救援（`ui_utils.rescue_dialog.runStartupRescue`）；**獨立版只提示「請改用完整的公文管理系統進行備份還原」，不開任何還原視窗**（`profile.allows_db_rescue=False`）。第二層保險在打包指令（`--exclude-module ui_utils.rescue_dialog`，見 §7）：獨立版連救援視窗的程式碼都不收，即使程式改壞也開不出還原畫面
+- **載入畫面橫幅由 `profile.banner_path` 決定**：完整版 `res/buttons/banner.png`、獨立版 `res/buttons/reward_ticket_banner.png`，`LoadingScreen(banner_path=)` 不再靠 EXE 名稱猜
+- **輕量化**：分頁延遲載入（`tabs/__init__.py` PEP 562）讓獨立版不必為了 import 就連帶付出完整版分頁的代價，獨立版打包不含 matplotlib／numpy／PIL（§7 打包指令整包排除）；實測 EXE 80.2MB→52.3MB，`import main` 冷啟動 1.65s→0.27s
+- **app lock 沿用單一鎖檔**：兩支 exe 共用同一份 `dbfile.lock`，同時開啟會互相輪流覆寫心跳；其中一支關閉後鎖檔殘留提示最久約五分鐘（`app_lock.STALE_SECONDS`）。**這是已知限制，不是 bug**，不做雙鎖檔或分辨「哪支 exe」的機制
+- **版號**：與大程式共用 `lib/version.py` 單一來源，`tools/bump_version.py` 進版一次同時產出 `version_info.txt`／`version_info_entry.txt` 兩份，兩支 exe 版號永遠同步
