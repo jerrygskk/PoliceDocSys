@@ -94,7 +94,7 @@ SETTLE_META = (
             "SELECT doc_id, issuer_name, ticket_no "
             "FROM Document_Ticket_Full "
             "WHERE register_date='' "
-            "  AND ticket_no IS NOT NULL "
+            "  AND ticket_no IS NOT NULL AND ticket_no != '' "
             "ORDER BY issuer_sort_order, ticket_no COLLATE NOCASE"
         ),
         "count_query": (

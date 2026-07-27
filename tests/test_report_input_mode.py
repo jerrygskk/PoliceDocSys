@@ -413,6 +413,10 @@ class TestUnissuedCountQueries(unittest.TestCase):
             "INSERT INTO Document_Ticket "
             "(doc_id, create_date, register_date, issuer_id, ticket_no) "
             "VALUES ('T-MISSING-ISSUER', '2026-07-27', '', 'P404', 'TICKET04')")
+        self.conn.execute(
+            "INSERT INTO Document_Ticket "
+            "(doc_id, create_date, register_date, issuer_id, ticket_no) "
+            "VALUES ('T-EMPTY', '2026-07-27', '', 'P001', '')")
         self.conn.execute("PRAGMA ignore_check_constraints = OFF")
         self.conn.commit()
 
