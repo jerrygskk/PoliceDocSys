@@ -161,7 +161,7 @@ def _header_band(canvas, doc):
     canvas.rect(0, h - band_h, w, band_h, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
     canvas.setFont(FONT_BD, 19)
-    canvas.drawString(18 * mm, h - 12 * mm, "公文管理系統　快速上手")
+    canvas.drawString(18 * mm, h - 12 * mm, "公文收發管理系統　快速上手")
     canvas.setFillColor(colors.HexColor("#EAF0F7"))
     canvas.setFont(FONT, 10)
     canvas.drawString(18 * mm, h - 18 * mm,
@@ -174,7 +174,7 @@ def build(out_path):
         out_path, pagesize=A4,
         leftMargin=16 * mm, rightMargin=16 * mm,
         topMargin=28 * mm, bottomMargin=14 * mm,
-        title="公文管理系統 快速上手速查卡")
+        title="公文收發管理系統 快速上手速查卡")
     # 版面分頁（指定）：
     #   第 1 頁＝交辦單發文／收文、公文陳報
     #   第 2 頁＝敘獎登錄／敘獎發文、罰單登錄、簽收單列印
@@ -202,7 +202,7 @@ def _check_glyphs():
     """
     from fontTools.ttLib import TTCollection
     cmap = set(TTCollection(_REG[1]).fonts[_REG[2]].getBestCmap())
-    used = set("※公文管理系統快速上手十個分頁速查詳細說明請點程式各頁右上角的的鈕")
+    used = set("※公文收發管理系統快速上手十個分頁速查詳細說明請點程式各頁右上角的的鈕")
     for purpose, steps, tip in QUICKSTART.values():
         texts = [purpose, *steps]
         for blk in _tip_blocks(tip):

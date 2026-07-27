@@ -48,7 +48,7 @@ def _setup_error_handler():
             import win32evtlog
             import win32evtlogutil
             win32evtlogutil.ReportEvent(
-                '公文管理系統',
+                '公文收發管理系統',
                 1,
                 eventType=win32evtlog.EVENTLOG_ERROR_TYPE,
                 strings=[msg],
@@ -560,7 +560,7 @@ def handleCorruptDb(profile: AppProfile, db_path) -> int:
         from ui_utils import msgCritical as _msgCritical
         _msgCritical("資料庫需要修復",
                      "資料庫檔案損毀或無法讀取，本程式不提供還原功能。\n\n"
-                     "請改用完整的「公文管理系統」進行備份還原。")
+                     "請改用完整的「公文收發管理系統」進行備份還原。")
         return 1
     from ui_utils.rescue_dialog import runStartupRescue
     runStartupRescue(db_path)   # 內部處理還原＋提示；不論結果都結束程式

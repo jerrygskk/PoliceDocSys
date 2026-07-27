@@ -18,8 +18,8 @@ from pathlib import Path
 
 # 顯示字串（要改公司/產品名改這裡）
 COMPANY     = "桃園市政府警察局中壢分局"
-PRODUCT     = "公文管理系統"
-DESCRIPTION = "公文管理系統"
+PRODUCT     = "公文收發管理系統"
+DESCRIPTION = "公文收發管理系統"
 COPYRIGHT   = "© 2026 桃園市政府警察局中壢分局龍興派出所"
 EXE_NAME    = "Police-Document-Manager.exe"
 

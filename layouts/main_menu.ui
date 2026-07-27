@@ -6,7 +6,7 @@
    <rect><x>0</x><y>0</y><width>660</width><height>460</height></rect>
   </property>
   <property name="windowTitle">
-   <string>公文管理系統 - 主選單</string>
+   <string>公文收發管理系統 - 主選單</string>
   </property>
   <property name="styleSheet">
    <string notr="true">
@@ -62,7 +62,7 @@ QToolButton:pressed {
      <property name="spacing"><number>4</number></property>
      <item>
       <widget class="QLabel" name="titleLabel">
-       <property name="text"><string>公文管理系統</string></property>
+       <property name="text"><string>公文收發管理系統</string></property>
        <property name="alignment"><set>Qt::AlignCenter</set></property>
       </widget>
      </item>

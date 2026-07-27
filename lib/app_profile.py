@@ -45,7 +45,7 @@ class AppProfile:
 
 FULL_PROFILE = AppProfile(
     key="full",
-    product_name="公文管理系統",
+    product_name="公文收發管理系統",
     exe_name="Police-Document-Manager.exe",
     banner_path="res/buttons/banner.png",
     tab_keys=(

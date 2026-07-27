@@ -3,7 +3,7 @@
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
   <property name="geometry"><rect><x>0</x><y>0</y><width>1100</width><height>700</height></rect></property>
-  <property name="windowTitle"><string>公文管理系統 - 罰單登錄</string></property>
+  <property name="windowTitle"><string>公文收發管理系統 - 罰單登錄</string></property>
   <widget class="QWidget" name="centralwidget">
    <property name="styleSheet"><string notr="true">QWidget#centralwidget { background-color: #ffffff; color: #000000; }</string></property>
    <layout class="QHBoxLayout" name="mainLayout">

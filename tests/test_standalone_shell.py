@@ -104,7 +104,7 @@ def test_full_menu_still_shows_all_eleven_actions(qtbot):
         tab_index_by_key={key: idx for idx, key in enumerate(FULL_PROFILE.tab_keys)},
     )
     qtbot.addWidget(menu.ui)
-    assert menu.ui.titleLabel.text() == "公文管理系統"
+    assert menu.ui.titleLabel.text() == "公文收發管理系統"
     assert _visible_menu_keys(menu) == set(FULL_PROFILE.menu_keys)
 
 
@@ -169,7 +169,7 @@ def test_entry_profile_corrupt_db_never_opens_rescue(monkeypatch):
     monkeypatch.setattr(ui_utils, "msgCritical",
                         lambda title, text: shown.update(title=title, text=text))
     assert main_module.handleCorruptDb(ENTRY_PROFILE, "X:/fake.db") == 1
-    assert "公文管理系統" in shown["text"]
+    assert "公文收發管理系統" in shown["text"]
 
 
 def test_profile_menu_labels_cannot_be_mutated_in_place():

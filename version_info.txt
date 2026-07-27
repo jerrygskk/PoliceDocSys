@@ -17,12 +17,12 @@ VSVersionInfo(
         '040404b0',
         [
           StringStruct('CompanyName', '桃園市政府警察局中壢分局'),
-          StringStruct('FileDescription', '公文管理系統'),
+          StringStruct('FileDescription', '公文收發管理系統'),
           StringStruct('FileVersion', '1.2.5'),
           StringStruct('InternalName', 'Police-Document-Manager.exe'),
           StringStruct('LegalCopyright', '© 2026 桃園市政府警察局中壢分局龍興派出所'),
           StringStruct('OriginalFilename', 'Police-Document-Manager.exe'),
-          StringStruct('ProductName', '公文管理系統'),
+          StringStruct('ProductName', '公文收發管理系統'),
           StringStruct('ProductVersion', '1.2.5')
         ])
     ]),
