@@ -78,10 +78,41 @@ from lib.version import __version__
 from lib.db_utils import getResourcePath
 from ui_utils import loadUi, msgInfo
 from lib.auth_manager import AuthManager
+from lib.app_profile import AppProfile, FULL_PROFILE
 from tabs import (TabDispatch, TabReceive, TabReport, TabReward,
                   TabRewardIssue, TabTicket, TabPrint, TabDBBrowse, TabArchive,
                   TabSettings, TabAudit)
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）
+
+
+# ──────────────────────────────────────────────
+# Tab 建立：集中式 key → class 對照，供 DocumentManager 依 profile.tab_keys 組裝
+# ──────────────────────────────────────────────
+TAB_CLASSES = {
+    "assignment_issue":  TabDispatch,
+    "assignment_receive": TabReceive,
+    "report":            TabReport,
+    "reward":            TabReward,
+    "reward_issue":      TabRewardIssue,
+    "ticket":            TabTicket,
+    "print":             TabPrint,
+    "browse":            TabDBBrowse,
+    "archive":           TabArchive,
+    "settings":          TabSettings,
+    "audit":             TabAudit,
+}
+
+# key → factory(tab_widget, db_path, profile)：只有需要額外接收 profile 能力設定
+# （瀏覽白名單／設定模組）的 Tab 才登記於此。TabDBBrowse／TabSettings 建構子尚未
+# 改造（見 Task 3／4），本階段留空，全部 Tab 一律走 TAB_CLASSES[key](tabs, db_path)。
+TAB_FACTORIES = {}
+
+
+def create_tab(key, tab_widget, db_path, profile):
+    factory = TAB_FACTORIES.get(key)
+    if factory is not None:
+        return factory(tab_widget, db_path, profile)
+    return TAB_CLASSES[key](tab_widget, db_path)
 
 
 # ──────────────────────────────────────────────
@@ -92,23 +123,12 @@ class DocumentManager:
     新增 Tab 只需：
       1. 在 tabs/ 新增 tab_xxx.py 並實作 BaseTab
       2. 在 tabs/__init__.py 加入 import
-      3. 在 TAB_CLASSES 登記 {index: TabClass}
+      3. 在 TAB_CLASSES 登記 {key: TabClass}，並於各 AppProfile.tab_keys 排入該 key
     """
-    TAB_CLASSES = {
-        0: TabDispatch,
-        1: TabReceive,
-        2: TabReport,
-        3: TabReward,
-        4: TabRewardIssue,
-        5: TabTicket,
-        6: TabPrint,
-        7: TabDBBrowse,
-        8: TabArchive,
-        9: TabSettings,
-        10: TabAudit,
-    }
+    TAB_CLASSES = TAB_CLASSES
 
-    def __init__(self, tab_index=0, prefetch=None, progress=None):
+    def __init__(self, tab_index=0, prefetch=None, progress=None, profile: AppProfile = FULL_PROFILE):
+        self.profile = profile
         self.db_path   = getResourcePath("dbfile.db")
         self.window    = loadUi(getResourcePath("layouts/Layout1.ui"))
         if not self.window:
@@ -116,12 +136,29 @@ class DocumentManager:
 
         self.tab_widget = getattr(self.window, 'tabWidget', None)
 
+        # Layout1.ui 固定收錄完整版 11 頁（依 FULL_PROFILE.tab_keys 原始順序）；
+        # 非完整版 profile 移除未允許的頁籤，剩餘頁籤即依原相對順序重新編號，
+        # 恰好對應 profile.tab_keys 的新 index（由高到低移除，避免移除時索引位移）。
+        if self.tab_widget:
+            keep = set(self.profile.tab_keys)
+            for i in range(len(FULL_PROFILE.tab_keys) - 1, -1, -1):
+                if FULL_PROFILE.tab_keys[i] not in keep:
+                    self.tab_widget.removeTab(i)
+
+        self.tab_index_by_key = {
+            key: idx for idx, key in enumerate(self.profile.tab_keys)
+        }
+
         self.tabs = {}
-        for idx, TabClass in self.TAB_CLASSES.items():
-            tab = TabClass(self.tab_widget, self.db_path)
+        for key, idx in self.tab_index_by_key.items():
+            tab = create_tab(key, self.tab_widget, self.db_path, self.profile)
             tab._manager = self          # 供 Tab 取得其他 Tab（如還原後清快取）
             tab.setup(idx)
             self.tabs[idx] = tab
+
+        self._IDX_SETTINGS = self.tab_index_by_key.get("settings")
+        self._IDX_DBBROWSE = self.tab_index_by_key.get("browse")
+        self._IDX_AUDIT    = self.tab_index_by_key.get("audit")
 
         # 瀏覽頁三表：用啟動預查資料分段建表，逐表更新載入進度條（65~100%）。
         # 建表必須在主執行緒，故放在此處（非背景 worker）；processEvents 讓進度條即時重繪。
@@ -149,7 +186,7 @@ class DocumentManager:
             attachHelpButton(self.tab_widget, self.window)
 
         # 標題隨身份切換
-        self._base_title = "公文管理系統"
+        self._base_title = self.profile.product_name
         self._updateTitle(AuthManager.instance().current_role)
         AuthManager.instance().role_changed.connect(self._updateTitle)
 
@@ -292,9 +329,9 @@ class DocumentManager:
         logging.shutdown()
         os._exit(0)
 
-    _IDX_SETTINGS = 9          # 資料庫設定 Tab index
-    _IDX_DBBROWSE = 7          # 資料庫瀏覽 Tab index
-    _IDX_AUDIT    = 10         # 操作紀錄 Tab index
+    def tab_index(self, key):
+        """profile 允許的 Tab key → 實際 tabWidget index；不存在回傳 None。"""
+        return self.tab_index_by_key.get(key)
 
     def _onTabChanged(self, index):
         from ui_utils import autoResizeTable
@@ -361,68 +398,117 @@ class DocumentManager:
 # MainMenu：主選單
 # ──────────────────────────────────────────────
 class MainMenu:
-    BTN_MAP = {
-        'btn_report_assignment':  0,
-        'btn_receive_assignment': 1,
-        'btn_report_case':        2,
-        'btn_reward':             3,
-        'btn_reward_issue':       4,
-        'btn_ticket':             5,
-        'btn_generate_receipt':   6,
-        'btn_dbbrowse':           7,
-        'btn_archive':            8,
-        'btn_settings':           9,
-        'btn_audit':              10,
+    # key → 共用 main_menu.ui 內既有按鈕物件名；同一份 .ui 給完整版與獨立版共用，
+    # 差異只在「哪些 key 出現在 profile.menu_keys」，不是另建 .ui。
+    MENU_BUTTONS = {
+        'assignment_issue':  'btn_report_assignment',
+        'assignment_receive': 'btn_receive_assignment',
+        'report':            'btn_report_case',
+        'reward':             'btn_reward',
+        'reward_issue':       'btn_reward_issue',
+        'ticket':             'btn_ticket',
+        'print':              'btn_generate_receipt',
+        'browse':             'btn_dbbrowse',
+        'archive':            'btn_archive',
+        'settings':           'btn_settings',
+        'audit':              'btn_audit',
     }
 
     # 各功能磚格圖示（qrc 別名 :/menu/，於程式內套用以免 QUiLoader 解析 resource 問題）
     ICON_MAP = {
-        'btn_report_assignment':  ':/menu/dispatch.svg',
-        'btn_receive_assignment': ':/menu/receive.svg',
-        'btn_report_case':        ':/menu/report.svg',
-        'btn_reward':             ':/menu/reward.svg',
-        'btn_reward_issue':       ':/menu/reward_issue.svg',
-        'btn_ticket':             ':/menu/ticket.svg',
-        'btn_generate_receipt':   ':/menu/print.svg',
-        'btn_dbbrowse':           ':/menu/browse.svg',
-        'btn_archive':            ':/menu/archive.svg',
-        'btn_settings':           ':/menu/settings.svg',
-        'btn_audit':              ':/menu/audit.svg',
+        'assignment_issue':  ':/menu/dispatch.svg',
+        'assignment_receive': ':/menu/receive.svg',
+        'report':             ':/menu/report.svg',
+        'reward':             ':/menu/reward.svg',
+        'reward_issue':       ':/menu/reward_issue.svg',
+        'ticket':             ':/menu/ticket.svg',
+        'print':              ':/menu/print.svg',
+        'browse':             ':/menu/browse.svg',
+        'archive':            ':/menu/archive.svg',
+        'settings':           ':/menu/settings.svg',
+        'audit':              ':/menu/audit.svg',
     }
 
-    def __init__(self):
+    def __init__(self, profile: AppProfile, tab_index_by_key):
         from PySide6.QtGui import QIcon
         from PySide6.QtCore import QSize
+        import math
+
+        self.profile = profile
+        self.tab_index_by_key = dict(tab_index_by_key)
 
         self.ui = loadUi(getResourcePath("layouts/main_menu.ui"))
         if not self.ui:
             sys.exit(1)
 
         self.selected_tab = -1
+        self.selected_tab_key = None
 
         # 版本號顯示（單一來源 lib/version.py）
         version_label = getattr(self.ui, 'versionLabel', None)
         if version_label:
             version_label.setText(f"Ver: {__version__}")
 
-        for btn_name, idx in self.BTN_MAP.items():
-            btn = getattr(self.ui, btn_name, None)
-            if btn:
-                icon_path = self.ICON_MAP.get(btn_name)
-                if icon_path:
-                    btn.setIcon(QIcon(icon_path))
-                    btn.setIconSize(QSize(30, 30))
-                btn.clicked.connect(lambda checked=False, i=idx: self._onSelect(i))
+        title_label = getattr(self.ui, 'titleLabel', None)
+        if title_label:
+            title_label.setText(profile.product_name)
+
+        # 共用 .ui 上所有候選按鈕（不論本 profile 是否允許）
+        all_buttons = {
+            key: getattr(self.ui, btn_name, None)
+            for key, btn_name in self.MENU_BUTTONS.items()
+        }
+        all_buttons = {key: btn for key, btn in all_buttons.items() if btn}
+
+        # 只有 profile.menu_keys 內、且該按鈕確實存在於 .ui 的才啟用
+        self.buttons_by_key = {}
+        for key in profile.menu_keys:
+            btn = all_buttons.get(key)
+            if not btn:
+                continue
+            self.buttons_by_key[key] = btn
+            icon_path = self.ICON_MAP.get(key)
+            if icon_path:
+                btn.setIcon(QIcon(icon_path))
+                btn.setIconSize(QSize(30, 30))
+            label = profile.menu_labels.get(key)
+            if label:
+                btn.setText(label)
+            btn.clicked.connect(lambda checked=False, k=key: self._onSelect(k))
+
+        # 依 profile.menu_keys 順序重排同一個 btnGrid：先清掉全部候選按鈕與舊
+        # row/column stretch，再把允許的按鈕依序以 ceil(sqrt(n)) 欄排回（完整版
+        # 11 顆＝4 欄、獨立版 4 顆＝2 欄，與現行 11 顆 4 欄版面推導一致，故完整版
+        # 排列結果不變）。
+        grid = getattr(self.ui, 'btnGrid', None)
+        if grid:
+            for btn in all_buttons.values():
+                grid.removeWidget(btn)
+            for row in range(grid.rowCount()):
+                grid.setRowStretch(row, 0)
+            for col in range(grid.columnCount()):
+                grid.setColumnStretch(col, 0)
+
+            ordered = [key for key in profile.menu_keys if key in self.buttons_by_key]
+            ncols = max(1, math.ceil(math.sqrt(len(ordered)))) if ordered else 1
+            for i, key in enumerate(ordered):
+                row, col = divmod(i, ncols)
+                grid.addWidget(self.buttons_by_key[key], row, col)
+
+        # 未允許的按鈕一律隱藏；允許的按鈕確保可見
+        for key, btn in all_buttons.items():
+            btn.setVisible(key in self.buttons_by_key)
 
         btn_exit = getattr(self.ui, 'btn_exit', None)
         if btn_exit:
             btn_exit.clicked.connect(self.ui.reject)
 
-    def _onSelect(self, index):
-        if index not in DocumentManager.TAB_CLASSES:
+    def _onSelect(self, key):
+        if key not in self.tab_index_by_key:
             msgInfo("提示", "此功能尚未開放，敬請期待")
             return
-        self.selected_tab = index
+        self.selected_tab_key = key
+        self.selected_tab = self.tab_index_by_key[key]
         self.ui.accept()
 
 
@@ -539,7 +625,8 @@ if __name__ == "__main__":
 
     def _on_data_ready(results):
         # 進度條期間就把整個主視窗建好（含三表建表）；建完才出主選單，選完秒進。
-        mgr = DocumentManager(tab_index=0, prefetch=results, progress=loading.setStep)
+        mgr = DocumentManager(tab_index=0, prefetch=results, progress=loading.setStep,
+                              profile=FULL_PROFILE)
         _refs.append(mgr)
         mgr._cleanup_lock_cb = _cleanup_lock   # 閒置自動關閉 os._exit 前用它清鎖檔
         loading.finishAndClose()
@@ -548,7 +635,7 @@ if __name__ == "__main__":
         mgr.window.setWindowIcon(QIcon(icon_path))
 
         # 一切就緒後才顯示主選單，使用者選功能後直接切到該頁
-        menu = MainMenu()
+        menu = MainMenu(profile=FULL_PROFILE, tab_index_by_key=mgr.tab_index_by_key)
         _refs.append(menu)
         # 打包版偶爾因 Windows 前景鎖，主選單被壓到別的視窗後面：
         # exec() 進事件迴圈、dialog 顯示後立刻清最小化狀態並搶到最前。

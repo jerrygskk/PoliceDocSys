@@ -67,35 +67,35 @@ def _document_manager_tab_width_violations(source):
 
 class RewardIntegrationTests(unittest.TestCase):
     def test_document_tab_and_menu_mappings_are_complete(self):
+        from lib.app_profile import FULL_PROFILE
         from main import DocumentManager, MainMenu
         from tabs import (TabDispatch, TabReceive, TabReport, TabReward,
                           TabRewardIssue, TabTicket, TabPrint, TabDBBrowse,
                           TabArchive, TabSettings, TabAudit)
 
         expected_tabs = {
-            0: TabDispatch,
-            1: TabReceive,
-            2: TabReport,
-            3: TabReward,
-            4: TabRewardIssue,
-            5: TabTicket,
-            6: TabPrint,
-            7: TabDBBrowse,
-            8: TabArchive,
-            9: TabSettings,
-            10: TabAudit,
+            "assignment_issue": TabDispatch,
+            "assignment_receive": TabReceive,
+            "report": TabReport,
+            "reward": TabReward,
+            "reward_issue": TabRewardIssue,
+            "ticket": TabTicket,
+            "print": TabPrint,
+            "browse": TabDBBrowse,
+            "archive": TabArchive,
+            "settings": TabSettings,
+            "audit": TabAudit,
         }
+        # 固定索引契約改以 FULL_PROFILE 驗證相同順序：完整版仍是同樣 11 個 Tab、同樣順序。
         self.assertEqual(DocumentManager.TAB_CLASSES, expected_tabs)
-        self.assertEqual(DocumentManager._IDX_DBBROWSE, 7)
-        self.assertEqual(DocumentManager._IDX_SETTINGS, 9)
-        self.assertEqual(DocumentManager._IDX_AUDIT, 10)
-        self.assertEqual(set(MainMenu.BTN_MAP.values()), set(range(11)))
-        self.assertEqual(MainMenu.BTN_MAP["btn_reward"], 3)
-        self.assertEqual(MainMenu.BTN_MAP["btn_reward_issue"], 4)
-        self.assertEqual(MainMenu.BTN_MAP["btn_ticket"], 5)
-        self.assertEqual(MainMenu.ICON_MAP["btn_reward"], ":/menu/reward.svg")
-        self.assertEqual(MainMenu.ICON_MAP["btn_reward_issue"], ":/menu/reward_issue.svg")
-        self.assertEqual(MainMenu.ICON_MAP["btn_ticket"], ":/menu/ticket.svg")
+        self.assertEqual(tuple(DocumentManager.TAB_CLASSES), FULL_PROFILE.tab_keys)
+        self.assertEqual(set(MainMenu.MENU_BUTTONS), set(FULL_PROFILE.menu_keys))
+        self.assertEqual(MainMenu.MENU_BUTTONS["reward"], "btn_reward")
+        self.assertEqual(MainMenu.MENU_BUTTONS["reward_issue"], "btn_reward_issue")
+        self.assertEqual(MainMenu.MENU_BUTTONS["ticket"], "btn_ticket")
+        self.assertEqual(MainMenu.ICON_MAP["reward"], ":/menu/reward.svg")
+        self.assertEqual(MainMenu.ICON_MAP["reward_issue"], ":/menu/reward_issue.svg")
+        self.assertEqual(MainMenu.ICON_MAP["ticket"], ":/menu/ticket.svg")
 
     def _menu_button_positions(self):
         menu = (ROOT / "layouts" / "main_menu.ui").read_text(encoding="utf-8")
