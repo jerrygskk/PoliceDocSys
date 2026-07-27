@@ -103,9 +103,12 @@ TAB_CLASSES = {
 }
 
 # key → factory(tab_widget, db_path, profile)：只有需要額外接收 profile 能力設定
-# （瀏覽白名單／設定模組）的 Tab 才登記於此。TabDBBrowse／TabSettings 建構子尚未
-# 改造（見 Task 3／4），本階段留空，全部 Tab 一律走 TAB_CLASSES[key](tabs, db_path)。
-TAB_FACTORIES = {}
+# （瀏覽白名單／設定模組）的 Tab 才登記於此。TabSettings 建構子尚未改造（見 Task 4），
+# 其餘 Tab 一律走 TAB_CLASSES[key](tabs, db_path)。
+TAB_FACTORIES = {
+    "browse": lambda tabs, db_path, profile: TabDBBrowse(
+        tabs, db_path, allowed_keys=profile.browse_keys),
+}
 
 
 def create_tab(key, tab_widget, db_path, profile):
@@ -167,7 +170,11 @@ class DocumentManager:
         browse = self.tabs.get(self._IDX_DBBROWSE)
         if browse and hasattr(browse, 'buildInitial'):
             bdata = (prefetch or {}).get('browse', {})
+            # 瀏覽白名單與預載範圍各自獨立：只跑 profile.preload_keys 允許的 key，
+            # 其餘（如獨立版空 tuple）略過，不建對應子頁的表。
             for key, label, pct in BUILD_STEPS:
+                if key not in self.profile.preload_keys:
+                    continue
                 if progress:
                     progress(label, pct)
                     QApplication.processEvents()

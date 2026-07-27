@@ -43,9 +43,12 @@ class LoadWorker(QThread):
     finished  = Signal(object)     # 載入完成，回傳結果 dict
     failed    = Signal(object, object)   # (exc_type, exc_value)，背景執行緒例外（如磁碟空間不足）
 
-    def __init__(self, db_path):
+    def __init__(self, db_path, browse_preload_keys=("task", "crim", "gen")):
         super().__init__()
         self.db_path = db_path
+        # 瀏覽白名單與預載範圍是兩個獨立欄位，不得互相推導；獨立版由呼叫端
+        # 傳入空 tuple，代表背景不預查任何瀏覽表（不發對應的步驟訊號）。
+        self.browse_preload_keys = tuple(browse_preload_keys)
 
     def run(self):
         # QThread 內未捕捉例外不保證乾淨走到 sys.excepthook（容易把整支程式悶死、
@@ -109,17 +112,19 @@ class LoadWorker(QThread):
         self.step_done.emit(*LOAD_STEPS[6])
         time.sleep(DEBUG_DELAY)
 
-        # 步驟 8~10：背景預讀三張瀏覽表的完整資料（純 SQL，不碰 Qt）。
-        # 主執行緒之後用這份資料直接建表，免再查 DB。
+        # 步驟 8~10：背景預讀瀏覽表的完整資料（純 SQL，不碰 Qt）。
+        # 主執行緒之後用這份資料直接建表，免再查 DB。keys 由 browse_preload_keys
+        # 決定，與瀏覽白名單各自獨立；為空則不查也不發這幾個步驟訊號。
         from tabs.tab_dbbrowse import queryBrowseRows
         browse = {}
-        for i, key in enumerate(("task", "crim", "gen")):
+        for i, key in enumerate(self.browse_preload_keys):
             try:
                 browse[key] = queryBrowseRows(conn, key)
             except Exception:
                 browse[key] = None   # 預讀失敗 → 主執行緒 fallback 就地查
-            self.step_done.emit(*LOAD_STEPS[7 + i])
-            time.sleep(DEBUG_DELAY)
+            if 7 + i < len(LOAD_STEPS):
+                self.step_done.emit(*LOAD_STEPS[7 + i])
+                time.sleep(DEBUG_DELAY)
         results['browse'] = browse
         conn.close()
 

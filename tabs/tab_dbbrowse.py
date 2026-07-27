@@ -200,7 +200,17 @@ def _statusColor(status):
 
 
 class TabDBBrowse(BaseTab):
-    """資料庫瀏覽：交辦單 / 刑案 / 一般陳報，歷史全表瀏覽 + 搜尋。"""
+    """資料庫瀏覽：交辦單 / 刑案 / 一般陳報，歷史全表瀏覽 + 搜尋。
+
+    allowed_keys：本頁實際顯示的公文類型白名單（獨立版縮減為敘獎/罰單）。
+    完整版一律傳預設值 BROWSE_KEYS，行為零變化。"""
+
+    def __init__(self, tab_widget, db_path, allowed_keys=BROWSE_KEYS):
+        super().__init__(tab_widget, db_path)
+        self.allowed_keys = tuple(allowed_keys)
+        unknown = set(self.allowed_keys) - set(TABLE_META)
+        if unknown:
+            raise ValueError(f"Unknown browse keys: {sorted(unknown)}")
 
     def setup(self, tab_index):
         tab = self.tab_widget.widget(tab_index)
@@ -244,9 +254,20 @@ class TabDBBrowse(BaseTab):
                 }
             """)
 
-        # 每個 key 蒐集自己的元件
+            # .ui 固定收錄完整版 5 個子頁（依 BROWSE_KEYS 原始順序）：把公文類型
+            # key 存進子頁籤自身（tabData），之後一律靠此取值，不得用
+            # currentIndex()/BROWSE_KEYS 做位置映射。未允許的子頁籤（獨立版縮減
+            # 白名單）由高索引往低移除，不建立其元件、不接訊號。
+            for i, key in enumerate(BROWSE_KEYS):
+                if i < self.subtabs.count():
+                    self.subtabs.tabBar().setTabData(i, key)
+            for i in range(self.subtabs.count() - 1, -1, -1):
+                if self.subtabs.tabBar().tabData(i) not in self.allowed_keys:
+                    self.subtabs.removeTab(i)
+
+        # 每個 key 蒐集自己的元件（僅白名單內的類型）
         self._ui = {}
-        for key in BROWSE_KEYS:
+        for key in self.allowed_keys:
             self._ui[key] = {
                 "scope":  inner.findChild(QComboBox, f"{key}_scope"),
                 "kw":     inner.findChild(QLineEdit, f"{key}_kw"),
@@ -276,7 +297,7 @@ class TabDBBrowse(BaseTab):
 
         # 浮水印 QLabel（疊在每張表上）
         self._watermark = {}
-        for key in BROWSE_KEYS:
+        for key in self.allowed_keys:
             tbl = self._ui[key]["table"]
             # 唯讀瀏覽：不需選取反白、去點擊焦點黑框（統一為回收筒／操作紀錄的行為）
             tbl.setSelectionMode(QAbstractItemView.NoSelection)
@@ -307,7 +328,7 @@ class TabDBBrowse(BaseTab):
                 self._link_cursors.append(lcf)   # 存參考防 GC
 
         # 填充範圍下拉、綁定事件
-        for key in BROWSE_KEYS:
+        for key in self.allowed_keys:
             self._initScope(key)
             self._bindEvents(key)
 
@@ -338,7 +359,7 @@ class TabDBBrowse(BaseTab):
         """身分變更：逐列切換刪除鈕停用/啟用、編號連結可點/純文字。"""
         # 刪除：僅最高權限管理者；編輯（編號連結）：依 _canEditKey 逐表判定
         can_delete = AuthManager.instance().is_admin()
-        for key in BROWSE_KEYS:
+        for key in self.allowed_keys:
             table = self._ui.get(key, {}).get("table")
             if not table:
                 continue
@@ -1125,7 +1146,7 @@ class TabDBBrowse(BaseTab):
 
     # ── 框架掛鉤 ────────────────────────────────────────────
     def get_tables(self):
-        return [self._ui[k]["table"] for k in BROWSE_KEYS
+        return [self._ui[k]["table"] for k in self.allowed_keys
                 if self._ui.get(k, {}).get("table")]
 
     def _tableSignature(self, key):
@@ -1156,9 +1177,11 @@ class TabDBBrowse(BaseTab):
         self._loaded_keys.add(key)
 
     def markLoaded(self):
-        """三表皆已由 buildInitial 建好後呼叫：標記已載入、更新歸檔根目錄警示。"""
+        """三表皆已由 buildInitial 建好後呼叫：標記已載入、更新歸檔根目錄警示。
+        只標記本頁白名單內的 key（獨立版無 task/crim/gen 子頁，不應誤標為已載入；
+        白名單與預載範圍各自獨立，此處僅取交集避免標記不存在的子頁）。"""
         self._loaded_keys = getattr(self, "_loaded_keys", set())
-        self._loaded_keys.update(PRELOAD_KEYS)
+        self._loaded_keys.update(k for k in PRELOAD_KEYS if k in self.allowed_keys)
         self._refreshArchWarn()
 
     def _refreshArchWarn(self):
@@ -1175,8 +1198,10 @@ class TabDBBrowse(BaseTab):
         if not hasattr(self, "_sigs"):
             self._sigs = {}
         # Fallback 只補建尚未預載的既有三表；reward 仍由切頁 lazy-load。
+        # 僅考慮本頁白名單內的 key（獨立版無 task/crim/gen 子頁）。
         missing = [k for k in PRELOAD_KEYS
-                   if k not in getattr(self, "_loaded_keys", set())]
+                   if k in self.allowed_keys
+                   and k not in getattr(self, "_loaded_keys", set())]
         if missing:
             def _first():
                 for key in missing:
@@ -1195,11 +1220,11 @@ class TabDBBrowse(BaseTab):
         # 涵蓋 reward（發文人員欄亦為 ref_col）；未載入的表 _refreshRefCells 內部
         # 會因 _docorder 無該 key 而 early-return，安全。
         if getattr(self, "_ref_changed", False):
-            for key in BROWSE_KEYS:
+            for key in self.allowed_keys:
                 self._refreshRefCells(key)
             self._ref_changed = False
         self._ensureCurrentLoaded()
-        for key in BROWSE_KEYS:
+        for key in self.allowed_keys:
             if key not in self._loaded_keys:
                 continue
             if not self._ui.get(key, {}).get("table"):
@@ -1224,9 +1249,13 @@ class TabDBBrowse(BaseTab):
         if not self.subtabs:
             return
         index = self.subtabs.currentIndex()
-        if not 0 <= index < len(BROWSE_KEYS):
+        if index < 0:
             return
-        key = BROWSE_KEYS[index]
+        # 公文類型 key 存於子頁籤自身 tabData，不用 currentIndex() 做位置映射
+        # （白名單縮減後子頁數量與順序都可能與完整版不同）。
+        key = self.subtabs.tabBar().tabData(index)
+        if key not in self.allowed_keys:
+            return
         if key in getattr(self, "_loaded_keys", set()):
             return
         runWithBusy(self._inner, lambda: self.buildInitial(key),
