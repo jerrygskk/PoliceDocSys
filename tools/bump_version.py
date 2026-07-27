@@ -23,10 +23,15 @@ DESCRIPTION = "公文管理系統"
 COPYRIGHT   = "© 2026 桃園市政府警察局中壢分局龍興派出所"
 EXE_NAME    = "Police-Document-Manager.exe"
 
+# 獨立版（警政快速登錄系統）的 Windows metadata
+ENTRY_PRODUCT = "警政快速登錄系統"
+ENTRY_EXE     = "Police-Entry-Manager.exe"
+
 # 錨定 repo 根（本檔在 tools/ 之下），與當前工作目錄脫鉤
 ROOT        = Path(__file__).resolve().parent.parent
 VERSION_PY  = ROOT / "lib" / "version.py"
 INFO_TXT    = ROOT / "version_info.txt"
+ENTRY_INFO_TXT = ROOT / "version_info_entry.txt"
 README_MD   = ROOT / "README.md"
 _VER_RE     = re.compile(r'__version__\s*=\s*"([^"]*)"')
 # README 門面顯示的版號（兩處），進版時一併同步，免得每次手動忘記
@@ -63,12 +68,12 @@ def update_readme(new: str) -> bool:
     return False
 
 
-def gen_info(version: str) -> None:
+def render_info(version: str, product: str, exe_name: str) -> str:
     parts = [int(x) for x in version.split(".")]
     while len(parts) < 4:
         parts.append(0)
     vers = tuple(parts[:4])
-    INFO_TXT.write_text(f"""# UTF-8
+    return f"""# UTF-8
 # 由 bump_version.py 自動產生，請勿手改（用 bump_version.py 進版即可）
 VSVersionInfo(
   ffi=FixedFileInfo(
@@ -87,19 +92,26 @@ VSVersionInfo(
         '040404b0',
         [
           StringStruct('CompanyName', '{COMPANY}'),
-          StringStruct('FileDescription', '{DESCRIPTION}'),
+          StringStruct('FileDescription', '{product}'),
           StringStruct('FileVersion', '{version}'),
-          StringStruct('InternalName', '{EXE_NAME}'),
+          StringStruct('InternalName', '{exe_name}'),
           StringStruct('LegalCopyright', '{COPYRIGHT}'),
-          StringStruct('OriginalFilename', '{EXE_NAME}'),
-          StringStruct('ProductName', '{PRODUCT}'),
+          StringStruct('OriginalFilename', '{exe_name}'),
+          StringStruct('ProductName', '{product}'),
           StringStruct('ProductVersion', '{version}')
         ])
     ]),
     VarFileInfo([VarStruct('Translation', [1028, 1200])])
   ]
 )
-""", encoding="utf-8")
+"""
+
+
+def gen_infos(version: str) -> None:
+    INFO_TXT.write_text(render_info(version, PRODUCT, EXE_NAME), encoding="utf-8")
+    ENTRY_INFO_TXT.write_text(
+        render_info(version, ENTRY_PRODUCT, ENTRY_EXE), encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":
@@ -113,9 +125,9 @@ if __name__ == "__main__":
         sys.exit(f"版本號碼格式不正確：{new}（如：1.0.4）")
 
     write_version(new)
-    gen_info(new)
+    gen_infos(new)
     readme_done = update_readme(new)
     suffix = "、README 版號" if readme_done else ""
-    print(f"已完成進版：v{current} → v{new}（已更新 lib/version.py 與 version_info.txt{suffix}）")
+    print(f"已完成進版：v{current} → v{new}（已更新 lib/version.py、version_info.txt 與 version_info_entry.txt{suffix}）")
     if not readme_done:
         print("⚠️ README 版號未變動（找不到對應字樣或已是新版），請手動確認。")
