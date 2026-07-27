@@ -257,6 +257,9 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertIn("本頁不設身分限制", ticket_help)
         self.assertIn("未發文的刑案／一般／罰單案件", print_help)
         self.assertNotIn("未發文的刑案／一般／敘獎案件", print_help)
+        self.assertIn("三項皆為送文者輸入模式但仍有未發文殘留資料時", print_help)
+        self.assertIn("三項皆為送文者輸入模式但仍有未發文殘留資料時",
+                      QUICKSTART[6][2])
         self.assertEqual(set(HELP_TIPS[3]), {
             "btn_reward_submit", "btn_reward_clear", "reward_personnel_list",
         })

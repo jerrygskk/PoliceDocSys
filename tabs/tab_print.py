@@ -21,7 +21,7 @@ from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from lib.base_tab import BaseTab
 from lib.db_utils import (getResourcePath, printTitle, printTitlesUnset,
-                          isSelfServiceMode, anySelfServiceMode)
+                          isSelfServiceMode)
 from ui_utils import loadUi, msgInfo, msgWarning
 from ui_utils import runWithBusy
 
@@ -1113,7 +1113,7 @@ class TabPrint(BaseTab):
         dlg = SettleDialog(self.db_path, parent=self.tab_widget)
         dlg.exec()
         if dlg.settled():
-            self._refresh_unissued()
+            self._refresh_settle_group()
             # 結算後自動設今日日期並產生簽收表（一條龍動線）
             if self.date_edit:
                 self.date_edit.setDate(QDate.currentDate())

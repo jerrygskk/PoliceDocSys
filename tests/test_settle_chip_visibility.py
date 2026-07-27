@@ -139,5 +139,70 @@ class TestSettleRefreshFailure(unittest.TestCase):
         fake._settle_group.setVisible.assert_called_once_with(True)
 
 
+class TestSettleCompletionRefresh(unittest.TestCase):
+    """結算最後一筆殘留資料後，入口必須依新狀態隱藏。"""
+
+    def setUp(self):
+        from lib.db_schema import applySchema
+        self._tmp = tempfile.mkdtemp()
+        self._path = os.path.join(self._tmp, "t.db")
+        conn = sqlite3.connect(self._path)
+        applySchema(conn)
+        for kind in ("crim", "gen", "ticket"):
+            conn.execute(
+                "INSERT OR REPLACE INTO App_Settings (key, value) VALUES (?, '0')",
+                (f"report_mode_{kind}",),
+            )
+        conn.execute(
+            "INSERT INTO Document_Criminal "
+            "(doc_id, report_date, processor_id, subject_summary) "
+            "VALUES ('1', NULL, 'P001', 'Last unissued record')"
+        )
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_settling_last_sender_mode_leftover_hides_entry(self):
+        from PySide6.QtWidgets import QApplication, QLabel
+        from tabs.tab_print import TabPrint
+
+        QApplication.instance() or QApplication([])
+        fake = SimpleNamespace(
+            db_path=self._path,
+            tab_widget=None,
+            date_edit=None,
+            _settle_group=Mock(),
+            lbl_unissued=QLabel(),
+            _on_generate=Mock(),
+        )
+        fake._refresh_unissued = lambda counts=None, unavailable=False: TabPrint._refresh_unissued(
+            fake, counts, unavailable)
+        fake._refresh_settle_group = lambda: TabPrint._refresh_settle_group(fake)
+        fake._settle_group.setVisible(True)  # 結算前：殘留資料使入口可見。
+
+        class LastRecordSettlement:
+            def __init__(self, db_path, parent=None):
+                self.db_path = db_path
+
+            def exec(self):
+                conn = sqlite3.connect(self.db_path)
+                conn.execute(
+                    "UPDATE Document_Criminal SET report_date='2026-07-27', "
+                    "sender_id='P001' WHERE doc_id='1'"
+                )
+                conn.commit()
+                conn.close()
+
+            def settled(self):
+                return True
+
+        with patch("ui_utils.settle_dialog.SettleDialog", LastRecordSettlement):
+            TabPrint._on_settle(fake)
+
+        fake._settle_group.setVisible.assert_called_with(False)
+
+
 if __name__ == "__main__":
     unittest.main()

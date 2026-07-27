@@ -199,7 +199,10 @@ def load_unissued(db_path):
 
 
 def count_unissued(db_path):
-    """快速計算各類別未發文筆數，回傳 {key: int}。供列印頁顯示計數用。"""
+    """載入各類別全部未發文列後取長度，回傳 {key: int}。
+
+    本函式不另做 SQL COUNT；呼叫端可把同一次取得的結果傳給刷新流程重用。
+    """
     return {k: len(v) for k, v in load_unissued(db_path).items()}
 
 
