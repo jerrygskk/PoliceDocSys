@@ -5,6 +5,8 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -111,6 +113,30 @@ class TestSettleEntryVisible(unittest.TestCase):
         from ui_utils.settle_dialog import settle_entry_visible
         self._add_unissued_criminal()
         self.assertTrue(settle_entry_visible(self._path))
+
+
+class TestSettleRefreshFailure(unittest.TestCase):
+    def test_count_failure_is_not_retried_during_same_refresh(self):
+        from PySide6.QtWidgets import QApplication, QLabel
+        from tabs.tab_print import TabPrint
+
+        QApplication.instance() or QApplication([])
+        fake = SimpleNamespace(
+            db_path="unused.db",
+            _settle_group=Mock(),
+            lbl_unissued=QLabel(),
+        )
+        fake._refresh_unissued = lambda counts, unavailable=False: TabPrint._refresh_unissued(
+            fake, counts, unavailable)
+        with patch("ui_utils.settle_dialog.count_unissued",
+                   side_effect=RuntimeError("database unavailable")) as count, \
+             patch("ui_utils.settle_dialog.settle_entry_visible",
+                   return_value=True):
+            TabPrint._refresh_settle_group(fake)
+
+        self.assertEqual(count.call_count, 1)
+        self.assertEqual(fake.lbl_unissued.text(), "未發文：—")
+        fake._settle_group.setVisible.assert_called_once_with(True)
 
 
 if __name__ == "__main__":

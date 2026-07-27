@@ -1080,18 +1080,23 @@ class TabPrint(BaseTab):
 
         try:
             counts = count_unissued(self.db_path)
+            count_failed = False
         except Exception:
-            counts = None
+            counts = {}
+            count_failed = True
         show = settle_entry_visible(self.db_path, counts)
         self._settle_group.setVisible(show)
         if show:
-            self._refresh_unissued(counts)
+            self._refresh_unissued(counts, unavailable=count_failed)
 
-    def _refresh_unissued(self, counts=None):
+    def _refresh_unissued(self, counts=None, unavailable=False):
         """重算未發文計數並更新 lbl_unissued（依 SETTLE_META 逐型態列出，
         新增結算型態時本處自動涵蓋，不需另改）。"""
         try:
             from ui_utils.settle_dialog import SETTLE_META, count_unissued
+            if unavailable:
+                self.lbl_unissued.setText("未發文：—")
+                return
             if counts is None:
                 counts = count_unissued(self.db_path)
             per_type = {m["key"]: counts.get(m["key"], 0) for m in SETTLE_META}
