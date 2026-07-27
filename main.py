@@ -1,5 +1,6 @@
 import sys
 import os
+import importlib
 import traceback
 import logging
 
@@ -79,36 +80,44 @@ from lib.db_utils import getResourcePath
 from ui_utils import loadUi, msgInfo
 from lib.auth_manager import AuthManager
 from lib.app_profile import AppProfile, FULL_PROFILE
-from tabs import (TabDispatch, TabReceive, TabReport, TabReward,
-                  TabRewardIssue, TabTicket, TabPrint, TabDBBrowse, TabArchive,
-                  TabSettings, TabAudit)
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）
 
 
 # ──────────────────────────────────────────────
-# Tab 建立：集中式 key → class 對照，供 DocumentManager 依 profile.tab_keys 組裝
+# Tab 建立：集中式 key → (模組路徑, 類別名) 對照，供 DocumentManager 依
+# profile.tab_keys 組裝。刻意不在檔頭 import 各分頁類別——tabs/tab_print.py
+# 模組層引入 matplotlib（全專案唯一重量級 import 來源），獨立版
+# （ENTRY_PROFILE）不含列印頁，須避免僅因 import 就連帶付出這筆成本。
+# 實際類別在 create_tab() 建立當下才用 importlib 解析並快取。
 # ──────────────────────────────────────────────
 TAB_CLASSES = {
-    "assignment_issue":  TabDispatch,
-    "assignment_receive": TabReceive,
-    "report":            TabReport,
-    "reward":            TabReward,
-    "reward_issue":      TabRewardIssue,
-    "ticket":            TabTicket,
-    "print":             TabPrint,
-    "browse":            TabDBBrowse,
-    "archive":           TabArchive,
-    "settings":          TabSettings,
-    "audit":             TabAudit,
+    "assignment_issue":  ("tabs.tab_dispatch", "TabDispatch"),
+    "assignment_receive": ("tabs.tab_receive", "TabReceive"),
+    "report":            ("tabs.tab_report", "TabReport"),
+    "reward":            ("tabs.tab_reward", "TabReward"),
+    "reward_issue":      ("tabs.tab_reward_issue", "TabRewardIssue"),
+    "ticket":            ("tabs.tab_ticket", "TabTicket"),
+    "print":             ("tabs.tab_print", "TabPrint"),
+    "browse":            ("tabs.tab_dbbrowse", "TabDBBrowse"),
+    "archive":           ("tabs.tab_archive", "TabArchive"),
+    "settings":          ("tabs.tab_settings", "TabSettings"),
+    "audit":             ("tabs.tab_audit", "TabAudit"),
 }
+
+
+def _resolve_tab_class(key):
+    module_path, class_name = TAB_CLASSES[key]
+    module = importlib.import_module(module_path)
+    return getattr(module, class_name)
+
 
 # key → factory(tab_widget, db_path, profile)：只有需要額外接收 profile 能力設定
 # （瀏覽白名單／設定模組）的 Tab 才登記於此；其餘 Tab 一律走
-# TAB_CLASSES[key](tabs, db_path)，不在建立迴圈散落 if 判斷。
+# _resolve_tab_class(key)(tabs, db_path)，不在建立迴圈散落 if 判斷。
 TAB_FACTORIES = {
-    "browse": lambda tabs, db_path, profile: TabDBBrowse(
+    "browse": lambda tabs, db_path, profile: _resolve_tab_class("browse")(
         tabs, db_path, allowed_keys=profile.browse_keys),
-    "settings": lambda tabs, db_path, profile: TabSettings(
+    "settings": lambda tabs, db_path, profile: _resolve_tab_class("settings")(
         tabs, db_path, profile=profile),
 }
 
@@ -117,7 +126,7 @@ def create_tab(key, tab_widget, db_path, profile):
     factory = TAB_FACTORIES.get(key)
     if factory is not None:
         return factory(tab_widget, db_path, profile)
-    return TAB_CLASSES[key](tab_widget, db_path)
+    return _resolve_tab_class(key)(tab_widget, db_path)
 
 
 # ──────────────────────────────────────────────
@@ -127,8 +136,8 @@ class DocumentManager:
     """
     新增 Tab 只需：
       1. 在 tabs/ 新增 tab_xxx.py 並實作 BaseTab
-      2. 在 tabs/__init__.py 加入 import
-      3. 在 TAB_CLASSES 登記 {key: TabClass}，並於各 AppProfile.tab_keys 排入該 key
+      2. 在 tabs/__init__.py 的 _TAB_MODULES 登記 {類別名: 子模組名}（延遲載入用）
+      3. 在 TAB_CLASSES 登記 {key: (模組路徑, 類別名)}，並於各 AppProfile.tab_keys 排入該 key
     """
     TAB_CLASSES = TAB_CLASSES
 

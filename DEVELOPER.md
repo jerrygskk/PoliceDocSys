@@ -494,6 +494,17 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
   --hidden-import lib.version ^
   --hidden-import lib.archive_text ^
   --hidden-import res.resources_rc ^
+  --hidden-import tabs.tab_dispatch ^
+  --hidden-import tabs.tab_receive ^
+  --hidden-import tabs.tab_report ^
+  --hidden-import tabs.tab_reward ^
+  --hidden-import tabs.tab_reward_issue ^
+  --hidden-import tabs.tab_ticket ^
+  --hidden-import tabs.tab_print ^
+  --hidden-import tabs.tab_dbbrowse ^
+  --hidden-import tabs.tab_archive ^
+  --hidden-import tabs.tab_settings ^
+  --hidden-import tabs.tab_audit ^
   --exclude-module matplotlib.backends.backend_cairo ^
   --exclude-module matplotlib.backends.backend_gtk3 ^
   --exclude-module matplotlib.backends.backend_gtk3agg ^
@@ -542,7 +553,7 @@ pyinstaller --clean --noconfirm Police-Entry-Manager.spec
   ```powershell
   (Get-Item 'dist\Police-Entry-Manager.exe').VersionInfo
   ```
-- ⚠️ **已知肥大（尚未處理）**：`main.py` 於模組載入時 import 全部 11 個分頁類別，連帶把列印頁的 matplotlib／numpy／PIL（約 49MB）拖進獨立版，即使獨立版沒有列印功能。第一版刻意優先可靠、不冒漏包風險（見 spec §9）。要瘦身須改成建立分頁時才 import、並於獨立版 spec 排除 matplotlib 系列，**屬跨大程式改動，須另立經核可計畫**
+- 分頁類別已改為建立分頁當下才 `importlib` 動態載入（見 `main.py` `TAB_CLASSES`／`_resolve_tab_class`），不再於模組載入時整批 import；獨立版 spec 的 `excludes` 已整包排除 matplotlib／numpy／PIL 系列，獨立版不再包含這些相依
 
 ### 注意事項
 
@@ -552,6 +563,7 @@ pyinstaller --clean --noconfirm Police-Entry-Manager.spec
 - 指令開頭 `del ...spec & rmdir build dist` 是刻意的（不信任殘留 spec 的過期設定，每次砍掉全新生成）；`2>nul` 讓首次執行不報錯。⚠️ **build 一律用 PowerShell tool 執行**：`del /q`／`rmdir /s /q` 是 CMD 語法，Git Bash 不識別會靜默失敗
 - ⚠️ **跨年度重啟**：onefile 版重啟新程序前必設 `PYINSTALLER_RESET_ENVIRONMENT=1`（否則 `Failed to load Python DLL`／`unicodedata` 缺，`_restartApp()` 已處理，見 PITFALLS PKG 組）
 - 打包報 `No module named res`／`lib.xxx` → 補對應 `--hidden-import`
+- ⚠️ **分頁類別已改為動態載入**（`main.py` 建立分頁當下才 `importlib`），PyInstaller 靜態分析掃不到 `tabs.tab_*` 模組；新增分頁時務必同步補 `--hidden-import`（大程式 CLI，本節上方）與 `hiddenimports`（獨立版 `Police-Entry-Manager.spec`），否則打包版不是啟動就炸，而是**點到該分頁才炸**
 - **exe 檔案資訊**由 `--version-file version_info.txt` 帶入；該檔由 `tools/bump_version.py` 進版時連同版號產生（已收進 git），改顯示文字改該腳本頂部常數
 - GitHub release 上傳用英文檔名
 

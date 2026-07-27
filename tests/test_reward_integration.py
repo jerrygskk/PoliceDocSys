@@ -69,22 +69,21 @@ class RewardIntegrationTests(unittest.TestCase):
     def test_document_tab_and_menu_mappings_are_complete(self):
         from lib.app_profile import FULL_PROFILE
         from main import DocumentManager, MainMenu
-        from tabs import (TabDispatch, TabReceive, TabReport, TabReward,
-                          TabRewardIssue, TabTicket, TabPrint, TabDBBrowse,
-                          TabArchive, TabSettings, TabAudit)
 
+        # TAB_CLASSES 語意已改為「key → (模組路徑, 類別名)」座標，不再是類別物件本身
+        # ——避免檔頭一次 import 全部 11 個分頁（見 tabs/__init__.py 延遲載入）。
         expected_tabs = {
-            "assignment_issue": TabDispatch,
-            "assignment_receive": TabReceive,
-            "report": TabReport,
-            "reward": TabReward,
-            "reward_issue": TabRewardIssue,
-            "ticket": TabTicket,
-            "print": TabPrint,
-            "browse": TabDBBrowse,
-            "archive": TabArchive,
-            "settings": TabSettings,
-            "audit": TabAudit,
+            "assignment_issue": ("tabs.tab_dispatch", "TabDispatch"),
+            "assignment_receive": ("tabs.tab_receive", "TabReceive"),
+            "report": ("tabs.tab_report", "TabReport"),
+            "reward": ("tabs.tab_reward", "TabReward"),
+            "reward_issue": ("tabs.tab_reward_issue", "TabRewardIssue"),
+            "ticket": ("tabs.tab_ticket", "TabTicket"),
+            "print": ("tabs.tab_print", "TabPrint"),
+            "browse": ("tabs.tab_dbbrowse", "TabDBBrowse"),
+            "archive": ("tabs.tab_archive", "TabArchive"),
+            "settings": ("tabs.tab_settings", "TabSettings"),
+            "audit": ("tabs.tab_audit", "TabAudit"),
         }
         # 固定索引契約改以 FULL_PROFILE 驗證相同順序：完整版仍是同樣 11 個 Tab、同樣順序。
         self.assertEqual(DocumentManager.TAB_CLASSES, expected_tabs)

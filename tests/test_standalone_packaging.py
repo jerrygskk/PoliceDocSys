@@ -7,6 +7,32 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools import bump_version
+from main import TAB_CLASSES
+from lib.app_profile import ENTRY_PROFILE
+
+
+def test_full_program_devlog_hidden_imports_cover_all_tab_modules():
+    text = (ROOT / "DEVELOPER.md").read_text(encoding="utf-8")
+    start = text.index("### 打包指令")
+    end = text.index("### 獨立版打包指令", start)
+    block = text[start:end]
+    for module_path, _class_name in TAB_CLASSES.values():
+        assert f"--hidden-import {module_path} ^" in block, (
+            f"missing --hidden-import {module_path} in DEVELOPER.md 打包指令"
+        )
+
+
+def test_entry_spec_hiddenimports_cover_entry_profile_tabs():
+    text = (ROOT / "Police-Entry-Manager.spec").read_text(encoding="utf-8")
+    for key in ENTRY_PROFILE.tab_keys:
+        module_path, _class_name = TAB_CLASSES[key]
+        assert f"'{module_path}'" in text, f"missing hiddenimports entry for {module_path}"
+
+
+def test_entry_spec_excludes_heavy_print_deps():
+    text = (ROOT / "Police-Entry-Manager.spec").read_text(encoding="utf-8")
+    assert "'matplotlib'" in text
+    assert "'numpy'" in text
 
 
 def test_entry_spec_contract():
