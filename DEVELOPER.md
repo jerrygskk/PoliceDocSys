@@ -524,6 +524,26 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
   --name Police-Document-Manager main.py
 ```
 
+### 獨立版打包指令（警政快速登錄系統／`Police-Entry-Manager.exe`）
+
+獨立版**改用入庫的 spec 檔**，不用 CLI 旗標（與大程式不同）：`Police-Entry-Manager.spec` 已 `git add -f` 強制入庫（`.gitignore` 排除 `*.spec`，但獨立版沒有等價 CLI 指令，spec 本身即唯一建置定義，不入庫等於遺失）。**勿刪掉重建**。
+
+```powershell
+Remove-Item -Recurse -Force build\Police-Entry-Manager -ErrorAction SilentlyContinue
+Remove-Item -Force dist\Police-Entry-Manager.exe -ErrorAction SilentlyContinue
+pyinstaller --clean --noconfirm Police-Entry-Manager.spec
+```
+
+- ⚠️ **只刪獨立版自己的產物**（`build\Police-Entry-Manager`、`dist\Police-Entry-Manager.exe`），別整個砍 `build`／`dist`，會連帶清掉大程式的產物
+- 進入點 `standalone_main.py`；`--version-file` 走 `version_info_entry.txt`（與 `version_info.txt` 同由 `tools/bump_version.py` 一次產生，**兩支 EXE 版號永遠同步**，勿手改）
+- icon、`console=False`、`upx=True`、`runtime_tmpdir=None`、hidden imports 與 datas 均比照大程式；`dbfile.db` 同樣不打包、與 exe 同資料夾
+- 兩支 EXE 可放同一資料夾共用一份 `dbfile.db`；檔名不同、不互相覆蓋
+- **建置後檢查 Windows 詳細資料**（產品名稱／檔案描述＝警政快速登錄系統、原始檔名＝`Police-Entry-Manager.exe`、版號＝`lib/version.py`）：
+  ```powershell
+  (Get-Item 'dist\Police-Entry-Manager.exe').VersionInfo
+  ```
+- ⚠️ **已知肥大（尚未處理）**：`main.py` 於模組載入時 import 全部 11 個分頁類別，連帶把列印頁的 matplotlib／numpy／PIL（約 49MB）拖進獨立版，即使獨立版沒有列印功能。第一版刻意優先可靠、不冒漏包風險（見 spec §9）。要瘦身須改成建立分頁時才 import、並於獨立版 spec 排除 matplotlib 系列，**屬跨大程式改動，須另立經核可計畫**
+
 ### 注意事項
 
 - `dbfile.db` 不打包，與 exe 同資料夾（真實資料）
