@@ -112,7 +112,8 @@ class TestEntrySettingsAssembly(_SettingsBase):
     def test_entry_year_reset_button_not_connected(self):
         # ⚠️ 不可用 patch.object(TabSettings, "_doReset") 驗證：signal 連的是
         # setup() 當下取得的 bound method，事後換掉類別屬性不影響既有連線，
-        # 反而會讓「真的被連上」的情況靜默通過。直接查 receivers 才是真相。
+        # 反而會讓「真的被連上」的情況靜默通過。改攔 _doReset 內部會開的
+        # ResetDialog：真的連上就會被建構，沒連上就完全不會出現。
         s = self._make_settings(profile=ENTRY_PROFILE)
         self.assertTrue(s._btn_year_reset.isHidden())
         with patch("tabs.tab_settings.ResetDialog") as mock_dlg:
@@ -123,6 +124,30 @@ class TestEntrySettingsAssembly(_SettingsBase):
         s = self._make_settings(profile=ENTRY_PROFILE)
         self.assertEqual(s._panel_input_lock.flow_keys, ("reward", "ticket"))
         self.assertEqual(s._panel_input_mode.flow_keys, ("ticket",))
+
+
+class TestEntryHasNoRestoreEntryButSharedMechanismIntact(_SettingsBase):
+    """獨立版設定頁沒有回收筒／還原入口（`_trash_panel`／`_panel_restore` 皆
+    None，見上一個 TestCase），但這只是「沒有 UI 入口」，不是「資料不能還原」：
+    共用 `lib.db_utils.restoreFromTrash()` 與大程式 `TrashPanel` 完全沒被本案
+    動過。敘獎軟刪除後仍可還原的實際 round-trip 證據見
+    tests/test_standalone_browse.py::TestSharedDeleteSemantics
+    .test_shared_reward_trash_entry_is_restorable；此處只驗證獨立版沒有另建
+    一套還原機制或入口。"""
+
+    def test_entry_settings_builds_no_trash_or_restore_widgets(self):
+        s = self._make_settings(profile=ENTRY_PROFILE)
+        self.assertIsNone(s._trash_panel)
+        self.assertIsNone(s._panel_restore)
+        self.assertFalse(hasattr(s, "_doRestore"))
+
+    def test_shared_restore_function_is_untouched_by_entry_profile(self):
+        from lib.db_utils import restoreFromTrash
+        from ui_utils.trash_panel import TrashPanel
+        # 只確認獨立版沒有另建同名或替代實作；還原邏輯仍是大程式那一套。
+        import tabs.tab_settings as tab_settings_module
+        self.assertIs(tab_settings_module.TrashPanel, TrashPanel)
+        self.assertTrue(callable(restoreFromTrash))
 
 
 class TestRoleRefreshCannotReshowForbiddenPages(_SettingsBase):
