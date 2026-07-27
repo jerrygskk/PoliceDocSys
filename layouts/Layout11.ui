@@ -25,10 +25,10 @@
         <property name="topMargin"><number>0</number></property>
         <property name="rightMargin"><number>0</number></property>
         <property name="bottomMargin"><number>0</number></property>
-        <!-- row0：發文者（自助模式反灰但保留位置）＋可見提示標籤 -->
+        <!-- row0：發文人員（自助模式反灰但保留位置）＋可見提示標籤 -->
         <item row="0" column="0">
          <widget class="QLabel" name="lbl_ticket_sender">
-          <property name="text"><string>發文者</string></property>
+          <property name="text"><string>發文人員</string></property>
           <property name="minimumSize"><size><width>90</width><height>36</height></size></property>
           <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
          </widget>
@@ -42,7 +42,7 @@
         </item>
         <item row="0" column="2" colspan="2">
          <widget class="QLabel" name="ticket_sender_hint">
-          <property name="text"><string>自助取號模式：發文者將於結算發文時填入，本頁無須選擇。</string></property>
+          <property name="text"><string>自助取號模式：發文人員免填</string></property>
           <property name="minimumSize"><size><width>0</width><height>36</height></size></property>
           <property name="styleSheet"><string notr="true">background-color: #fdf3e0; color: #8a5c14; border: 1px solid #f0d9a8; border-radius: 7px; padding: 4px 12px;</string></property>
           <property name="alignment"><set>Qt::AlignLeft|Qt::AlignVCenter</set></property>

@@ -3,7 +3,7 @@
 
 `source="entry"`（罰單登錄頁，預設）：所有已登入身分皆可用，只改「開立人員」
 與「罰單編號」——登錄日期／發文日期／發文人員一律保留原值（發文由結算流程或
-發文者登錄當下決定，不在此竄改），儲存走 `lib.ticket_utils.updateTicket`。
+發文人員登錄當下決定，不在此竄改），儲存走 `lib.ticket_utils.updateTicket`。
 
 `source="browse"`（資料庫瀏覽頁）：**僅 admin** 可用，可改全部業務欄位（含
 登錄日期／發文日期／發文人員），儲存走 `lib.ticket_utils.updateTicketFromBrowse`
@@ -94,20 +94,20 @@ class TicketEditDialog(_BaseEditDialog):
             self.w_register_date = NullableDateEdit()
             self.w_register_date.setPlaceholderText("未發文")
             form.addRow("發文日期：", self.w_register_date)
-            # 發文者：可空白（未發文時 NULL）；保留空白項忠實顯示未結算狀態。
+            # 發文人員：可空白（未發文時 NULL）；保留空白項忠實顯示未結算狀態。
             self.w_sender = QComboBox()
             self.w_sender.addItem("", None)
             for staff_id, staff_name, _sort in personnel:
                 self.w_sender.addItem(staff_name, staff_id)
-            form.addRow("發文者：", self.w_sender)
+            form.addRow("發文人員：", self.w_sender)
         else:
-            # entry：登錄／發文／發文者一律唯讀（發文不在登錄頁竄改）。
+            # entry：登錄／發文／發文人員一律唯讀（發文不在登錄頁竄改）。
             self.w_create_date = QLabel("")
             form.addRow("登錄日期：", self.w_create_date)
             self.w_register_date = QLabel("")
             form.addRow("發文日期：", self.w_register_date)
             self.w_sender_name = QLabel("")
-            form.addRow("發文者：", self.w_sender_name)
+            form.addRow("發文人員：", self.w_sender_name)
 
         # 開立人員：單一人員，故用一般下拉（不用 RecipientCombo，不解析多人）
         self.w_issuer = QComboBox()
@@ -203,14 +203,14 @@ class TicketEditDialog(_BaseEditDialog):
                 missing.append("登錄日期")
             else:
                 create_date = cdate.toString("yyyy-MM-dd")
-            # 發文日期：空白＝未發文（''、清 sender）；有效日期＝已發文，發文者必填。
+            # 發文日期：空白＝未發文（''、清 sender）；有效日期＝已發文，發文人員必填。
             ok, register_date, sender_id, issued = self._resolveReportDate(
                 self.w_register_date, self.w_sender,
                 blank_value="", field_label="發文日期")
             if not ok:
                 return
             if issued and not sender_id:
-                missing.append("發文者")
+                missing.append("發文人員")
         if missing:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(missing)}")
             return

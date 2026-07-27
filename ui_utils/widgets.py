@@ -686,12 +686,21 @@ def attachComboHint(combo, hint):
             super().__init__(parent)
             self._hint = hint
 
+        def _clearIfHint(self):
+            if combo.currentData() is None and \
+               combo.currentText() == self._hint:
+                combo.clearEditText()
+
         def eventFilter(self, obj, event):
             if event.type() == QEvent.FocusIn:
                 if combo.currentData() is None and \
                    combo.currentText() == self._hint:
                     # singleShot：等 Qt 完成 focus 的預設處理（游標定位）後再清
-                    QTimer.singleShot(0, combo.clearEditText)
+                    # ⚠️ 延後執行時要「再確認一次仍在顯示提示文字」才清：點下拉鈕
+                    # 是同一下取得焦點＋展開清單，使用者在本次延後動作跑到之前就
+                    # 選好人名時，無條件 clearEditText 會把剛帶入的姓名清成空白，
+                    # 症狀＝空白欄第一次下拉選了沒反應、要再拉一次（實測踩過）。
+                    QTimer.singleShot(0, self._clearIfHint)
                     QTimer.singleShot(0, _repaint)
             elif event.type() == QEvent.FocusOut:
                 if combo.currentData() is None and \

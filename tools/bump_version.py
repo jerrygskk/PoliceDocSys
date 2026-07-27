@@ -23,8 +23,8 @@ DESCRIPTION = "公文管理系統"
 COPYRIGHT   = "© 2026 桃園市政府警察局中壢分局龍興派出所"
 EXE_NAME    = "Police-Document-Manager.exe"
 
-# 獨立版（警政快速登錄系統）的 Windows metadata
-ENTRY_PRODUCT = "警政快速登錄系統"
+# 獨立版（公文快速登錄系統）的 Windows metadata
+ENTRY_PRODUCT = "公文快速登錄系統"
 ENTRY_EXE     = "Police-Entry-Manager.exe"
 
 # 錨定 repo 根（本檔在 tools/ 之下），與當前工作目錄脫鉤

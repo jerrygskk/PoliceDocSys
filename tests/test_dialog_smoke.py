@@ -761,5 +761,30 @@ class TestSettleDialog(_DialogBase):
         self.assertEqual(dlg._tbl.visible_rows(), [])
         dlg.deleteLater()
 
+class TestHelpPageMapping(unittest.TestCase):
+    """HELP 頁碼須依分頁 key 換算，獨立版才不會開到別頁的說明。"""
+
+    def test_entry_profile_pages_match_their_tabs(self):
+        from ui_utils.help_dialog import helpPageIndex
+        from ui_utils.help_content import HELP_TITLES
+        from lib.app_profile import ENTRY_PROFILE, FULL_PROFILE
+
+        expected = {
+            "reward": "敘獎登錄",
+            "ticket": "罰單登錄",
+            "browse": "資料庫瀏覽",
+            "settings": "資料庫設定",
+        }
+        for pos, key in enumerate(ENTRY_PROFILE.tab_keys):
+            idx = helpPageIndex(pos, ENTRY_PROFILE.tab_keys)
+            self.assertEqual(HELP_TITLES[idx], expected[key],
+                             f"獨立版第 {pos} 頁（{key}）開到錯的說明")
+
+        # 完整版：位置即頁碼，行為不得改變
+        for pos in range(len(FULL_PROFILE.tab_keys)):
+            self.assertEqual(helpPageIndex(pos, FULL_PROFILE.tab_keys), pos)
+            self.assertEqual(helpPageIndex(pos, None), pos)
+
+
 if __name__ == "__main__":
     unittest.main()

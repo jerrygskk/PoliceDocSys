@@ -44,6 +44,7 @@ BUTTONS = [
     ("trash",          "資源回收筒", "default"),
     ("backup_restore", "備份還原",   "default"),
     ("overdue",        "逾期未回",   "overdue"),
+    ("unissued",       "未發文",     "overdue"),
     ("convert_type",   "⇄ 轉換類別", "convert"),
 ]
 
@@ -54,6 +55,7 @@ TABS = [
     ("crim_report", "❐ 刑案陳報", "tab"),
     ("gen_report",  "❏ 一般陳報", "tab"),
     ("reward",      "☆ 敘獎登錄", "tab"),
+    ("ticket",      "🎫 罰單登錄", "tab"),
     ("crim_arch",   "❐ 刑案歸檔", "tab"),
     ("gen_arch",    "❏ 一般歸檔", "tab"),
 ]

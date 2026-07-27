@@ -106,7 +106,7 @@ REWARD_COLS = [
     {"header": "編號", "view_col": "doc_id", "slim": True, "link": True, "search": True, "w": 64},
     {"header": "登錄日期", "view_col": "create_date", "slim": True, "search": True, "w": 140},
     {"header": "發文日期", "view_col": "register_date", "slim": True, "search": True, "w": 140},
-    {"header": "發文人員", "view_col": "sender_name", "slim": True, "search": True, "w": 120, "ref_col": True},
+    {"header": "發文人員", "view_col": "sender_name", "slim": True, "search": True, "w": 120, "trim_name": True, "ref_col": True},
     {"header": "敘獎事由", "view_col": "reason", "slim": True, "search": True, "stretch": True, "w": 300},
     {"header": "敘獎人員", "view_col": "recipients", "slim": True, "search": True, "w": 240},
 ]
@@ -115,8 +115,8 @@ TICKET_COLS = [
     {"header": "編號", "view_col": "doc_id", "slim": True, "link": True, "search": True, "w": 64},
     {"header": "登錄日期", "view_col": "create_date", "slim": True, "search": True, "w": 140},
     {"header": "發文日期", "view_col": "register_date", "slim": True, "search": True, "w": 140},
-    {"header": "發文者", "view_col": "sender_name", "slim": True, "search": True, "w": 120, "ref_col": True},
-    {"header": "開立人員", "view_col": "issuer_name", "slim": True, "search": True, "w": 120, "ref_col": True},
+    {"header": "發文人員", "view_col": "sender_name", "slim": True, "search": True, "w": 120, "trim_name": True, "ref_col": True},
+    {"header": "開立人員", "view_col": "issuer_name", "slim": True, "search": True, "w": 120, "trim_name": True, "ref_col": True},
     {"header": "罰單編號", "view_col": "ticket_no", "slim": True, "search": True, "stretch": True, "w": 160},
 ]
 

@@ -123,7 +123,7 @@ def test_entry_spec_bundles_only_entry_profile_banner():
 
 def test_entry_version_info_contract():
     text = (ROOT / "version_info_entry.txt").read_text(encoding="utf-8")
-    assert "警政快速登錄系統" in text
+    assert "公文快速登錄系統" in text
     assert text.count("Police-Entry-Manager.exe") == 2
     assert "桃園市政府警察局中壢分局" in text
 

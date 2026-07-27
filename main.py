@@ -209,7 +209,8 @@ class DocumentManager:
             self._prev_tab_index = tab_index
             # 分頁列右上角 ? 鈕（依當前頁開說明）＋ 各欄位 tooltip
             from ui_utils import attachHelpButton
-            attachHelpButton(self.tab_widget, self.window)
+            attachHelpButton(self.tab_widget, self.window,
+                             tab_keys=self.profile.tab_keys)
 
         # 標題隨身份切換
         self._base_title = self.profile.product_name
@@ -478,6 +479,9 @@ class MainMenu:
         title_label = getattr(self.ui, 'titleLabel', None)
         if title_label:
             title_label.setText(profile.product_name)
+
+        # 視窗標題列也跟著 profile（.ui 內寫死完整版名稱，獨立版會顯示錯的產品名）
+        self.ui.setWindowTitle(f"{profile.product_name} - 主選單")
 
         # 共用 .ui 上所有候選按鈕（不論本 profile 是否允許）
         all_buttons = {

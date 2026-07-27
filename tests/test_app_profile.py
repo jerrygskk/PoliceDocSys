@@ -17,7 +17,7 @@ def test_full_profile_preserves_current_tab_order():
 
 
 def test_entry_profile_is_strict_allowlist():
-    assert ENTRY_PROFILE.product_name == "警政快速登錄系統"
+    assert ENTRY_PROFILE.product_name == "公文快速登錄系統"
     assert ENTRY_PROFILE.exe_name == "Police-Entry-Manager.exe"
     assert ENTRY_PROFILE.tab_keys == ("reward", "ticket", "browse", "settings")
     assert ENTRY_PROFILE.menu_keys == ("reward", "ticket", "browse", "settings")

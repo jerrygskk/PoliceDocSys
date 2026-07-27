@@ -30,8 +30,27 @@ QTextBrowser {
 """
 
 
+def helpPageIndex(tab_index, tab_keys=None):
+    """把「當前 profile 的分頁位置」換算成 HELP 頁碼。
+
+    HELP_PAGES 的頁碼＝完整版分頁順序（FULL_PROFILE.tab_keys）。獨立版只有
+    四頁，位置 0 是敘獎登錄而非交辦單發文，直接拿位置當頁碼會開到別頁的說明
+    （實際踩過：獨立版按 ? 出現交辦單發文的說明）。故一律經由分頁 key 轉換。
+    tab_keys=None（完整版）時位置即頁碼，行為不變。
+    """
+    if not tab_keys:
+        return tab_index
+    from lib.app_profile import FULL_PROFILE
+    if not (0 <= tab_index < len(tab_keys)):
+        return None
+    try:
+        return FULL_PROFILE.tab_keys.index(tab_keys[tab_index])
+    except ValueError:
+        return None
+
+
 def helpDialog(parent, tab_index):
-    """開啟指定頁的說明視窗（modal）。tab_index 對應 TAB_CLASSES 索引。"""
+    """開啟指定頁的說明視窗（modal）。tab_index 為 HELP 頁碼（見 helpPageIndex）。"""
     html = HELP_HTML.get(tab_index)
     if html is None:
         return
@@ -95,9 +114,12 @@ _HELP_BTN_QSS = (
 )
 
 
-def attachHelpButton(tab_widget: QTabWidget, window: QWidget):
+def attachHelpButton(tab_widget: QTabWidget, window: QWidget, tab_keys=None):
     """在 tabWidget 分頁列右上角放一顆說明鈕（help 線圖示），點擊開啟當前分頁的
-    說明；並依 HELP_TIPS 為各欄位／按鈕套上 tooltip。於所有 Tab setup 完成後呼叫一次。"""
+    說明；並依 HELP_TIPS 為各欄位／按鈕套上 tooltip。於所有 Tab setup 完成後呼叫一次。
+
+    `tab_keys` 傳目前 profile 的分頁 key 序列（`profile.tab_keys`），用來把分頁
+    位置換算成 HELP 頁碼；獨立版不傳就會開到別頁的說明（見 helpPageIndex）。"""
     if not tab_widget:
         return
 
@@ -108,7 +130,8 @@ def attachHelpButton(tab_widget: QTabWidget, window: QWidget):
     btn.setCursor(Qt.PointingHandCursor)
     btn.setStyleSheet(_HELP_BTN_QSS)
     # clicked 會多塞一個 checked 布林，用 lambda 吃掉（見 CLAUDE.md 踩雷表）
-    btn.clicked.connect(lambda _=False: helpDialog(window, tab_widget.currentIndex()))
+    btn.clicked.connect(lambda _=False: helpDialog(
+        window, helpPageIndex(tab_widget.currentIndex(), tab_keys)))
     tab_widget.setCornerWidget(btn, Qt.TopRightCorner)
 
     # 套 tooltip：以物件名稱在 window 樹中尋找對應 widget

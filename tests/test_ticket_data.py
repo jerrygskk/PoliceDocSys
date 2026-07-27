@@ -267,21 +267,16 @@ class TestTicketCreate(TicketDbTestCase):
             self.conn.execute(
                 "SELECT COUNT(*) FROM Document_Ticket").fetchone()[0], 0)
 
-    def test_create_writes_audit_in_same_transaction(self):
+    def test_create_writes_no_audit(self):
+        """罰單新增不寫操作紀錄（維護者決定：高頻操作，只保留刪除紀錄）。"""
         self._insert_person("P001", "王小明")
         createTicket(
             self.conn, issuer_id="P001", ticket_no="D4RD15263",
             self_service=True, sender_id=None,
             create_date="2026-07-23", role="user")
-        row = self.conn.execute(
-            "SELECT role, action, target_table, target_id, detail FROM Audit_Log"
-        ).fetchone()
-        self.assertEqual(row[0], "user")
-        self.assertEqual(row[1], "INSERT")
-        self.assertEqual(row[2], "Document_Ticket")
-        self.assertEqual(row[3], "1")
-        self.assertIn("[罰單][新增]", row[4])
-        self.assertIn("D4RD15263", row[4])
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM Audit_Log").fetchone()[0],
+            0)
 
     def test_deleted_ticket_no_can_be_reused(self):
         self._insert_person("P001", "王小明")
@@ -340,9 +335,10 @@ class TestTicketUpdate(TicketDbTestCase):
                 "SELECT create_date, register_date, sender_id, issuer_id, ticket_no "
                 "FROM Document_Ticket WHERE doc_id='1'").fetchone(),
             ("2026-07-20", "2026-07-20", "P002", "P002", "D4RD19999"))
+        # 新增與修改都不寫稽核（只有刪除寫）
         actions = [r[0] for r in self.conn.execute(
             "SELECT action FROM Audit_Log ORDER BY log_id")]
-        self.assertEqual(actions, ["INSERT", "UPDATE"])
+        self.assertEqual(actions, [])
 
     def test_update_rejects_duplicate_and_unknown_issuer(self):
         createTicket(

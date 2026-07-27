@@ -27,7 +27,8 @@ from ui_utils import setupNullableDateEdit, NullableDateEdit, runWithBusy, prese
 # 身分碼 → 中文
 ROLE_ZH = {'admin': '管理者', 'archive': '歸檔管理', 'user': '一般使用者'}
 # detail 類別（與 db_utils.buildDetail 一致）
-CATEGORIES = ['交辦', '刑案', '一般', '敘獎', '人員', '部門', '案類', '歸檔', '系統']
+CATEGORIES = ['交辦', '刑案', '一般', '敘獎', '罰單', '人員', '部門', '案類',
+              '歸檔', '系統']
 # 需以紅字標示的動作
 DANGER_ACTIONS = {'刪除', '重置', '登入失敗', '轉換'}
 

@@ -1,4 +1,4 @@
-"""集中式應用 Profile：完整版與獨立版（警政快速登錄系統）能力設定唯一來源。"""
+"""集中式應用 Profile：完整版與獨立版（公文快速登錄系統）能力設定唯一來源。"""
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -88,7 +88,7 @@ FULL_PROFILE = AppProfile(
 
 ENTRY_PROFILE = AppProfile(
     key="entry",
-    product_name="警政快速登錄系統",
+    product_name="公文快速登錄系統",
     exe_name="Police-Entry-Manager.exe",
     banner_path="res/buttons/reward_ticket_banner.png",
     tab_keys=("reward", "ticket", "browse", "settings"),

@@ -3,7 +3,7 @@
 
 涵蓋：
   - Layout11.ui 物件名契約（改名／刪元件即紅）
-  - 兩種模式（自助取號／發文者登錄）的發文者欄狀態與提示標籤
+  - 兩種模式（自助取號／發文者登錄）的發文人員欄狀態與提示標籤
   - 必填驗證（純函式 `_validateInput()`，不彈視窗）
   - 新增／編輯／刪除的 DB round-trip 與稽核安全（自助模式強制 sender NULL）
   - 候選人員＝直接取代開立人員（取 currentData，不猜姓名字串）
@@ -258,7 +258,8 @@ class TestTicketSubmit(TicketTabBase):
             warn.assert_called_once()
         self.assertEqual(self._rows(), [])
 
-    def test_submit_writes_audit_row(self):
+    def test_submit_writes_no_audit_row(self):
+        """登錄不寫操作紀錄（罰單只在刪除時寫，見 ticket_utils）。"""
         self._set_self_service(True)
         tab = self._make_tab()
         self._fill(tab)
@@ -267,7 +268,7 @@ class TestTicketSubmit(TicketTabBase):
         rows = conn.execute(
             "SELECT action,target_table FROM Audit_Log").fetchall()
         conn.close()
-        self.assertEqual(rows, [("INSERT", "Document_Ticket")])
+        self.assertEqual(rows, [])
 
 
 class TestTicketPreviewCells(TicketTabBase):
@@ -431,9 +432,8 @@ class TestTicketDelete(TicketTabBase):
             "SELECT action,target_table,target_id FROM Audit_Log "
             "ORDER BY log_id").fetchall()
         conn.close()
-        self.assertEqual(
-            rows, [("INSERT", "Document_Ticket", doc_id),
-                   ("DELETE", "Document_Ticket", doc_id)])
+        # 只有刪除留紀錄；新增那筆不寫
+        self.assertEqual(rows, [("DELETE", "Document_Ticket", doc_id)])
 
 
 class TestTicketInputLock(TicketTabBase):
@@ -691,7 +691,7 @@ class TestTicketEdit(TicketTabBase):
         self.assertEqual(after[5], "AA99")
         dlg.deleteLater()
 
-    def test_edit_writes_audit_row(self):
+    def test_edit_writes_no_audit_row(self):
         self._set_self_service(False)
         tab = self._make_tab()
         self._fill(tab, sender="P002")
@@ -708,9 +708,7 @@ class TestTicketEdit(TicketTabBase):
             "SELECT action,target_table,target_id FROM Audit_Log "
             "ORDER BY log_id").fetchall()
         conn.close()
-        self.assertEqual(
-            rows, [("INSERT", "Document_Ticket", doc_id),
-                   ("UPDATE", "Document_Ticket", doc_id)])
+        self.assertEqual(rows, [])   # 新增與修改皆不寫，只有刪除寫
 
     def test_edit_reloads_preview_row(self):
         self._set_self_service(True)

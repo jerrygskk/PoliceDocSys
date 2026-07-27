@@ -92,7 +92,9 @@ def test_entry_menu_has_exactly_four_visible_actions(qtbot):
         tab_index_by_key={"reward": 0, "ticket": 1, "browse": 2, "settings": 3},
     )
     qtbot.addWidget(menu.ui)
-    assert menu.ui.titleLabel.text() == "警政快速登錄系統"
+    assert menu.ui.titleLabel.text() == "公文快速登錄系統"
+    # 標題列不可沿用 .ui 內寫死的完整版名稱
+    assert menu.ui.windowTitle() == "公文快速登錄系統 - 主選單"
     assert _visible_menu_keys(menu) == {"reward", "ticket", "browse", "settings"}
 
 

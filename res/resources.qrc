@@ -27,6 +27,7 @@
     <file alias="btn/trash.svg">buttons/trash.svg</file>
     <file alias="btn/backup_restore.svg">buttons/backup_restore.svg</file>
     <file alias="btn/overdue.svg">buttons/overdue.svg</file>
+    <file alias="btn/unissued.svg">buttons/unissued.svg</file>
     <file alias="btn/convert_type.svg">buttons/convert_type.svg</file>
     <file alias="menu/dispatch.svg">buttons/menu_dispatch.svg</file>
     <file alias="menu/receive.svg">buttons/menu_receive.svg</file>
@@ -43,6 +44,7 @@
     <file alias="tab/crim_report.svg">tabs/crim_report.svg</file>
     <file alias="tab/gen_report.svg">tabs/gen_report.svg</file>
     <file alias="tab/reward.svg">tabs/reward.svg</file>
+    <file alias="tab/ticket.svg">tabs/ticket.svg</file>
     <file alias="tab/crim_arch.svg">tabs/crim_arch.svg</file>
     <file alias="tab/gen_arch.svg">tabs/gen_arch.svg</file>
   </qresource>

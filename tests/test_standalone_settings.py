@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""獨立版（警政快速登錄系統）精簡設定頁測試（offscreen）。
+"""獨立版（公文快速登錄系統）精簡設定頁測試（offscreen）。
 
 保護對象：
   - `TabSettings(profile=...)` 只組裝 profile 核准的設定頁與系統設定面板；

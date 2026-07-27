@@ -4,7 +4,7 @@
 界線（重要）：
   - 所有寫入一律走 `lib.ticket_utils` 的 domain helper，本檔不自組業務 SQL；
     唯一的 SELECT 是預覽表刷新與候選人員排序，走 `Document_Ticket_Full` View。
-  - 兩種模式（`isSelfServiceMode`）：自助取號模式下發文者欄**保留位置但反灰**
+  - 兩種模式（`isSelfServiceMode`）：自助取號模式下發文人員欄**保留位置但反灰**
     （不隱藏，避免版面跳動），並顯示可見的提示 QLabel——不可只靠 tooltip，
     深色模式下 tooltip 整塊黑（PITFALLS QSS-7）。提交時強制 `sender_id=None`，
     **不得讀取反灰欄的殘留 UI 值**。
@@ -33,7 +33,7 @@ from lib.ticket_utils import (
     TicketNotFoundError, TicketValidationError, createTicket, deleteTicket,
 )
 from ui_utils import (
-    TicketEditDialog, attachComboHint, attachStickyScroll, confirmBox, loadUi,
+    TicketEditDialog, attachStickyScroll, confirmBox, loadUi,
     makeDeleteBtn, msgWarning, refreshFilterCombo, reportError,
     setDocIdLinkCell, setupFilterCombo, setupPreviewTable,
     sort_personnel_by_id_counts,
@@ -44,7 +44,7 @@ from lib.archive_text import _trimName
 # 未發文（自助取號模式）在預覽表的橘字提示，與敘獎登錄一致
 _UNISSUED_COLOR = "#e67e22"
 
-_SENDER_HINT = "自助取號模式：發文者將於結算發文時填入。"
+_SENDER_HINT = "自助取號模式：發文人員免填"
 
 
 class TabTicket(BaseTab, InputLockMixin):
@@ -111,20 +111,16 @@ class TabTicket(BaseTab, InputLockMixin):
         self.ticket_no.setFocus()
 
     def _setupPersonnelCombos(self):
-        """發文者／開立人員兩個可輸入下拉；候選來源與敘獎登錄共用
-        `loadActivePersonnel`（在職人員＋別名，姓名已去 `-19.06` 後綴）。"""
+        """發文人員／開立人員兩個可輸入下拉；候選來源與敘獎登錄共用
+        `loadActivePersonnel`（在職人員＋別名，姓名已去 `-19.06` 後綴）。
+
+        ⚠️ 單一人名下拉一律**比照陳報頁的發文人員**：只掛 `setupFilterCombo`，
+        第 0 項維持空字串、不加提示文字（維護者指示）。提示文字那套
+        （`attachComboHint`）只給陳報頁的案類用，勿再套回本頁。"""
         self._personnel, self._alias_map = loadActivePersonnel(self.db_path)
         pairs = [(sid, name) for sid, name, _sort in self._personnel]
         setupFilterCombo(self.ticket_sender, pairs, alias_map=self._alias_map)
         setupFilterCombo(self.ticket_issuer, pairs, alias_map=self._alias_map)
-        self._applyComboHints()
-
-    def _applyComboHints(self):
-        """第 0 項提示文字（QTW-7：setItemText 非 placeholder，須用
-        attachComboHint 處理 focus-in 清空／focus-out 還原）。
-        `setupFilterCombo`／`refreshFilterCombo` 會重建項目 → 每次重建後補呼叫。"""
-        attachComboHint(self.ticket_sender, "請選擇發文者")
-        attachComboHint(self.ticket_issuer, "請選擇開立人員")
 
     def _setupCandidateButtons(self):
         """右側候選人員清單：點一下＝直接取代目前開立人員（不附加、不確認）。"""
@@ -182,7 +178,6 @@ class TabTicket(BaseTab, InputLockMixin):
             pairs = [(sid, name) for sid, name, _sort in self._personnel]
             refreshFilterCombo(self.ticket_sender, pairs, alias_map=self._alias_map)
             refreshFilterCombo(self.ticket_issuer, pairs, alias_map=self._alias_map)
-            self._applyComboHints()
             self._rebuildCandidates()
             self._ref_changed = False
         self.reload()
@@ -219,7 +214,7 @@ class TabTicket(BaseTab, InputLockMixin):
                 or not isInputLocked(self.db_path, kind))
 
     def _applyInputLock(self):
-        """唯讀鎖套用後必須再套一次自助模式，否則反灰的發文者欄會被解鎖回可用。"""
+        """唯讀鎖套用後必須再套一次自助模式，否則反灰的發文人員欄會被解鎖回可用。"""
         super()._applyInputLock()
         self._applySelfServiceMode()
 
@@ -282,7 +277,7 @@ class TabTicket(BaseTab, InputLockMixin):
             self.ticket_issuer.setCurrentIndex(idx)
 
     def _clearIssuer(self):
-        """「清空」只清開立人員欄（發文者與罰單編號不動）。"""
+        """「清空」只清開立人員欄（發文人員與罰單編號不動）。"""
         self.ticket_issuer.setCurrentIndex(0)
         self.ticket_issuer.clearEditText()
         self.ticket_issuer.setFocus()
@@ -293,7 +288,7 @@ class TabTicket(BaseTab, InputLockMixin):
         missing = []
         if (not isSelfServiceMode(self.db_path, "ticket")
                 and not self.ticket_sender.currentData()):
-            missing.append("發文者")
+            missing.append("發文人員")
         if not self.ticket_issuer.currentData():
             missing.append("開立人員")
         if not self.ticket_no.text().strip():
@@ -353,7 +348,7 @@ class TabTicket(BaseTab, InputLockMixin):
 
     def _focusFirstMissing(self, missing):
         widget = {
-            "發文者": self.ticket_sender,
+            "發文人員": self.ticket_sender,
             "開立人員": self.ticket_issuer,
             "罰單編號": self.ticket_no,
         }.get(missing[0])

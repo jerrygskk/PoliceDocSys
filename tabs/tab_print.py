@@ -1091,19 +1091,31 @@ class TabPrint(BaseTab):
 
     def _refresh_unissued(self, counts=None, unavailable=False):
         """重算未發文計數並更新 lbl_unissued（依 SETTLE_META 逐型態列出，
-        新增結算型態時本處自動涵蓋，不需另改）。"""
+        新增結算型態時本處自動涵蓋，不需另改）。
+
+        ⚠️ 只列出「該類別自助取號模式開啟，或送文者輸入模式下仍有未發文殘留」
+        的類別，與結算彈窗的類型 chip 同一條規則（`visible_chip_keys`）：
+        送文者輸入模式且已無殘留的類別不該出現在這行，否則只開罰單的所裡也會
+        看到「刑案 0／一般 0」這種與自己無關的字。"""
         try:
-            from ui_utils.settle_dialog import SETTLE_META, count_unissued
+            from ui_utils.settle_dialog import (SETTLE_META, count_unissued,
+                                                visible_chip_keys)
+            from lib.db_utils import isSelfServiceMode
             if unavailable:
                 self.lbl_unissued.setText("未發文：—")
                 return
             if counts is None:
                 counts = count_unissued(self.db_path)
             per_type = {m["key"]: counts.get(m["key"], 0) for m in SETTLE_META}
+            modes = {m["key"]: isSelfServiceMode(self.db_path, m["key"])
+                     for m in SETTLE_META}
+            shown = visible_chip_keys(modes, per_type)
             total = sum(per_type.values())
-            parts = "／".join(
-                f"{m['label']} {per_type[m['key']]}" for m in SETTLE_META)
-            self.lbl_unissued.setText(f"未發文：{total} 筆（{parts}）")
+            parts = "／".join(f"{m['label']} {per_type[m['key']]}"
+                              for m in SETTLE_META if m["key"] in shown)
+            self.lbl_unissued.setText(
+                f"未發文：{total} 筆（{parts}）" if parts
+                else f"未發文：{total} 筆")
         except Exception:
             self.lbl_unissued.setText("未發文：—")
 

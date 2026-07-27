@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""獨立版（警政快速登錄系統）資料庫瀏覽白名單測試（offscreen）。
+"""獨立版（公文快速登錄系統）資料庫瀏覽白名單測試（offscreen）。
 
 保護對象：
   - `TabDBBrowse(allowed_keys=...)` 限縮瀏覽範圍為敘獎與罰單，未知 key 拒絕建構。

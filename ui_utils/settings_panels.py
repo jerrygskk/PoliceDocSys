@@ -15,7 +15,7 @@ import os
 
 from PySide6.QtCore    import Qt
 from PySide6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QGroupBox, QFrame, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox,
     QFileDialog, QSpinBox, QDoubleSpinBox, QAbstractSpinBox,
     QRadioButton, QButtonGroup,
@@ -557,18 +557,43 @@ class IdleTimeoutPanel(_SettingsPanel):
 
 
 # ══════════════════════════════════════════════════════════════════
+# 設定橫帶：同一組選項共用一條淡底色帶，分類標籤加粗（唯讀設定／陳報模式共用）。
+# 顏色沿用面板既有色票（底 #f5f5f7／框 #e5e5ea／標籤 #1c1c1e），
+# :disabled 一律另給灰（面板整塊反灰時底色帶不得還是深字）。
+_BAND_SS = """
+    QFrame#bandRow {
+        background-color: #f5f5f7;
+        border: 1px solid #e5e5ea;
+        border-radius: 8px;
+    }
+    QFrame#bandRow:disabled { background-color: #fafafa; }
+    QLabel#bandCat { color: #1c1c1e; font-size: 13pt; font-weight: 600; }
+    QLabel#bandCat:disabled { color: #c5c5c9; }
+"""
+
+
 # 唯讀設定（七種輸入流程；僅 admin；archive 整塊反灰；即時生效）
 # ══════════════════════════════════════════════════════════════════
 class InputLockPanel(_SettingsPanel):
-    # (kind, 勾選框標籤)
+    # (kind, 完整流程名)：供操作紀錄使用，不是勾選框上的字。
     _ROWS = [
-        ("dispatch", "唯讀交辦單發文"),
-        ("task",     "唯讀交辦單收文"),
-        ("crim",     "唯讀刑案陳報"),
-        ("gen",      "唯讀一般陳報"),
-        ("ticket",   "唯讀罰單登錄"),
-        ("reward",   "唯讀敘獎登錄"),
-        ("reward_issue", "唯讀敘獎發文"),
+        ("dispatch", "交辦單發文"),
+        ("task",     "交辦單收文"),
+        ("crim",     "刑案陳報"),
+        ("gen",      "一般陳報"),
+        ("reward",   "敘獎登錄"),
+        ("reward_issue", "敘獎發文"),
+        ("ticket",   "罰單登錄"),
+    ]
+
+    # 版面：左側分類標籤＋同列橫排勾選框（分類已表達「唯讀」，勾選框只留對象名）。
+    # ⚠️ 整列的流程都不在 flow_keys 時（獨立版只有敘獎／罰單）該列連分類標籤
+    # 一起不建立，不可留空標籤。
+    _GROUPS = [
+        ("交辦單", [("dispatch", "發文"), ("task", "收文")]),
+        ("陳報",   [("crim", "刑案"), ("gen", "一般")]),
+        ("敘獎",   [("reward", "登錄"), ("reward_issue", "發文")]),
+        ("罰單",   [("ticket", "登錄")]),
     ]
 
     def __init__(self, db_path, parent=None, flow_keys=None):
@@ -584,9 +609,8 @@ class InputLockPanel(_SettingsPanel):
         v.setContentsMargins(16, 14, 16, 12)
 
         hint = QLabel(
-            "勾選後，一般使用者無法使用對應的新增或發文流程：\n"
-            "交辦單發文／交辦單收文／刑案陳報／一般陳報／罰單登錄／"
-            "敘獎登錄／敘獎發文；既有資料仍可依原權限修改、刪除；"
+            "勾選以下流程，將對一般使用者設為唯讀（不可新增或發文）；"
+            "既有資料仍可依原權限修改、刪除；"
             "管理者與歸檔管理不受限制。儲存後立即生效。")
         hint.setStyleSheet(_HINT_SS)
         hint.setWordWrap(True)
@@ -594,15 +618,32 @@ class InputLockPanel(_SettingsPanel):
 
         allowed = set(self.flow_keys)
         self._checks = {}
-        self._row_labels = {}
-        for kind, label in self._ROWS:
-            if kind not in allowed:
+        self._row_labels = dict(self._ROWS)
+
+        # 每組獨立一條淡底色橫帶（QFrame），分類標籤加粗置於帶內最左：
+        # 純網格排列時使用者看不出「一橫行是同一組」，靠底色帶把同組框起來。
+        for group_name, members in self._GROUPS:
+            shown = [(k, t) for k, t in members if k in allowed]
+            if not shown:
                 continue
-            cb = QCheckBox(label)
-            cb.stateChanged.connect(self._updateSaveBtn)
-            v.addWidget(cb)
-            self._checks[kind] = cb
-            self._row_labels[kind] = label
+            band = QFrame()
+            band.setObjectName("bandRow")
+            band.setStyleSheet(_BAND_SS)
+            h = QHBoxLayout(band)
+            h.setContentsMargins(12, 6, 12, 6)
+            h.setSpacing(0)
+            cat = QLabel(group_name)
+            cat.setObjectName("bandCat")
+            cat.setMinimumWidth(84)
+            h.addWidget(cat)
+            for kind, text in shown:
+                cb = QCheckBox(text)
+                cb.setMinimumWidth(130)
+                cb.stateChanged.connect(self._updateSaveBtn)
+                h.addWidget(cb)
+                self._checks[kind] = cb
+            h.addStretch(1)
+            v.addWidget(band)
 
         self._btn_save = _save_row(v)
         self._btn_save.clicked.connect(self._save)
@@ -808,6 +849,11 @@ class InputModePanel(_SettingsPanel):
 
     _ROWS = (("crim", "刑案陳報"), ("gen", "一般陳報"), ("ticket", "罰單登錄"))
 
+    # 分類欄寬／每個模式欄寬：欄標題與各列 band 共用，改一處兩邊同步。
+    # 欄寬要容得下最長的一行說明（不換行），面板本來就有整排橫向空間。
+    _CAT_W = 110
+    _COL_W = 300
+
     def __init__(self, db_path, parent=None, flow_keys=None):
         # flow_keys=None 時維持完整版既有全部列（零變化）；獨立版傳入白名單，
         # 只建立、只讀寫這些 key 的 App_Settings（見 _build／reload／_save）。
@@ -820,24 +866,42 @@ class InputModePanel(_SettingsPanel):
         v.setSpacing(10)
         v.setContentsMargins(16, 14, 16, 12)
 
-        intro = QLabel("請依所內運作逐項選擇陳報模式，儲存後立即生效。")
+        intro = QLabel("逐項選擇，儲存後立即生效。")
         intro.setStyleSheet(_HINT_SS)
         intro.setWordWrap(True)
         v.addWidget(intro)
 
-        hint_sender = QLabel(
-            "送文者輸入模式：送文者統一輸入案件，輸入時填寫陳報日期與發文人員。")
-        hint_sender.setStyleSheet(_HINT_SS)
-        hint_sender.setWordWrap(True)
-        v.addWidget(hint_sender)
-
-        hint_self = QLabel(
-            "自助取號模式：承辦人自行輸入取得文號，再由送文者於陳報日到列印頁"
-            "執行「結算發文」，補齊發文資訊後列印簽收表。")
-        hint_self.setStyleSheet(_HINT_SS)
-        hint_self.setWordWrap(True)
-        hint_self.setContentsMargins(0, 0, 0, 6)
-        v.addWidget(hint_self)
+        # 欄標題：兩種模式的名稱與說明各出現一次，不在每一列重複
+        # （欄寬常數與下方 band 共用，兩者一致才對得齊）。
+        head = QHBoxLayout()
+        head.setContentsMargins(12, 0, 12, 0)
+        head.setSpacing(0)
+        spacer = QLabel("")
+        spacer.setMinimumWidth(self._CAT_W)
+        head.addWidget(spacer)
+        for title, desc in (
+            ("送文者輸入模式", "輸入時一併輸入日期與送文人員"),
+            ("自助取號模式", "各承辦人先行輸入後再由送文者結算發文"),
+        ):
+            cell = QVBoxLayout()
+            cell.setSpacing(2)
+            cell.setContentsMargins(0, 0, 0, 0)
+            t = QLabel(title)
+            t.setObjectName("bandCat")
+            t.setAlignment(Qt.AlignHCenter)
+            d = QLabel(desc)
+            d.setStyleSheet(_HINT_SS)
+            # 一句一行：欄寬足夠時不換行，避免說明被切成兩行還留一大片空白
+            d.setWordWrap(False)
+            d.setAlignment(Qt.AlignHCenter)
+            cell.addWidget(t)
+            cell.addWidget(d)
+            wrap = QWidget()
+            wrap.setLayout(cell)
+            wrap.setFixedWidth(self._COL_W)
+            head.addWidget(wrap)
+        head.addStretch(1)
+        v.addLayout(head)
 
         allowed = set(self.flow_keys)
         self._groups = {}
@@ -845,36 +909,48 @@ class InputModePanel(_SettingsPanel):
         for kind, label_text in self._ROWS:
             if kind not in allowed:
                 continue
-            row = QHBoxLayout()
-            row.setSpacing(12)
+            band = QFrame()
+            band.setObjectName("bandRow")
+            band.setStyleSheet(_BAND_SS)
+            row = QHBoxLayout(band)
+            row.setContentsMargins(12, 6, 12, 6)
+            row.setSpacing(0)
             lbl = QLabel(label_text)
-            lbl.setMinimumWidth(110)
+            lbl.setObjectName("bandCat")
+            lbl.setMinimumWidth(self._CAT_W)
             row.addWidget(lbl)
 
-            rb_sender = QRadioButton("送文者輸入")
-            rb_self = QRadioButton("自助取號")
-            # 125% 縮放下圓點指示器 + 14pt label 的 sizeHint 會算不準而切字
-            # （PITFALLS QTW-6），逐顆鎖最小寬。
+            # 選項文字已在欄標題出現，圓鈕本身不再重複掛字（避免三列六次重複）。
+            # 圓鈕包一層固定寬容器並置中，才會落在欄標題正下方——直接對圓鈕
+            # setFixedWidth 只是把它靠左撐寬，視覺上會黏在欄位最左邊。
+            rb_sender = QRadioButton("")
+            rb_self = QRadioButton("")
             for rb in (rb_sender, rb_self):
-                rb.setMinimumWidth(130)
                 rb.toggled.connect(self._updateSaveBtn)
             grp = QButtonGroup(self)
             grp.addButton(rb_sender, 0)
             grp.addButton(rb_self, 1)
             rb_sender.setChecked(True)
 
-            row.addWidget(rb_sender)
-            row.addWidget(rb_self)
-            row.addStretch()
-            v.addLayout(row)
+            for rb in (rb_sender, rb_self):
+                cellw = QWidget()
+                cell = QHBoxLayout(cellw)
+                cell.setContentsMargins(0, 0, 0, 0)
+                cell.addStretch(1)
+                cell.addWidget(rb)
+                cell.addStretch(1)
+                cellw.setFixedWidth(self._COL_W)
+                row.addWidget(cellw)
+            row.addStretch(1)
+            v.addWidget(band)
 
             self._groups[kind] = grp
             self._radios[kind] = (rb_sender, rb_self)
 
         note = QLabel(
-            "交辦單與敘獎不提供此選項：必須由承辦人完成交辦事項、由敘獎人確認"
-            "敘獎內容之後，該筆資料才算被認可；資料的成立取決於工作本身是否"
-            "完成，不是取號早晚，因此不適用自助取號模式。")
+            "交辦單與敘獎功能不適用：\n"
+            "交辦案成立前提要先完成交辦事項後主動回覆\n"
+            "敘獎由敘獎者自行填寫內容表示負責")
         note.setStyleSheet(_HINT_SS)
         note.setWordWrap(True)
         note.setContentsMargins(0, 8, 0, 0)

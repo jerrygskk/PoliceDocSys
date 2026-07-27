@@ -23,11 +23,13 @@ BTN_IMG = {
     '資源回收筒': (':/btn/trash.svg', 96, 24),
     '備份還原': (':/btn/backup_restore.svg', 82, 24),
     '逾期未回': (':/btn/overdue.svg', 82, 24),
+    '未發文': (':/btn/unissued.svg', 68, 24),
     '⇄ 轉換類別': (':/btn/convert_type.svg', 104, 24),
     '▤ 交辦單': (':/tab/task.svg', 80, 24),
     '❐ 刑案陳報': (':/tab/crim_report.svg', 94, 24),
     '❏ 一般陳報': (':/tab/gen_report.svg', 94, 24),
     '☆ 敘獎登錄': (':/tab/reward.svg', 94, 24),
+    '🎫 罰單登錄': (':/tab/ticket.svg', 101, 24),
     '❐ 刑案歸檔': (':/tab/crim_arch.svg', 94, 24),
     '❏ 一般歸檔': (':/tab/gen_arch.svg', 94, 24),
 }

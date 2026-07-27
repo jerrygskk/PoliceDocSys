@@ -616,7 +616,12 @@ class SettleDialog(QDialog):
         # 程式性 setChecked 不會發出 buttonClicked，必須緊接重套過濾條件。
         self._apply_filters()
 
-    def _update_chip_labels(self):
+    def _visible_keys(self):
+        """目前該出現的類型 key（自助模式開啟或仍有未發文殘留）。
+
+        chip、底部計數與確認訊息共用同一份判斷：只開罰單的所裡不該在任何一處
+        看到「刑案 0／一般 0」。
+        """
         from lib.db_utils import isSelfServiceMode
 
         counts = self._tbl.type_counts()
@@ -624,7 +629,16 @@ class SettleDialog(QDialog):
             meta["key"]: isSelfServiceMode(self.db_path, meta["key"])
             for meta in SETTLE_META
         }
-        visible = visible_chip_keys(modes, counts)
+        return visible_chip_keys(modes, counts)
+
+    def _count_parts(self, counts):
+        """「刑案 3／罰單 1」這段文字；隱藏的類型不列入。"""
+        return "／".join(f"{m['label']} {counts[m['key']]}"
+                         for m in SETTLE_META if m["key"] in self._visible_keys())
+
+    def _update_chip_labels(self):
+        counts = self._tbl.type_counts()
+        visible = self._visible_keys()
         for meta in SETTLE_META:
             chip = self._chips[meta["key"]]
             chip.setVisible(meta["key"] in visible)
@@ -685,10 +699,10 @@ class SettleDialog(QDialog):
         counts = {k: len(v) for k, v in by.items()}
         total = sum(counts.values())
         excl = self._tbl.excluded_count()
-        parts = "／".join(
-            f"{m['label']} {counts[m['key']]}" for m in SETTLE_META)
+        parts = self._count_parts(counts)
         self.lbl_count.setText(
-            f"將結算 {total} 筆（{parts}）｜排除 {excl} 筆")
+            (f"將結算 {total} 筆（{parts}）｜排除 {excl} 筆" if parts
+             else f"將結算 {total} 筆｜排除 {excl} 筆"))
 
     def _on_confirm(self):
         by = self._tbl.checked_by_key()
@@ -711,13 +725,13 @@ class SettleDialog(QDialog):
         today_str   = date.today().strftime("%Y-%m-%d")
         today_disp  = date.today().strftime("%Y 年 %m 月 %d 日")
         excl_count  = self._tbl.excluded_count()
-        parts = "／".join(
-            f"{m['label']} {counts[m['key']]}" for m in SETTLE_META)
+        parts = self._count_parts(counts)
 
         msg_lines = [f"發文日期：{today_disp}"]
         if need_sender:
             msg_lines.append(f"送文者：{sender_name}")
-        msg_lines.append(f"將結算 {total} 筆（{parts}）")
+        msg_lines.append(f"將結算 {total} 筆（{parts}）" if parts
+                         else f"將結算 {total} 筆")
         msg_lines.append(f"排除：{excl_count} 筆")
         msg = "\n".join(msg_lines)
 

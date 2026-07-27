@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """可打字 QComboBox 提示文字顏色（attachComboHint）回歸測試。
 
-背景（見 docs/handover.md 交接說明與本次修復脈絡）：
+背景（另見 PITFALLS QTW-7／QTW-12）：
   - 顏色曾掛在 `currentIndexChanged` 上判斷 `idx == 0`，但 `setupFilterCombo`
     裝的 `_onTextChanged` 在打字時會 `combo.blockSignals(True)` 重建清單，
     重建後 index 恆為 0，`currentIndexChanged` 打字期間結構上不會觸發，
@@ -145,38 +145,59 @@ class TestAttachComboHint(unittest.TestCase):
         self.assertEqual(combo.styleSheet().count("color:"), 1)
 
 
-class TestTicketComboInheritsHint(unittest.TestCase):
-    """罰單頁 ticket_sender／ticket_issuer 未手刻顏色，驗證自動繼承。"""
+class TestFocusInClearDoesNotWipeSelection(unittest.TestCase):
+    """釘住：focus-in 的延後清空不得清掉使用者當下選好的值。
 
-    def _make_ticket_style_combo(self, hint):
+    點下拉鈕是「同一下取得焦點＋展開清單」，focus-in 排的延後清空可能落在
+    使用者選完項目之後。舊寫法無條件 `clearEditText`，會把剛帶入的姓名清成
+    空白——症狀＝空白欄第一次下拉選了沒反應、要再拉一次（案類欄實際踩過）。
+    """
+
+    def test_selection_made_before_deferred_clear_survives(self):
+        combo = _make_combo()
+        self.assertEqual(combo.currentText(), _HINT)
+
+        # FocusIn 排入延後清空，但先不讓事件迴圈跑
+        QApplication.sendEvent(combo, QEvent(QEvent.FocusIn))
+        QApplication.sendEvent(combo.lineEdit(), QEvent(QEvent.FocusIn))
+
+        # 使用者在延後清空跑到之前就從清單選了項目
+        combo.setCurrentIndex(combo.findData(1))
+
+        _app.processEvents()   # 此時延後清空才執行
+
+        self.assertEqual(combo.currentText(), "竊盜")
+        self.assertEqual(combo.currentData(), 1)
+        self.assertEqual(_color(combo), TEXT_COLOR)
+
+    def test_deferred_clear_still_clears_when_nothing_selected(self):
+        """沒選任何東西時，原本的「點入即清提示字」行為不變。"""
+        combo = _make_combo()
+        _send_focus(combo, QEvent.FocusIn)
+        self.assertEqual(combo.currentText(), "")
+
+
+class TestTicketCombosHaveNoHint(unittest.TestCase):
+    """罰單頁的單一人名下拉比照陳報頁發文人員：不掛提示文字。
+
+    維護者指示：提示文字（attachComboHint）只用於陳報頁的案類欄；
+    人名下拉一律只掛 setupFilterCombo，第 0 項維持空字串。
+    """
+
+    def test_ticket_tab_personnel_combos_have_empty_first_item(self):
+        from tabs import tab_ticket
+        import inspect
+
+        src = inspect.getsource(tab_ticket)
+        self.assertNotIn("attachComboHint(", src,
+                         "罰單頁不得再掛提示文字，應比照陳報頁發文人員")
+
         combo = QComboBox()
         combo.setEditable(True)
         setupFilterCombo(combo, [(1, "王小明"), (2, "陳大文")])
-        attachComboHint(combo, hint)
-        return combo
-
-    def test_ticket_sender_and_issuer_states(self):
-        for hint in ("請選擇發文者", "請選擇開立人員"):
-            with self.subTest(hint=hint):
-                combo = self._make_ticket_style_combo(hint)
-                self.assertEqual(_color(combo), HINT_COLOR)
-
-                _send_focus(combo, QEvent.FocusIn)
-                self.assertEqual(combo.currentText(), "")
-                self.assertEqual(_color(combo), TEXT_COLOR)
-
-                combo.lineEdit().setText("王小明")
-                combo.lineEdit().textEdited.emit("王小明")
-                self.assertEqual(_color(combo), TEXT_COLOR)
-
-                _send_focus(combo, QEvent.FocusOut)
-                self.assertEqual(_color(combo), TEXT_COLOR)
-
-                combo.setCurrentIndex(0)
-                combo.clearEditText()
-                _send_focus(combo, QEvent.FocusOut)
-                self.assertEqual(combo.currentText(), hint)
-                self.assertEqual(_color(combo), HINT_COLOR)
+        self.assertEqual(combo.itemText(0), "")
+        self.assertIsNone(combo.currentData())
+        self.assertIsNone(getattr(combo, "_hint_filter", None))
 
 
 if __name__ == "__main__":

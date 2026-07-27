@@ -141,7 +141,7 @@ def _detail(conn, *, doc_id, create_date, register_date, sender_id,
         f"開立人員：{auditStaffName(conn, issuer_id)}；"
         f"登錄日期：{create_date or ''}；"
         f"發文日期：{register_date or ''}；"
-        f"發文者：{auditStaffName(conn, sender_id)}"
+        f"發文人員：{auditStaffName(conn, sender_id)}"
     )
 
 
@@ -149,9 +149,14 @@ def _writeTicketAudit(conn, *, role, action, label, doc_id, create_date,
                       register_date, sender_id, issuer_id, ticket_no):
     """寫一筆罰單稽核。
 
+    ⚠️ **罰單只在刪除時寫稽核**（維護者決定）：新增與修改屬高頻日常操作，
+    逐筆寫進操作紀錄只會把紀錄洗掉、蓋住真正需要追查的事；刪除是不可逆且
+    會抹掉內容的動作，故保留，且 detail 取的是**刪除前**的欄位值，事後才
+    查得到刪掉的是哪張罰單。新增／修改請勿再把本函式加回去。
+
     `operator` 一律留空：罰單登錄開放所有已登入身分操作，資料列本身不足以
-    判定「是誰按下的」（自助模式沒有發文者、admin 亦可代改），與其寫入可能
-    誤導的姓名，不如只留 `role`。
+    判定「是誰按下的」（自助模式沒有發文人員、admin 亦可代改），與其寫入
+    可能誤導的姓名，不如只留 `role`。
     """
     writeAudit(
         conn, role=role, action=action, target_table=TICKET_TABLE,
@@ -192,10 +197,6 @@ def createTicket(conn, *, issuer_id, ticket_no, self_service, sender_id,
     except sqlite3.IntegrityError as exc:
         # 併發下他機可能在唯一性檢查與寫入之間搶先登錄同一編號。
         _raiseDuplicateIfUnique(exc, normalized)
-    _writeTicketAudit(
-        conn, role=role, action="INSERT", label="新增", doc_id=doc_id,
-        create_date=create_date, register_date=register_date,
-        sender_id=sender_id, issuer_id=issuer_id, ticket_no=normalized)
     return doc_id
 
 
@@ -229,10 +230,6 @@ def updateTicket(conn, *, doc_id, issuer_id, ticket_no, role):
     if cur.rowcount != 1:
         raise TicketNotFoundError(
             f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
-    _writeTicketAudit(
-        conn, role=role, action="UPDATE", label="修改", doc_id=doc_id,
-        create_date=create_date, register_date=register_date,
-        sender_id=sender_id, issuer_id=issuer_id, ticket_no=normalized)
 
 
 def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
@@ -274,10 +271,6 @@ def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
     if cur.rowcount != 1:
         raise TicketNotFoundError(
             f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
-    _writeTicketAudit(
-        conn, role=role, action="UPDATE", label="修改", doc_id=doc_id,
-        create_date=create_date, register_date=register_date,
-        sender_id=sender_id, issuer_id=issuer_id, ticket_no=normalized)
 
 
 def deleteTicket(conn, *, doc_id, role):
