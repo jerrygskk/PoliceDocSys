@@ -790,6 +790,12 @@ class BackupPanel(_SettingsPanel):
 # 輸入模式（自助取號／送文者輸入；僅 admin 可改；即時生效）
 # ══════════════════════════════════════════════════════════════════
 class InputModePanel(_SettingsPanel):
+    """陳報模式：刑案陳報／一般陳報／罰單登錄各自二選一。
+
+    每列一組互斥 radio；兩種模式的意義說明置於三列之上，不逐列重複。
+    """
+
+    _ROWS = (("crim", "刑案陳報"), ("gen", "一般陳報"), ("ticket", "罰單登錄"))
 
     def __init__(self, db_path, parent=None):
         super().__init__("陳報模式", db_path, parent)
@@ -799,69 +805,100 @@ class InputModePanel(_SettingsPanel):
         v.setSpacing(10)
         v.setContentsMargins(16, 14, 16, 12)
 
-        intro = QLabel("請依所內運作選擇陳報模式，儲存後立即生效。")
+        intro = QLabel("請依所內運作逐項選擇陳報模式，儲存後立即生效。")
         intro.setStyleSheet(_HINT_SS)
         intro.setWordWrap(True)
         v.addWidget(intro)
 
-        self._btn_group = QButtonGroup(self)
-        self._radio_sender = QRadioButton("送文者輸入模式")
-        self._radio_self   = QRadioButton("自助取號模式")
-        self._btn_group.addButton(self._radio_sender, 0)
-        self._btn_group.addButton(self._radio_self,   1)
-        self._radio_sender.setChecked(True)
-        self._radio_sender.toggled.connect(self._updateSaveBtn)
-        self._radio_self.toggled.connect(self._updateSaveBtn)
-
-        hint_sender = QLabel("送文者統一輸入案件，輸入時填寫陳報日期與發文人員。")
+        hint_sender = QLabel(
+            "送文者輸入模式：送文者統一輸入案件，輸入時填寫陳報日期與發文人員。")
         hint_sender.setStyleSheet(_HINT_SS)
         hint_sender.setWordWrap(True)
-        hint_sender.setContentsMargins(22, 0, 0, 6)
+        v.addWidget(hint_sender)
 
         hint_self = QLabel(
-            "承辦人自行輸入取得文號，再由送文者於陳報日到列印頁執行「結算發文」，"
-            "補齊發文資訊後列印簽收表。")
+            "自助取號模式：承辦人自行輸入取得文號，再由送文者於陳報日到列印頁"
+            "執行「結算發文」，補齊發文資訊後列印簽收表。")
         hint_self.setStyleSheet(_HINT_SS)
         hint_self.setWordWrap(True)
-        hint_self.setContentsMargins(22, 0, 0, 0)
-
-        v.addWidget(self._radio_sender)
-        v.addWidget(hint_sender)
-        v.addWidget(self._radio_self)
+        hint_self.setContentsMargins(0, 0, 0, 6)
         v.addWidget(hint_self)
+
+        self._groups = {}
+        self._radios = {}
+        for kind, label_text in self._ROWS:
+            row = QHBoxLayout()
+            row.setSpacing(12)
+            lbl = QLabel(label_text)
+            lbl.setMinimumWidth(110)
+            row.addWidget(lbl)
+
+            rb_sender = QRadioButton("送文者輸入")
+            rb_self = QRadioButton("自助取號")
+            # 125% 縮放下圓點指示器 + 14pt label 的 sizeHint 會算不準而切字
+            # （PITFALLS QTW-6），逐顆鎖最小寬。
+            for rb in (rb_sender, rb_self):
+                rb.setMinimumWidth(130)
+                rb.toggled.connect(self._updateSaveBtn)
+            grp = QButtonGroup(self)
+            grp.addButton(rb_sender, 0)
+            grp.addButton(rb_self, 1)
+            rb_sender.setChecked(True)
+
+            row.addWidget(rb_sender)
+            row.addWidget(rb_self)
+            row.addStretch()
+            v.addLayout(row)
+
+            self._groups[kind] = grp
+            self._radios[kind] = (rb_sender, rb_self)
+
+        note = QLabel(
+            "交辦單與敘獎不提供此選項：必須由承辦人完成交辦事項、由敘獎人確認"
+            "敘獎內容之後，該筆資料才算被認可；資料的成立取決於工作本身是否"
+            "完成，不是取號早晚，因此不適用自助取號模式。")
+        note.setStyleSheet(_HINT_SS)
+        note.setWordWrap(True)
+        note.setContentsMargins(0, 8, 0, 0)
+        v.addWidget(note)
 
         self._btn_save = _save_row(v)
         self._btn_save.clicked.connect(self._save)
 
     def reload(self):
         from lib.db_utils import isSelfServiceMode
-        is_self = isSelfServiceMode(self.db_path, "crim")
-        self._radio_self.blockSignals(True)
-        self._radio_sender.blockSignals(True)
-        self._radio_self.setChecked(is_self)
-        self._radio_sender.setChecked(not is_self)
-        self._radio_self.blockSignals(False)
-        self._radio_sender.blockSignals(False)
+        for kind, _label in self._ROWS:
+            rb_sender, rb_self = self._radios[kind]
+            is_self = isSelfServiceMode(self.db_path, kind)
+            for rb in (rb_sender, rb_self):
+                rb.blockSignals(True)
+            rb_self.setChecked(is_self)
+            rb_sender.setChecked(not is_self)
+            for rb in (rb_sender, rb_self):
+                rb.blockSignals(False)
         self._markLoaded()
 
     def _values(self):
-        return {"mode": "1" if self._radio_self.isChecked() else "0"}
+        return {kind: ("1" if self._radios[kind][1].isChecked() else "0")
+                for kind, _label in self._ROWS}
 
     def _save(self):
         from lib.auth_manager import AuthManager
-        from lib.db_utils import (setSetting, getSetting, REPORT_INPUT_MODE_KEY,
+        from lib.db_utils import (setSetting, isSelfServiceMode, REPORT_MODE_KEYS,
                                   writeAuditSafe, buildDetail)
         if not AuthManager.instance().is_admin():
             return False
-        new = "1" if self._radio_self.isChecked() else ""
-        old = (getSetting(self.db_path, REPORT_INPUT_MODE_KEY, "") or "").strip()
-        setSetting(self.db_path, REPORT_INPUT_MODE_KEY, new)
-        if (new == "1") != (old == "1"):
-            mode_name = "自助取號模式" if new == "1" else "送文者輸入模式"
-            am = AuthManager.instance()
-            writeAuditSafe(self.db_path, role=am.current_role, action="CONFIG",
-                           operator=am.actor_name(),
-                           detail=buildDetail("系統", "修改",
-                                              f"陳報輸入模式切換為「{mode_name}」"))
+        am = AuthManager.instance()
+        for kind, label_text in self._ROWS:
+            new_self = self._radios[kind][1].isChecked()
+            old_self = isSelfServiceMode(self.db_path, kind)
+            setSetting(self.db_path, REPORT_MODE_KEYS[kind], "1" if new_self else "0")
+            if new_self != old_self:
+                name = lambda s: "自助取號" if s else "送文者輸入"  # noqa: E731
+                writeAuditSafe(self.db_path, role=am.current_role, action="CONFIG",
+                               operator=am.actor_name(),
+                               detail=buildDetail(
+                                   "系統", "修改",
+                                   f"{label_text}：{name(old_self)} → {name(new_self)}"))
         self.reload()
         return True

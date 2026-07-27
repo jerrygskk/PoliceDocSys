@@ -584,5 +584,65 @@ class TestSettleConcurrencyGuard(unittest.TestCase):
         self.assertEqual(tuple(crim), ("2026-07-20", "P002"))
 
 
+class TestInputModePanelSave(unittest.TestCase):
+    """設定面板儲存後三個 key 皆為明確值。"""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        cls._app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        import tempfile
+        from lib.auth_manager import AuthManager
+        from lib.db_schema import applySchema
+        self._tmp = tempfile.mkdtemp()
+        self._path = os.path.join(self._tmp, "t.db")
+        conn = sqlite3.connect(self._path)
+        applySchema(conn)
+        conn.commit()
+        conn.close()
+        self._auth = AuthManager.instance()
+        self._orig_role = self._auth._role
+        self._auth._role = "admin"
+
+    def tearDown(self):
+        import shutil
+        self._auth._role = self._orig_role
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_save_writes_all_three_keys_explicitly(self):
+        from lib.db_utils import getSetting, REPORT_MODE_KEYS
+        from ui_utils.settings_panels import InputModePanel
+        panel = InputModePanel(self._path)
+        panel._radios["ticket"][1].setChecked(True)
+        self.assertTrue(panel._save())
+        self.assertEqual(getSetting(self._path, REPORT_MODE_KEYS["ticket"], None), "1")
+        self.assertEqual(getSetting(self._path, REPORT_MODE_KEYS["crim"], None), "0")
+        self.assertEqual(getSetting(self._path, REPORT_MODE_KEYS["gen"], None), "0")
+
+    def test_save_audits_old_and_new_value(self):
+        from ui_utils.settings_panels import InputModePanel
+        panel = InputModePanel(self._path)
+        panel._radios["crim"][1].setChecked(True)
+        panel._save()
+        conn = sqlite3.connect(self._path)
+        details = [r[0] for r in conn.execute(
+            "SELECT detail FROM Audit_Log").fetchall()]
+        conn.close()
+        self.assertTrue(
+            any("刑案陳報：送文者輸入 → 自助取號" in d for d in details),
+            f"稽核未帶舊值：{details}")
+
+    def test_save_is_rejected_for_non_admin(self):
+        from lib.db_utils import getSetting, REPORT_MODE_KEYS
+        from ui_utils.settings_panels import InputModePanel
+        panel = InputModePanel(self._path)
+        self._auth._role = "user"
+        self.assertFalse(panel._save())
+        self.assertIsNone(getSetting(self._path, REPORT_MODE_KEYS["crim"], None))
+
+
 if __name__ == "__main__":
     unittest.main()
