@@ -56,6 +56,6 @@
 - **push 前必跑 `python -m unittest tests.test_no_pii`**（防真實人名／個資；`dbfile.db` 只能是乾淨空殼）
 - 多行 commit 訊息用 Bash heredoc（`git commit -F - <<'EOF'`），**不要用 PowerShell here-string**（踩過多次）
 - **勿手改 `lib/version.py`**：進版一律 `python tools/bump_version.py <版號>`；進位與否**他決定**
-- **「進版」「發布版本」「出一版」**＝走完 DEVELOPER §7 發布流程**直到 GitHub Release 上架（4 asset）才算結束**，別只做 bump＋tag 就回報完成
+- **「進版」「發布版本」「出一版」**＝走完 DEVELOPER §7 發布流程**直到 GitHub Release 上架（5 asset：兩支 exe＋dbfile.db＋PACKED.zip＋速查卡，exe 與速查卡皆帶版號）才算結束**，別只做 bump＋tag 就回報完成
 - release note 給 `.md` 檔（不入庫），**不要打在對話裡**
 - 打包**只用 onefile**、build 一律用 PowerShell tool、每次砍 spec 全新 build（指令見 DEVELOPER §7）

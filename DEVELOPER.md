@@ -474,15 +474,15 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 ### 發布流程（維護者說「進版／發布版本／出一版」時走這裡）
 
-**用語約定**：「進版」「發布版本」「出一版」＝下列 7 步走到底、**GitHub Release 上架（4 asset）才算結束**。其中「bump_version＋git tag `v{版號}`＋§8 補一列」這組機械動作另稱「**版號進版**」（第 4 步）。版本號定義於 `lib/version.py`、只進第三碼，進版一律 `python tools/bump_version.py <版號>`（同時改 version.py、產 version_info.txt、同步 README 版號），勿手改。
+**用語約定**：「進版」「發布版本」「出一版」＝下列 7 步走到底、**GitHub Release 上架（5 asset）才算結束**。其中「bump_version＋git tag `v{版號}`＋§8 補一列」這組機械動作另稱「**版號進版**」（第 4 步）。版本號定義於 `lib/version.py`、只進第三碼，進版一律 `python tools/bump_version.py <版號>`（同時改 version.py、產 version_info.txt、同步 README 版號），勿手改。
 
 1. **寫文件內文**：技術章節補進 DEVELOPER.md；使用者有感的改動 README 也同步；HELP／QUICKSTART 對照 §2「跨功能影響對照表」逐列確認（歷來最常漏）
 2. **寫 handover**（需跨對話交接才寫，`docs/handover.md` 不入庫）
 3. **寫 release note**（`release_note_v{版號}.md`，不入庫；內容寫給使用者看，技術細節留 DEVELOPER.md）
 4. **版號進版**
 5. **推上去** + tag `v{版號}` + push tag（逐檔 add、PII 檢查等鐵則見 CLAUDE.md C 節）
-6. **build**：onefile 全新 build（見下方指令），回報成功/失敗（失敗才貼錯誤末段）
-7. **發 GitHub Release**：4 asset，指令與 asset 取得方式見本節末「發 GitHub Release」
+6. **build**：onefile 全新 build（見下方指令），**兩支 exe 都要重建**，回報成功/失敗（失敗才貼錯誤末段）
+7. **發 GitHub Release**：5 asset，指令與 asset 取得方式見本節末「發 GitHub Release」
 
 > ⚠️ **順序鐵則**：文件／release note 要在「版號進版 commit」**之前**寫好，tag 才指向含完整文件的 commit；先打 tag 事後補文件＝退版重做。
 > ⚠️ tag 已 push 後要移動：本地 `git tag -f` 後，遠端**先刪再推**（`git push origin :refs/tags/v{版號}` 再 push）。
@@ -562,21 +562,28 @@ python tools/check_bundle_deps.py
 - **exe 檔案資訊**由 spec 的 `version=` 帶入（`version_info.txt`／`version_info_entry.txt`）；該檔由 `tools/bump_version.py` 進版時連同版號產生（已收進 git），改顯示文字改該腳本頂部常數
 - GitHub release 上傳用英文檔名
 
-### 發 GitHub Release（4 個 asset，比照歷版）
+### 發 GitHub Release（5 個 asset）
 
-CLAUDE.md 發布流程第 7 步的執行細節。4 個 asset：
+CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入獨立版 exe，速查卡改帶版號）：
 
 1. `Police-Document-Manager_v{版號}.exe`（本次 build 的 onefile；⚠️ **上傳前把 `dist/Police-Document-Manager.exe` 複製成帶版號的檔名**再傳，例：`Police-Document-Manager_v1.2.0.exe`，方便使用者辨識版本。`gh` 以本機檔名當 asset 名，故改檔名即改 asset 名。**PACKED.zip 內的 exe 維持不帶版號**（見下），只有 standalone exe asset 帶版號）
 2. `dbfile.db`（**乾淨空殼**——用 `python tools/gen_shell_db.py <暫存路徑> --force` 產生。schema 來自 `lib/db_schema.py`、種子來自 `lib/db_seed.py`，兩者是唯一來源，產出即與程式碼一致。例：`python tools/gen_shell_db.py 暫存/dbfile.db --force`。**不要用工作區根目錄那份**（真實測試資料）；`gen_shell_db.py` 的暫存產物是發版來源。）
 3. `PACKED.zip`（= exe + dbfile.db **兩檔扁平放根目錄**，無子資料夾）
-4. `Quick_Start.pdf`（速查卡）——⚠️ `docs/` 已 gitignore，發版前先跑 `python tools/gen_quickstart.py` 重產到 `docs/Quick_Start.pdf` 再上傳（內容單一來源 `ui_utils/help_content.py` 的 `QUICKSTART`）
+4. `Police-Entry-Manager_v{版號}.exe`（獨立版「公文快速登錄系統」的 onefile；同樣**複製成帶版號的檔名**再傳。不放進 PACKED.zip）
+5. `Quick_Start_v{版號}.pdf`（速查卡）——⚠️ `docs/` 已 gitignore，發版前先跑 `python tools/gen_quickstart.py` 重產到 `docs/Quick_Start.pdf`，**複製成 `Quick_Start_v{版號}.pdf`** 再上傳（內容單一來源 `ui_utils/help_content.py` 的 `QUICKSTART`）
 
 - **打包 zip（PowerShell）**：`Compress-Archive -Path 暫存\dbfile.db,暫存\Police-Document-Manager.exe -DestinationPath 暫存\PACKED.zip -Force`（zip 內 exe 用**不帶版號**的原名，解壓後與 dbfile.db 並放即可執行）
-- **standalone exe 帶版號**：`cp dist/Police-Document-Manager.exe 暫存/Police-Document-Manager_v{版號}.exe`
-- **建 Release + 一次傳四檔**：
+- **兩支 exe 與速查卡都帶版號**：
+  ```
+  cp dist/Police-Document-Manager.exe 暫存/Police-Document-Manager_v{版號}.exe
+  cp dist/Police-Entry-Manager.exe    暫存/Police-Entry-Manager_v{版號}.exe
+  cp docs/Quick_Start.pdf             暫存/Quick_Start_v{版號}.pdf
+  ```
+- **建 Release + 一次傳五檔**：
   ```
   gh release create v{版號} --title "v{版號}" --notes-file release_note_v{版號}.md \
-    "暫存/Police-Document-Manager_v{版號}.exe" "暫存/dbfile.db" "暫存/PACKED.zip" "docs/Quick_Start.pdf"
+    "暫存/Police-Document-Manager_v{版號}.exe" "暫存/Police-Entry-Manager_v{版號}.exe" \
+    "暫存/dbfile.db" "暫存/PACKED.zip" "暫存/Quick_Start_v{版號}.pdf"
   ```
   （asset 多於一個直接列在 create 後；或先 create 再 `gh release upload v{版號} <檔> --clobber`）。收尾刪暫存資料夾
 - **gh 環境**：已裝（本機 `C:\Program Files\GitHub CLI\gh.exe`，新 shell PATH 沒帶到用全路徑），帳號 `jerrygskk` 已登入（token 存 keyring）。`gh auth login` 互動式、非互動 shell driver 不了——日後登出需重登由維護者本機自己跑
