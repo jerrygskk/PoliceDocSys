@@ -7,6 +7,8 @@ fix_views.py
 reset_password.py
 seed_test_data.py
 tmp/
+.tmp/
+.pytest_cache/
 dbfile.db
 dbfile_backup_*.db
 backups/
