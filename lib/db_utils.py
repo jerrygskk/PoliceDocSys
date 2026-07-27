@@ -736,7 +736,12 @@ REPORT_MODE_KEYS = {
 
 
 def isSelfServiceMode(db_path, kind) -> bool:
-    """Return whether the supported report kind uses self-service mode."""
+    """判斷 crim、gen、ticket 是否為自助取號模式。
+
+    未知 kind 回傳 False；僅新 key 不存在時才回退讀取舊 key。新 key 即使為
+    空值、0 或壞值也不回退；資料庫讀取失敗回傳 False。kind 為必填參數，漏傳
+    時由 Python 自行拋出 TypeError。
+    """
     key = REPORT_MODE_KEYS.get(kind)
     if not key:
         return False
@@ -750,7 +755,7 @@ def isSelfServiceMode(db_path, kind) -> bool:
 
 
 def anySelfServiceMode(db_path) -> bool:
-    """Return whether at least one report kind uses self-service mode."""
+    """判斷 crim、gen、ticket 任一類別是否啟用自助取號模式。"""
     return any(isSelfServiceMode(db_path, kind) for kind in REPORT_MODE_KEYS)
 
 

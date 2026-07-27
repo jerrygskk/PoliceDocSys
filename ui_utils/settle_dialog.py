@@ -55,6 +55,11 @@ SETTLE_META = (
             "  AND c.subject_summary IS NOT NULL AND c.subject_summary != '' "
             "ORDER BY c.doc_id"
         ),
+        "count_query": (
+            "SELECT COUNT(*) FROM Document_Criminal "
+            "WHERE (report_date IS NULL OR report_date = '') "
+            "  AND subject_summary IS NOT NULL AND subject_summary != ''"
+        ),
         "update": ("UPDATE Document_Criminal SET report_date=?, sender_id=? "
                    "WHERE doc_id=? AND (report_date IS NULL OR report_date='')"),
         "with_sender": True,
@@ -72,6 +77,11 @@ SETTLE_META = (
             "  AND g.subject IS NOT NULL AND g.subject != '' "
             "ORDER BY g.doc_id"
         ),
+        "count_query": (
+            "SELECT COUNT(*) FROM Document_General "
+            "WHERE (report_date IS NULL OR report_date = '') "
+            "  AND subject IS NOT NULL AND subject != ''"
+        ),
         "update": ("UPDATE Document_General SET report_date=?, sender_id=? "
                    "WHERE doc_id=? AND (report_date IS NULL OR report_date='')"),
         "with_sender": True,
@@ -86,6 +96,11 @@ SETTLE_META = (
             "WHERE register_date='' "
             "  AND ticket_no IS NOT NULL "
             "ORDER BY issuer_sort_order, ticket_no COLLATE NOCASE"
+        ),
+        "count_query": (
+            "SELECT COUNT(*) FROM Document_Ticket "
+            "WHERE register_date='' "
+            "  AND ticket_no IS NOT NULL AND ticket_no != ''"
         ),
         "update": ("UPDATE Document_Ticket SET register_date=?, sender_id=? "
                    "WHERE doc_id=? AND register_date=''"),
@@ -199,15 +214,19 @@ def load_unissued(db_path):
 
 
 def count_unissued(db_path):
-    """載入各類別全部未發文列後取長度，回傳 {key: int}。
-
-    本函式不另做 SQL COUNT；呼叫端可把同一次取得的結果傳給刷新流程重用。
-    """
-    return {k: len(v) for k, v in load_unissued(db_path).items()}
+    """以各類別主表的 COUNT 查未發文筆數，回傳 {key: int}。"""
+    result = {m["key"]: 0 for m in SETTLE_META}
+    conn = getConn(db_path)
+    try:
+        for meta in SETTLE_META:
+            result[meta["key"]] = conn.execute(meta["count_query"]).fetchone()[0]
+    finally:
+        conn.close()
+    return result
 
 
 def visible_chip_keys(modes, counts):
-    """Return settlement type chips needed by self-service modes or rows."""
+    """回傳自助模式已啟用或仍有未發文資料的類型 chip key 集合。"""
     return {
         meta["key"]
         for meta in SETTLE_META
@@ -216,7 +235,7 @@ def visible_chip_keys(modes, counts):
 
 
 def settle_entry_visible(db_path, counts=None):
-    """Return whether the settlement entry should be available for *db_path*."""
+    """判斷指定資料庫是否應顯示結算發文入口。"""
     from lib.db_utils import anySelfServiceMode
 
     try:
@@ -594,6 +613,7 @@ class SettleDialog(QDialog):
         for sid, sname, _so in personnel:
             self.cmb_sender.addItem(sname, sid)
 
+        # 程式性 setChecked 不會發出 buttonClicked，必須緊接重套過濾條件。
         self._apply_filters()
 
     def _update_chip_labels(self):

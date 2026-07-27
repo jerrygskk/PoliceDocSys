@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import os
 import unittest
+from unittest import mock
 
 # 確保可匯入專案根模組
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -363,6 +364,75 @@ class TestSettleDocumentTypes(unittest.TestCase):
             [meta["key"] for meta in SETTLE_META], ["crim", "gen", "ticket"])
         counts = count_unissued(self.path)
         self.assertEqual(counts, {"crim": 0, "gen": 0, "ticket": 0})
+
+
+class TestUnissuedCountQueries(unittest.TestCase):
+    """count_unissued 必須直接以各主表的 COUNT 查詢未發文資料。"""
+
+    def setUp(self):
+        import tempfile
+        from lib.db_schema import applySchema
+
+        self._tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self._tmp, "unissued_count.db")
+        self.conn = sqlite3.connect(self.path)
+        applySchema(self.conn)
+        self.conn.executescript("""
+            INSERT INTO Document_Criminal
+                (doc_id, report_date, case_type, case_status, processor_id,
+                 subject_summary, is_reported, is_electronic)
+            VALUES
+                ('C-UNISSUED', NULL, 'CT01', 'CS01', 'P001', '刑案待發文', 0, ''),
+                ('C-ISSUED', '2026-07-27', 'CT01', 'CS01', 'P001', '刑案已發文', 0, ''),
+                ('C-EMPTY', NULL, 'CT01', 'CS01', 'P001', '', 0, ''),
+                ('C-DELETED', NULL, 'CT01', 'CS01', 'P001', NULL, 0, '');
+
+            INSERT INTO Document_General
+                (doc_id, report_date, processor_id, subject, is_reported, is_electronic)
+            VALUES
+                ('G-UNISSUED', '', 'P001', '一般待發文', 0, ''),
+                ('G-ISSUED', '2026-07-27', 'P001', '一般已發文', 0, ''),
+                ('G-EMPTY', '', 'P001', '', 0, ''),
+                ('G-DELETED', NULL, 'P001', NULL, 0, '');
+
+            INSERT INTO Document_Ticket
+                (doc_id, create_date, register_date, issuer_id, ticket_no)
+            VALUES
+                ('T-UNISSUED', '2026-07-27', '', 'P001', 'TICKET01'),
+                ('T-ISSUED', '2026-07-27', '2026-07-27', 'P001', 'TICKET02'),
+                ('T-DELETED', NULL, NULL, NULL, NULL);
+        """)
+        # 實務資料可能因舊資料／外鍵資料清理留下這兩種 issuer；計數不可因
+        # 顯示名稱的 JOIN 而遺漏它們。
+        self.conn.execute("PRAGMA ignore_check_constraints = ON")
+        self.conn.execute(
+            "INSERT INTO Document_Ticket "
+            "(doc_id, create_date, register_date, issuer_id, ticket_no) "
+            "VALUES ('T-NULL-ISSUER', '2026-07-27', '', NULL, 'TICKET03')")
+        self.conn.execute(
+            "INSERT INTO Document_Ticket "
+            "(doc_id, create_date, register_date, issuer_id, ticket_no) "
+            "VALUES ('T-MISSING-ISSUER', '2026-07-27', '', 'P404', 'TICKET04')")
+        self.conn.execute("PRAGMA ignore_check_constraints = OFF")
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_counts_match_unissued_rows_and_do_not_load_rows(self):
+        """改回以 load_unissued 取長度或漏掉主表條件時必須失敗。"""
+        from ui_utils.settle_dialog import count_unissued, load_unissued
+
+        expected = {"crim": 1, "gen": 1, "ticket": 3}
+        with mock.patch("ui_utils.settle_dialog.load_unissued",
+                        side_effect=AssertionError("count must use COUNT SQL")):
+            self.assertEqual(count_unissued(self.path), expected)
+
+        rows = load_unissued(self.path)
+        self.assertEqual(
+            {kind: len(rows[kind]) for kind in expected}, expected)
 
 
 class TestSettleMetaTicket(unittest.TestCase):
