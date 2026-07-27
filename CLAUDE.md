@@ -6,6 +6,7 @@
 - **目標環境**：Windows，顯示縮放 **125%**，全域字體 **14pt**；PyInstaller `--onefile` 打包
 - **資料**：軟刪除（清空欄位、保留 `doc_id`），不做真 DELETE
 - **文件分工**：`README.md`＝使用者門面（撰寫定義見 DEVELOPER §9）；`DEVELOPER.md`＝技術文件（架構／打包／DB／版本記錄）；`PITFALLS.md`＝踩雷速查表（症狀→解法，本表任務對照見下）；`CLAUDE.md`＝協作規則（本檔）；`docs/handover.md`＝跨對話交接（不入庫）
+- ⚠️ **入庫文件不得叫人去參照未入庫的檔案**：`CLAUDE.md`／`README.md`／`DEVELOPER.md`／`PITFALLS.md` 內不得指向 `.gitignore` 排除的路徑（`docs/*`、`dbfile.db`、根目錄 `fix_*.py`／`seed_*.py`、`*.spec`、`build/`／`dist/` 等）。**該留的結論直接寫進入庫文件本身**，不要留一個「詳見某某設計文件」的指標——未入庫檔案隨時可能不存在，`git status` 也看不出它被刪，規則會靜默失效（踩過：`docs/superpowers/` 被清掉後，CLAUDE.md 的指路變成死連結）。反向亦然：真正該長期保存的內容就要入庫，不要放在被忽略的路徑
 
 ## 任務對照表（動手前先讀哪裡）
 
