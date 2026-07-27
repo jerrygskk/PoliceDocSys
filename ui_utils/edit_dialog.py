@@ -258,6 +258,7 @@ class _BaseEditDialog(QDialog):
     _LABEL_W = 120   # label 區寬度
     _FIELD_W = 340   # 輸入元件總寬度
     _MARGIN  = 40    # 左右 margin
+    _mode_kind = None
 
     def _set_combo(self, combo, value):
         _set_combo_value(combo, value)
@@ -289,7 +290,8 @@ class _BaseEditDialog(QDialog):
         """自助取號模式下，一般使用者不可手動編輯陳報日期／發文人員（避免繞過結算）；
         管理者／歸檔管理者仍可手動補正，不擋。停用後 _on_save 讀回原載入值寫回、
         對這兩欄為 no-op，維持未發文哨兵不變式。載入資料後呼叫。"""
-        if not isSelfServiceMode(self.db_path):
+        if (not self._mode_kind
+                or not isSelfServiceMode(self.db_path, self._mode_kind)):
             return
         if AuthManager.instance().is_manager():   # admin／歸檔管理者不擋
             return
@@ -588,6 +590,7 @@ class TaskEditDialog(_BaseEditDialog):
 class CriminalEditDialog(_BaseEditDialog):
     """刑案陳報修改彈窗（Tab 2）"""
 
+    _mode_kind = "crim"
     RADIO_STYLE = """
 QRadioButton {
     spacing: 6px;
@@ -887,6 +890,7 @@ QRadioButton:checked {
 class GeneralEditDialog(_BaseEditDialog):
     """一般陳報修改彈窗（Tab 2）"""
 
+    _mode_kind = "gen"
     RADIO_STYLE = CriminalEditDialog.RADIO_STYLE
 
     CAT_OPTIONS = [

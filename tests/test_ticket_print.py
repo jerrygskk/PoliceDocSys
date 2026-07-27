@@ -474,7 +474,7 @@ class TestQueryTicketPrintRows(unittest.TestCase):
         os.remove(self.db_path)
 
     def _set_self_service(self, on):
-        db_utils.setSetting(self.db_path, db_utils.REPORT_INPUT_MODE_KEY,
+        db_utils.setSetting(self.db_path, db_utils.REPORT_MODE_KEYS["ticket"],
                              "1" if on else "0")
 
     def test_self_service_prints_by_register_date(self):
@@ -498,6 +498,14 @@ class TestQueryTicketPrintRows(unittest.TestCase):
     def test_no_data_returns_empty_list(self):
         self._set_self_service(True)
         self.assertEqual(queryTicketPrintRows(self.db_path, "2099-01-01"), [])
+
+    def test_ticket_key_overrides_legacy_global_key(self):
+        db_utils.setSetting(self.db_path, db_utils.REPORT_INPUT_MODE_KEY, "1")
+        db_utils.setSetting(self.db_path, db_utils.REPORT_MODE_KEYS["ticket"], "0")
+        rows = queryTicketPrintRows(self.db_path, "2026-07-20")
+        self.assertTrue(any(row["doc_id"] == "9001" for row in rows))
+        rows_23 = queryTicketPrintRows(self.db_path, "2026-07-23")
+        self.assertFalse(any(row["doc_id"] == "9001" for row in rows_23))
 
 
 if __name__ == "__main__":

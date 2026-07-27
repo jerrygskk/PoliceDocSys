@@ -111,8 +111,9 @@ class TestEditDialogs(_DialogBase):
 
     def _set_self_service(self, on):
         conn = sqlite3.connect(self.db)
-        conn.execute("INSERT OR REPLACE INTO App_Settings(key,value) "
-                     "VALUES('report_input_mode',?)", ("1" if on else "0",))
+        for key in ("report_mode_crim", "report_mode_gen"):
+            conn.execute("INSERT OR REPLACE INTO App_Settings(key,value) "
+                         "VALUES(?,?)", (key, "1" if on else "0"))
         conn.commit()
         conn.close()
 

@@ -718,15 +718,30 @@ def isInputLocked(db_path, kind):
 # ──────────────────────────────────────────────────────────────────
 # 跨年度重置不清此 key（模式是單位的作業型態，見 performYearEndReset）。
 REPORT_INPUT_MODE_KEY = "report_input_mode"
+REPORT_MODE_KEYS = {
+    "crim": "report_mode_crim",
+    "gen": "report_mode_gen",
+    "ticket": "report_mode_ticket",
+}
 
 
-def isSelfServiceMode(db_path) -> bool:
-    """是否為自助取號模式（App_Settings 值為 "1"）。
-    未設定／壞值 fallback False（＝送文者輸入模式），不拋例外。"""
+def isSelfServiceMode(db_path, kind) -> bool:
+    """Return whether the supported report kind uses self-service mode."""
+    key = REPORT_MODE_KEYS.get(kind)
+    if not key:
+        return False
     try:
-        return (getSetting(db_path, REPORT_INPUT_MODE_KEY, "") or "").strip() == "1"
+        value = getSetting(db_path, key, None)
+        if value is None:
+            value = getSetting(db_path, REPORT_INPUT_MODE_KEY, "")
+        return (value or "").strip() == "1"
     except Exception:
         return False
+
+
+def anySelfServiceMode(db_path) -> bool:
+    """Return whether at least one report kind uses self-service mode."""
+    return any(isSelfServiceMode(db_path, kind) for kind in REPORT_MODE_KEYS)
 
 
 # ══════════════════════════════════════════════════════════════════

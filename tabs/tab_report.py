@@ -325,7 +325,7 @@ class TabReport(BaseTab, InputLockMixin):
     def _applySelfServiceMode(self):
         """自助取號模式：陳報日期／發文人員兩欄反灰（由結算時自動填入）。
         唯讀鎖已停用整個表單時這兩欄已是停用狀態，不衝突。"""
-        is_self = isSelfServiceMode(self.db_path)
+        is_self = isSelfServiceMode(self.db_path, self._currentLockKind())
         tip = "自助取號模式：發文日期與送文者由結算時自動填入" if is_self else ""
         for w in [self.rpt_date, self.rpt_sender]:
             if w:
@@ -520,14 +520,13 @@ class TabReport(BaseTab, InputLockMixin):
 
     # ── 確認陳報 ────────────────────────────────────────────
     def _submit(self):
-        if isSelfServiceMode(self.db_path):
+        is_criminal = (self.type_tabbar.currentIndex() == 0) if self.type_tabbar else True
+        if isSelfServiceMode(self.db_path, "crim" if is_criminal else "gen"):
             report_date = None
             sender_id   = None
         else:
             report_date = self.rpt_date.date().toString("yyyy-MM-dd") if self.rpt_date else ""
             sender_id   = self.rpt_sender.currentData() if self.rpt_sender else None
-        is_criminal = (self.type_tabbar.currentIndex() == 0) if self.type_tabbar else True
-
         if is_criminal:
             self._submitCriminal(report_date, sender_id)
         else:
@@ -557,7 +556,7 @@ class TabReport(BaseTab, InputLockMixin):
         reporter     = self.crim_reporter.text().strip() if self.crim_reporter  else ""
 
         errors = []
-        if not isSelfServiceMode(self.db_path) and not sender_id:
+        if not isSelfServiceMode(self.db_path, "crim") and not sender_id:
             errors.append("發文人員")
         if not casetype_id:  errors.append("案類")
         if not processor_id: errors.append("承辦人員")
@@ -617,7 +616,7 @@ class TabReport(BaseTab, InputLockMixin):
         subject      = self.gen_subject.text().strip() if self.gen_subject else ""
 
         errors = []
-        if not isSelfServiceMode(self.db_path) and not sender_id:
+        if not isSelfServiceMode(self.db_path, "gen") and not sender_id:
             errors.append("發文人員")
         if not processor_id: errors.append("承辦人")
         if not subject:      errors.append("陳報主旨")

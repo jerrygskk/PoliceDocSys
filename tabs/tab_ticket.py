@@ -224,7 +224,7 @@ class TabTicket(BaseTab, InputLockMixin):
         self._applySelfServiceMode()
 
     def _applySelfServiceMode(self):
-        self_service = isSelfServiceMode(self.db_path)
+        self_service = isSelfServiceMode(self.db_path, "ticket")
         self.ticket_sender.setEnabled(
             self._inputEditable() and not self_service
         )
@@ -291,7 +291,8 @@ class TabTicket(BaseTab, InputLockMixin):
     def _missingFields(self):
         """回傳未填欄位名稱清單（純函式，不彈視窗，供送出流程與測試共用）。"""
         missing = []
-        if not isSelfServiceMode(self.db_path) and not self.ticket_sender.currentData():
+        if (not isSelfServiceMode(self.db_path, "ticket")
+                and not self.ticket_sender.currentData()):
             missing.append("發文者")
         if not self.ticket_issuer.currentData():
             missing.append("開立人員")
@@ -315,7 +316,7 @@ class TabTicket(BaseTab, InputLockMixin):
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(missing)}")
             self._focusFirstMissing(missing)
             return
-        self_service = isSelfServiceMode(self.db_path)
+        self_service = isSelfServiceMode(self.db_path, "ticket")
         # 自助模式一律送 None：反灰欄可能有殘留值，此處不得讀取。
         sender_id = None if self_service else self.ticket_sender.currentData()
         conn = None

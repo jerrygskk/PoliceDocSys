@@ -71,18 +71,18 @@ def _set_setting(conn, key, value):
 
 class TestIsSelfServiceMode(unittest.TestCase):
 
-    def _make_db_file(self, tmp_path, value=None):
-        """建立暫存 DB 檔，可選擇性設定 report_input_mode。"""
+    def _make_db_file(self, tmp_path, settings=None):
+        """建立暫存 DB 檔，並寫入指定 App_Settings。"""
         import tempfile, os
         from lib.db_schema import applySchema
         fd, path = tempfile.mkstemp(suffix=".db", dir=tmp_path)
         os.close(fd)
         conn = sqlite3.connect(path)
         applySchema(conn)
-        if value is not None:
+        for key, value in (settings or {}).items():
             conn.execute(
                 "INSERT OR REPLACE INTO App_Settings (key, value) VALUES (?,?)",
-                ("report_input_mode", value))
+                (key, value))
         conn.commit()
         conn.close()
         return path
@@ -97,27 +97,102 @@ class TestIsSelfServiceMode(unittest.TestCase):
 
     def test_unset_is_sender_mode(self):
         from lib.db_utils import isSelfServiceMode
-        path = self._make_db_file(self._tmp, value=None)
-        self.assertFalse(isSelfServiceMode(path))
+        path = self._make_db_file(self._tmp)
+        self.assertFalse(isSelfServiceMode(path, "crim"))
 
-    def test_value_1_is_self_service(self):
+    def test_one_is_self_service(self):
         from lib.db_utils import isSelfServiceMode
-        path = self._make_db_file(self._tmp, value="1")
-        self.assertTrue(isSelfServiceMode(path))
+        path = self._make_db_file(self._tmp, {"report_input_mode": "1"})
+        self.assertTrue(isSelfServiceMode(path, "crim"))
 
-    def test_value_0_is_sender_mode(self):
+    def test_zero_is_sender_mode(self):
         from lib.db_utils import isSelfServiceMode
-        path = self._make_db_file(self._tmp, value="0")
-        self.assertFalse(isSelfServiceMode(path))
+        path = self._make_db_file(self._tmp, {"report_input_mode": "0"})
+        self.assertFalse(isSelfServiceMode(path, "crim"))
 
-    def test_bad_value_fallback_false(self):
+    def test_garbage_falls_back_to_sender_mode(self):
         from lib.db_utils import isSelfServiceMode
-        path = self._make_db_file(self._tmp, value="garbage")
-        self.assertFalse(isSelfServiceMode(path))
+        path = self._make_db_file(self._tmp, {"report_input_mode": "yes"})
+        self.assertFalse(isSelfServiceMode(path, "crim"))
 
-    def test_nonexistent_db_fallback_false(self):
+    def test_missing_db_falls_back_to_sender_mode(self):
         from lib.db_utils import isSelfServiceMode
-        self.assertFalse(isSelfServiceMode(os.path.join(self._tmp, "no_such.db")))
+        self.assertFalse(isSelfServiceMode(
+            os.path.join(self._tmp, "no_such.db"), "crim"))
+
+
+class TestPerKindMode(unittest.TestCase):
+    """Per-kind mode keys override the legacy global fallback."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _db(self, settings=None):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".db", dir=self._tmp)
+        os.close(fd)
+        from lib.db_schema import applySchema
+        conn = sqlite3.connect(path)
+        applySchema(conn)
+        for key, value in (settings or {}).items():
+            conn.execute(
+                "INSERT OR REPLACE INTO App_Settings (key, value) VALUES (?,?)",
+                (key, value))
+        conn.commit()
+        conn.close()
+        return path
+
+    def test_keys_are_independent(self):
+        from lib.db_utils import isSelfServiceMode
+        path = self._db({"report_mode_crim": "1", "report_mode_gen": "0",
+                         "report_mode_ticket": "0"})
+        self.assertTrue(isSelfServiceMode(path, "crim"))
+        self.assertFalse(isSelfServiceMode(path, "gen"))
+        self.assertFalse(isSelfServiceMode(path, "ticket"))
+
+    def test_new_key_overrides_legacy(self):
+        from lib.db_utils import isSelfServiceMode
+        path = self._db({"report_input_mode": "1", "report_mode_ticket": "0"})
+        self.assertFalse(isSelfServiceMode(path, "ticket"))
+        self.assertTrue(isSelfServiceMode(path, "crim"))
+
+    def test_legacy_fallback_when_new_keys_absent(self):
+        from lib.db_utils import isSelfServiceMode
+        path = self._db({"report_input_mode": "1"})
+        for kind in ("crim", "gen", "ticket"):
+            self.assertTrue(isSelfServiceMode(path, kind))
+
+    def test_unknown_kind_is_sender_mode(self):
+        from lib.db_utils import isSelfServiceMode
+        self.assertFalse(isSelfServiceMode(
+            self._db({"report_input_mode": "1"}), "reward"))
+
+    def test_kind_is_required(self):
+        from lib.db_utils import isSelfServiceMode
+        with self.assertRaises(TypeError):
+            isSelfServiceMode(self._db())
+
+    def test_any_self_service_truth_table(self):
+        from lib.db_utils import anySelfServiceMode
+        for crim in ("0", "1"):
+            for gen in ("0", "1"):
+                for ticket in ("0", "1"):
+                    path = self._db({"report_mode_crim": crim,
+                                     "report_mode_gen": gen,
+                                     "report_mode_ticket": ticket})
+                    self.assertEqual(anySelfServiceMode(path),
+                                     "1" in (crim, gen, ticket),
+                                     f"crim={crim} gen={gen} ticket={ticket}")
+
+    def test_any_self_service_uses_legacy_fallback(self):
+        from lib.db_utils import anySelfServiceMode
+        self.assertTrue(anySelfServiceMode(self._db({"report_input_mode": "1"})))
+        self.assertFalse(anySelfServiceMode(self._db()))
 
 
 class TestSettleRoundTrip(unittest.TestCase):

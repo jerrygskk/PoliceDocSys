@@ -835,7 +835,7 @@ class InputModePanel(_SettingsPanel):
 
     def reload(self):
         from lib.db_utils import isSelfServiceMode
-        is_self = isSelfServiceMode(self.db_path)
+        is_self = isSelfServiceMode(self.db_path, "crim")
         self._radio_self.blockSignals(True)
         self._radio_sender.blockSignals(True)
         self._radio_self.setChecked(is_self)

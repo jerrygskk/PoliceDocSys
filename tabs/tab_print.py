@@ -20,7 +20,8 @@ from PySide6.QtGui  import QPixmap, QImage, QPainter, QPageSize
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, printTitle, printTitlesUnset, isSelfServiceMode
+from lib.db_utils import (getResourcePath, printTitle, printTitlesUnset,
+                          isSelfServiceMode, anySelfServiceMode)
 from ui_utils import loadUi, msgInfo, msgWarning
 from ui_utils import runWithBusy
 
@@ -758,7 +759,8 @@ def queryTicketPrintRows(db_path, date_text):
       （非 NULL 且非哨兵空字串），避免尚未發文的資料因 `create_date` 剛好
       相同而被誤列。
     """
-    date_col = "register_date" if isSelfServiceMode(db_path) else "create_date"
+    date_col = ("register_date" if isSelfServiceMode(db_path, "ticket")
+                else "create_date")
     if date_col not in _TICKET_DATE_COLS:
         raise ValueError("非法日期欄名")   # 防呆：白名單外一律拒絕，不會走到這裡
     conn = sqlite3.connect(db_path)
@@ -1074,7 +1076,7 @@ class TabPrint(BaseTab):
         """依輸入模式決定是否顯示結算群組，並更新未發文計數。"""
         if not hasattr(self, "_settle_group"):
             return
-        is_self = isSelfServiceMode(self.db_path)
+        is_self = anySelfServiceMode(self.db_path)
         self._settle_group.setVisible(is_self)
         if is_self:
             self._refresh_unissued()
