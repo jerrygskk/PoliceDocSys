@@ -69,6 +69,37 @@ def _set_setting(conn, key, value):
     conn.commit()
 
 
+class TestSeedDefaults(unittest.TestCase):
+    """新建資料庫須以各類型 key 預設送文者模式。"""
+
+    def test_seed_sets_all_three_to_sender_mode(self):
+        from lib.db_schema import applySchema
+        from lib.db_seed import seedFreshDb
+        from lib.db_utils import REPORT_MODE_KEYS
+        conn = sqlite3.connect(":memory:")
+        applySchema(conn)
+        seedFreshDb(conn)
+        conn.commit()
+        for key in REPORT_MODE_KEYS.values():
+            row = conn.execute(
+                "SELECT value FROM App_Settings WHERE key=?", (key,)).fetchone()
+            self.assertIsNotNone(row, f"{key} 未播種")
+            self.assertEqual(row[0], "0", f"{key} 預設不是送文者模式")
+        conn.close()
+
+    def test_seed_does_not_write_legacy_key(self):
+        from lib.db_schema import applySchema
+        from lib.db_seed import seedFreshDb
+        conn = sqlite3.connect(":memory:")
+        applySchema(conn)
+        seedFreshDb(conn)
+        conn.commit()
+        row = conn.execute(
+            "SELECT value FROM App_Settings WHERE key='report_input_mode'").fetchone()
+        self.assertIsNone(row)
+        conn.close()
+
+
 class TestIsSelfServiceMode(unittest.TestCase):
 
     def _make_db_file(self, tmp_path, settings=None):
