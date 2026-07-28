@@ -119,6 +119,23 @@ class TestRewardBrowse(unittest.TestCase):
                 tab._onEdit("reward", 0, "10")
                 dialog.assert_not_called()
 
+    def test_delete_rechecks_admin_after_confirmation_before_mutation(self):
+        """確認對話期間登出後，不得再執行軟刪除。"""
+        tab = self._tab()
+        with patch("tabs.tab_dbbrowse.AuthManager.instance") as auth, \
+                patch("tabs.tab_dbbrowse.confirmBox", return_value=True), \
+                patch("tabs.tab_dbbrowse.msgWarning") as warning:
+            states = iter((True, False))
+            auth.return_value.is_admin.side_effect = lambda: next(states, False)
+            tab._onDelete("reward", "10")
+
+        conn = sqlite3.connect(self.db)
+        row = conn.execute(
+            "SELECT register_date FROM Document_Reward WHERE doc_id='10'").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "2026-07-18")
+        warning.assert_called_once_with("權限不足", "請先登入管理者帳號")
+
     def test_archive_manager_edit_matrix_blocks_task_and_reward_only(self):
         # 歸檔管理者：交辦單(task)／敘獎(reward)不可改；刑案／一般仍可。
         tab = self._tab()

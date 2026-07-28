@@ -298,6 +298,12 @@ class TabRewardIssue(BaseTab, InputLockMixin):
                 confirm_text="發文", default_confirm=True):
             return
 
+        # 確認框為 modal，停留期間可能已降權或啟用唯讀；UPDATE 前重新檢查。
+        if (not AuthManager.instance().is_manager()
+                and isInputLocked(self.db_path, "reward_issue")):
+            msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
+            return
+
         conn = None
         settled = 0
         updated_rows = []

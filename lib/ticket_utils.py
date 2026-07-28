@@ -25,6 +25,9 @@ TICKET_TABLE = "Document_Ticket"
 # 罰單有效列條件（NULL 僅代表軟刪除），供本模組與後續查詢頁共用。
 TICKET_ACTIVE_SQL = "register_date IS NOT NULL"
 
+# 罰單簽收歸屬日一律是實際發文／結算寫入的日期，與目前輸入模式無關。
+TICKET_RECEIPT_DATE_COL = "register_date"
+
 _AUDIT_CATEGORY = "罰單"
 
 

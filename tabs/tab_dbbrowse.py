@@ -1033,6 +1033,10 @@ class TabDBBrowse(BaseTab):
                 f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
                 confirm_text="刪除", confirm_danger=True, default_confirm=False):
             return
+        # 確認框為 modal，停留期間可能已登出；mutation 前必須重新取目前身分。
+        if not AuthManager.instance().is_admin():
+            msgWarning("權限不足", "請先登入管理者帳號")
+            return
         am = AuthManager.instance()
         meta = TABLE_META[key]
         conn = None

@@ -20,8 +20,8 @@ from PySide6.QtGui  import QPixmap, QImage, QPainter, QPageSize
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from lib.base_tab import BaseTab
-from lib.db_utils import (getResourcePath, printTitle, printTitlesUnset,
-                          isSelfServiceMode)
+from lib.db_utils import getResourcePath, printTitle, printTitlesUnset
+from lib.ticket_utils import TICKET_RECEIPT_DATE_COL
 from ui_utils import loadUi, msgInfo, msgWarning
 from ui_utils import runWithBusy
 
@@ -747,28 +747,18 @@ def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
     return fig
 
 
-# 日期欄名白名單（brief Step3 明令）：只能從這兩個固定欄名擇一，不接受字串插入 SQL。
-_TICKET_DATE_COLS = ("register_date", "create_date")
-
-
 def queryTicketPrintRows(db_path, date_text):
-    """查詢指定日期可列印的罰單（依輸入模式二選一日期欄，spec §5）：
+    """查詢指定簽收日可列印的已發文罰單。
 
-    - 自助模式：以 `register_date`（已發文取號日）查已發文罰單。
-    - 發文者登錄模式：以 `create_date` 查，但仍要求 `register_date` 有效
-      （非 NULL 且非哨兵空字串），避免尚未發文的資料因 `create_date` 剛好
-      相同而被誤列。
+    簽收歸屬由資料列本身的 `register_date` 決定，不讀取目前輸入模式；
+    因此模式切換不會改變既有罰單應列入哪一天的簽收表。
     """
-    date_col = ("register_date" if isSelfServiceMode(db_path, "ticket")
-                else "create_date")
-    if date_col not in _TICKET_DATE_COLS:
-        raise ValueError("非法日期欄名")   # 防呆：白名單外一律拒絕，不會走到這裡
     conn = sqlite3.connect(db_path)
     try:
         sql = (
             "SELECT doc_id, issuer_id, issuer_name, issuer_sort_order, ticket_no "
             "FROM Document_Ticket_Full "
-            f"WHERE {date_col}=? "
+            f"WHERE {TICKET_RECEIPT_DATE_COL}=? "
             "  AND register_date IS NOT NULL "
             "  AND register_date<>'' "
             "  AND ticket_no IS NOT NULL "

@@ -410,6 +410,30 @@ class TestRewardIssue(unittest.TestCase):
         conn.close()
         self.assertEqual(row, ("", None))
 
+    def test_issue_rechecks_lock_after_confirmation_before_update(self):
+        """確認對話期間啟用唯讀後，不得再更新敘獎發文資料。"""
+        import tabs.tab_reward_issue as module
+
+        self._insert("NEW", "")
+        self._query("NEW")
+        manager_states = iter((True, False))
+        fake_auth = SimpleNamespace(is_manager=lambda: next(manager_states))
+        with patch.object(module.AuthManager, "instance", return_value=fake_auth), \
+                patch("tabs.tab_reward_issue.isInputLocked",
+                      return_value=True), \
+                patch("tabs.tab_reward_issue.confirmBox", return_value=True), \
+                patch("tabs.tab_reward_issue.msgWarning") as warning:
+            self.tab.handleIssue()
+
+        conn = sqlite3.connect(self.db_path)
+        row = conn.execute(
+            "SELECT register_date, sender_id FROM Document_Reward WHERE doc_id='NEW'"
+        ).fetchone()
+        conn.close()
+        self.assertEqual(row, ("", None))
+        warning.assert_called_once_with(
+            "唯讀模式", "本功能目前為唯讀模式無法使用。")
+
     def test_role_change_to_general_user_clears_issue_list(self):
         import tabs.tab_reward_issue as module
 

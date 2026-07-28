@@ -274,8 +274,9 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertIn("敘獎登錄與敘獎發文不受陳報模式影響", settings_help)
         self.assertNotIn("此模式同時涵蓋敘獎登錄", settings_help)
         self.assertNotIn("一併於結算時補齊", settings_help)
-        self.assertIn("罰單簽收單的查詢基準", settings_help)
-        self.assertIn("登錄日期", settings_help)
+        self.assertIn("罰單簽收歸屬日一律依發文日期", settings_help)
+        self.assertIn("與目前採送文者輸入模式或自助取號模式無關", settings_help)
+        self.assertNotIn("歷史單據的列印結果會隨目前模式而不同", settings_help)
         self.assertIn("一般使用者唯讀", browse_help)
         self.assertIn("歸檔管理可修改、不可刪除", browse_help)
         self.assertIn("管理者可修改、可刪除", browse_help)
@@ -303,6 +304,28 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertIn("| **罰單登錄**（`Document_Ticket`／`print_title_ticket`）", developer)
         self.assertIn("所有 CRUD 寫入唯一走 `lib/ticket_utils.py`；結算發文由 `SETTLE_META` 在共用 transaction 更新", developer)
         self.assertIn("五張公文主表", developer)
+        release_section = developer.split("### 發布流程", 1)[1].split(
+            "### 打包（spec 檔", 1)[0]
+        gate_pos = release_section.index("**推送前完整 gate**")
+        push_pos = release_section.index("**版號進版並推上去**")
+        self.assertLess(gate_pos, push_pos)
+        self.assertIn("三項全部通過後才可推送與建立 tag", release_section)
+        self.assertIn("python -m unittest discover -s tests", release_section[:push_pos])
+        self.assertIn("python -m pytest tests -q", release_section[:push_pos])
+        self.assertIn("python -m unittest tests.test_no_pii", release_section[:push_pos])
+        self.assertIn("刪除既有 `build/`／`dist/`", release_section)
+        fresh_build_pos = release_section.index("**兩支 exe 都要重建**")
+        checker_pos = release_section.index(
+            "兩支 fresh build 完成後立即於同次執行")
+        self.assertLess(fresh_build_pos, checker_pos)
+        self.assertIn("兩支 fresh build 完成後立即於同次執行",
+                      release_section)
+        self.assertIn("不得沿用舊 `build/` 或 `PKG-00.toc`", release_section)
+        self.assertIn(
+            "python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager",
+            release_section[checker_pos:])
+        self.assertIn("候選 PE 只要來源缺失或無法解析即 **fail-closed**", developer)
+        self.assertIn("唯一依 `Document_Ticket.register_date`", developer)
         views_section = developer.split("### Views", 1)[1].split("\n---\n", 1)[0]
         for view_name in ("View_Task_Full", "View_Criminal_Full",
                           "View_General_Full", "Document_Ticket_Full"):

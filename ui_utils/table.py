@@ -33,6 +33,27 @@ FIXED_COL_WIDTHS = {
 _PAD = 24
 
 
+def _scheduleForTable(table, delay, callback):
+    """排程與 table 同生命週期的單次工作，避免 callback 超過 table 壽命。"""
+    timers = getattr(table, "_deferred_table_timers", None)
+    if timers is None:
+        timers = []
+        table._deferred_table_timers = timers
+
+    timer = QTimer(table)
+    timer.setSingleShot(True)
+
+    def _run():
+        timers.remove(timer)
+        timer.deleteLater()
+        callback()
+
+    timer.timeout.connect(_run)
+    timers.append(timer)
+    timer.start(delay)
+    return timer
+
+
 def _measureColWidths(table, fm, fixed_overrides=None):
     stretch_col = table.property("stretch_col")
     cap_mode    = table.property("cap_mode")   # True：FIXED_COL_WIDTHS 當上限，False：當固定值
@@ -78,7 +99,7 @@ def autoResizeTable(table):
 
     available = table.viewport().width()
     if available <= 0:
-        QTimer.singleShot(100, lambda t=table: autoResizeTable(t))
+        _scheduleForTable(table, 100, lambda t=table: autoResizeTable(t))
         return
 
     usable      = int(available * 0.99)
@@ -212,8 +233,12 @@ def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_ove
             t.setProperty("user_resized", True)
 
     hdr.sectionResized.connect(_onSectionResized)
-    QTimer.singleShot(500, lambda t=table: t.setProperty("init_done", True))
-    QTimer.singleShot(200, lambda t=table: autoResizeTable(t))
+
+    # 延後工作由 table 擁有；table 銷毀時子 timer 一併停止，不會再操作失效 wrapper。
+    table._preview_setup_timers = [
+        _scheduleForTable(table, 500, lambda t=table: t.setProperty("init_done", True)),
+        _scheduleForTable(table, 200, lambda t=table: autoResizeTable(t)),
+    ]
 
     hdr.setSectionsMovable(False)
     hdr.setSectionsClickable(True)

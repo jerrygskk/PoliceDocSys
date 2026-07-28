@@ -743,10 +743,16 @@ class RowHoverFilter(QObject):
     def __init__(self, table):
         super().__init__(table)
         self._table = table
+        table.destroyed.connect(self._clearTable)
         self.row = -1
+
+    def _clearTable(self, _destroyed=None):
+        self._table = None
 
     def eventFilter(self, obj, event):
         t = self._table
+        if t is None:
+            return False
         if obj is t.viewport():
             if event.type() == QEvent.MouseMove:
                 idx = t.indexAt(event.pos())
@@ -790,10 +796,16 @@ class LinkCursorFilter(QObject):
     def __init__(self, table, link_col):
         super().__init__(table)
         self._table = table
+        table.destroyed.connect(self._clearTable)
         self._col = link_col
+
+    def _clearTable(self, _destroyed=None):
+        self._table = None
 
     def eventFilter(self, obj, event):
         t = self._table
+        if t is None:
+            return False
         if obj is t.viewport():
             if event.type() == QEvent.MouseMove:
                 idx = t.indexAt(event.pos())

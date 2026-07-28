@@ -171,11 +171,13 @@ class LoadingScreen(QWidget):
 
     def __init__(self, db_path, browse_preload_keys=("task", "crim", "gen"),
                  preheat_modules=LoadWorker._DEFAULT_PREHEAT,
-                 banner_path="res/buttons/banner.png"):
+                 banner_path="res/buttons/banner.png",
+                 product_name="公文收發管理系統"):
         super().__init__()
         self.db_path = db_path
         # 預設保留完整版相容性；其他版本由 AppProfile 明確傳入，不靠 EXE 名稱推測。
         self.banner_path = banner_path
+        self.product_name = product_name
         # 瀏覽白名單與預載範圍各自獨立；預設維持完整版現行三表，獨立版由
         # 呼叫端傳入 profile.preload_keys（空 tuple＝不預查任何瀏覽表）。
         self.browse_preload_keys = tuple(browse_preload_keys)
@@ -214,7 +216,7 @@ class LoadingScreen(QWidget):
             )
             self.banner_label.setPixmap(pix)
         else:
-            self.banner_label.setText("公文收發管理系統")
+            self.banner_label.setText(self.product_name)
             self.banner_label.setStyleSheet(
                 "background-color: #5b8db8; color: white; font-size: 22pt; font-weight: 700;"
             )

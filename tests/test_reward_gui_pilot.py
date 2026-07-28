@@ -11,15 +11,18 @@ except ModuleNotFoundError as exc:  # 讓 unittest discover 在缺 pytest 時記
     import unittest
 
     raise unittest.SkipTest("需 pytest/pytest-qt，請以 pytest 執行此檔")
-from PySide6.QtCore import QDate, QTimer, Qt
+from PySide6.QtCore import QDate, QEvent, QTimer, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
-    QApplication, QLabel, QPushButton, QTabWidget, QWidget,
+    QApplication, QLabel, QPushButton, QTableWidget, QTabWidget, QWidget,
 )
 
 from lib.db_schema import applySchema
 from tabs.tab_reward import TabReward
 from tabs.tab_reward_issue import TabRewardIssue
 from ui_utils.reward_dialog import RewardEditDialog
+from ui_utils.table import setupPreviewTable
+from ui_utils.widgets import LinkCursorFilter
 
 
 SELECTORS = {
@@ -191,3 +194,37 @@ def test_reward_lifecycle_pilot(qtbot, reward_db, monkeypatch):
     assert issue_table.item(0, 3).text() == "2026-07-24", "發文: UI 日期"
     assert pending_set == set(), "發文: pending 應清空"
     assert pending_banner.isHidden(), "發文: banner 應隱藏"
+
+
+def test_link_cursor_filter_ignores_deleted_table(qapp):
+    """已刪除表格遺留的 event filter 收到事件時，不得解參考失效 Qt wrapper。"""
+    table = QTableWidget()
+    cursor_filter = LinkCursorFilter(table, 0)
+    table.viewport().installEventFilter(cursor_filter)
+
+    table.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+    assert cursor_filter._table is None
+
+
+def test_preview_table_delayed_setup_stops_when_table_is_deleted(qapp):
+    """預覽表刪除後，延後初始化回呼不得操作已失效的 table wrapper。"""
+    table = QTableWidget()
+    setupPreviewTable(table, ["欄位"])
+
+    table.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    QTest.qWait(600)
+
+
+def test_preview_table_nested_resize_retry_stops_when_table_is_deleted(qapp):
+    """初始 resize 排出的零寬 retry 不得在 table 刪除後操作失效 wrapper。"""
+    table = QTableWidget()
+    table.setFixedSize(0, 0)
+    setupPreviewTable(table, ["欄位"])
+
+    QTest.qWait(250)  # 200ms 初始 resize 已因未顯示的零寬 viewport 排出 100ms retry
+    table.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    QTest.qWait(200)

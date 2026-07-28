@@ -24,6 +24,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import db_schema, db_seed, db_utils
+from lib.ticket_utils import createTicket
+from ui_utils.settle_dialog import settle_selected
 
 import tabs.tab_print as tab_print_module
 from tabs.tab_print import (
@@ -440,7 +442,7 @@ class TestDrawTicketPage(TicketPrintTestCase):
             plt.close(fig)
 
 
-# ── queryTicketPrintRows（模式二選一日期欄；白名單防注入）──────
+# ── queryTicketPrintRows（簽收日固定為 register_date）─────────
 class TestQueryTicketPrintRows(unittest.TestCase):
     def setUp(self):
         fd, self.db_path = tempfile.mkstemp(suffix=".db")
@@ -477,35 +479,44 @@ class TestQueryTicketPrintRows(unittest.TestCase):
         db_utils.setSetting(self.db_path, db_utils.REPORT_MODE_KEYS["ticket"],
                              "1" if on else "0")
 
-    def test_self_service_prints_by_register_date(self):
-        # 9001 create_date=07-20／register_date=07-23，9003 兩者皆 07-23：
-        # 用 register_date 查 07-23 應兩筆皆中，9001 若誤用 create_date 查
-        # 則會漏掉（此案例即為 create_date/register_date 刻意不同的用意）。
+    def test_self_service_ticket_settled_after_mode_switch_prints_by_register_date(self):
+        """自助建立後切回送文者模式，隔日結算仍以資料本身的簽收日列印。"""
         self._set_self_service(True)
-        rows = queryTicketPrintRows(self.db_path, "2026-07-23")
-        self.assertEqual([r["ticket_no"] for r in rows], ["A1234567", "D4RD15263"])
+        conn = sqlite3.connect(self.db_path)
+        try:
+            doc_id = createTicket(
+                conn, issuer_id="P1", ticket_no="SELF20260720", self_service=True,
+                sender_id=None, create_date="2026-07-20", role="user")
+            conn.commit()
+        finally:
+            conn.close()
 
-    def test_sender_mode_uses_create_date_but_excludes_unissued(self):
-        # 用 create_date 查 07-23：9002（未發文）雖 create_date 相符仍須排除；
-        # 9001 create_date=07-20 不符不應出現；9003 應出現。
         self._set_self_service(False)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(
+                settle_selected(conn, {"crim": [], "gen": [], "ticket": [doc_id]},
+                                "2026-07-21", "P1"),
+                1,
+            )
+        finally:
+            conn.close()
+
+        settled_rows = queryTicketPrintRows(self.db_path, "2026-07-21")
+        self.assertIn("SELF20260720", [r["ticket_no"] for r in settled_rows])
+        created_rows = queryTicketPrintRows(self.db_path, "2026-07-20")
+        self.assertNotIn("SELF20260720", [r["ticket_no"] for r in created_rows])
+
+    def test_issued_rows_exclude_unissued_and_keep_ticket_sort_order(self):
         rows = queryTicketPrintRows(self.db_path, "2026-07-23")
-        ticket_nos = [r["ticket_no"] for r in rows]
+        ticket_nos = [row["ticket_no"] for row in rows]
         self.assertNotIn("UNISSUED001", ticket_nos)
-        self.assertNotIn("D4RD15263", ticket_nos)
-        self.assertIn("A1234567", ticket_nos)
+        self.assertEqual(ticket_nos, ["A1234567", "D4RD15263"])
 
     def test_no_data_returns_empty_list(self):
         self._set_self_service(True)
         self.assertEqual(queryTicketPrintRows(self.db_path, "2099-01-01"), [])
 
-    def test_ticket_key_overrides_legacy_global_key(self):
-        db_utils.setSetting(self.db_path, db_utils.REPORT_INPUT_MODE_KEY, "1")
-        db_utils.setSetting(self.db_path, db_utils.REPORT_MODE_KEYS["ticket"], "0")
-        rows = queryTicketPrintRows(self.db_path, "2026-07-20")
-        self.assertTrue(any(row["doc_id"] == "9001" for row in rows))
-        rows_23 = queryTicketPrintRows(self.db_path, "2026-07-23")
-        self.assertFalse(any(row["doc_id"] == "9001" for row in rows_23))
 
 
 if __name__ == "__main__":

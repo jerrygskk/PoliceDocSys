@@ -30,3 +30,13 @@ def test_loading_screen_renders_the_profile_banner(monkeypatch):
         assert actual is not None
         assert actual.toImage() == expected.toImage()
         loading.close()
+
+
+def test_loading_screen_fallback_uses_profile_product_name(monkeypatch):
+    monkeypatch.setattr(LoadingScreen, "_start_worker", lambda self: None)
+
+    loading = LoadingScreen("unused.db", banner_path="missing-banner.png",
+                            product_name=ENTRY_PROFILE.product_name)
+
+    assert loading.banner_label.text() == ENTRY_PROFILE.product_name
+    loading.close()

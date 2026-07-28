@@ -12,7 +12,10 @@ os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.fonts.warning=false")
 # ──────────────────────────────────────────────
 _LOG_MAX_BYTES = 1 * 1024 * 1024   # error.log 超過 1MB 即輪替（保留一份 .old）
 
-def _setup_error_handler():
+def _setup_error_handler(product_name=None):
+    if product_name is None:
+        product_name = os.environ.get(
+            "POLICE_DOCSYS_PRODUCT_NAME", "公文收發管理系統")
     log_path = os.path.join(
         os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__),
         'error.log'
@@ -48,7 +51,7 @@ def _setup_error_handler():
             import win32evtlog
             import win32evtlogutil
             win32evtlogutil.ReportEvent(
-                '公文收發管理系統',
+                product_name,
                 1,
                 eventType=win32evtlog.EVENTLOG_ERROR_TYPE,
                 strings=[msg],
@@ -567,7 +570,26 @@ def handleCorruptDb(profile: AppProfile, db_path) -> int:
     return 0
 
 
+def _buildDocumentManagerOrExit(loading, results, profile, cleanup_lock):
+    """建立主視窗；建構失敗時關閉 loading、回報後以失敗碼結束。"""
+    try:
+        mgr = DocumentManager(tab_index=0, prefetch=results, progress=loading.setStep,
+                              profile=profile)
+    except Exception as exc:
+        loading.finishAndClose()
+        logging.error("".join(traceback.format_exception(
+            type(exc), exc, exc.__traceback__)))
+        from lib.db_utils import friendlyErrorMessage as _friendly
+        from ui_utils import msgCritical as _msgCritical
+        _msgCritical("系統錯誤", _friendly(type(exc), exc))
+        sys.exit(1)
+    mgr._cleanup_lock_cb = cleanup_lock
+    return mgr
+
+
 def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
+    # 共用入口依 profile 重設未捕捉例外來源，避免獨立版記成完整版產品。
+    _setup_error_handler(profile.product_name)
     app = QApplication(sys.argv)
     app.setFont(QFont("Microsoft JhengHei", 14))
     app.setStyleSheet(APPLE_STYLE)
@@ -675,10 +697,8 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
 
     def _on_data_ready(results):
         # 進度條期間就把整個主視窗建好（含三表建表）；建完才出主選單，選完秒進。
-        mgr = DocumentManager(tab_index=0, prefetch=results, progress=loading.setStep,
-                              profile=profile)
+        mgr = _buildDocumentManagerOrExit(loading, results, profile, _cleanup_lock)
         _refs.append(mgr)
-        mgr._cleanup_lock_cb = _cleanup_lock   # 閒置自動關閉 os._exit 前用它清鎖檔
         loading.finishAndClose()
         if not (hasattr(mgr, 'window') and mgr.window):
             # 仍在 Qt callback 內：這裡的結束語意本就是「直接終止行程」而非把
@@ -721,6 +741,7 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
         from lib.db_utils import friendlyErrorMessage as _friendly
         logging.error("".join(traceback.format_exception(exc_type, exc_value, exc_value.__traceback__)))
         from ui_utils import msgCritical as _msgCritical
+        loading.finishAndClose()
         _msgCritical("系統錯誤", _friendly(exc_type, exc_value))
         # 仍在 Qt callback 內，保留既有 sys.exit 結束語意（見上方註解）。
         sys.exit(1)
@@ -731,7 +752,8 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
                      if k in TAB_CLASSES)
     loading = LoadingScreen(db_path, browse_preload_keys=profile.preload_keys,
                             preheat_modules=_preheat,
-                            banner_path=profile.banner_path)
+                            banner_path=profile.banner_path,
+                            product_name=profile.product_name)
     _refs.append(loading)
     loading.dataReady.connect(_on_data_ready)
     loading.loadFailed.connect(_on_load_failed)

@@ -75,7 +75,7 @@ graph LR
     S --> D[DEVELOPER.md 對應節<br>＋權限矩陣]
     S --> H[HELP help_content.py<br>＋QUICKSTART→重產PDF]
     S --> R[README 門面<br>使用者有感才改]
-    S --> T[tests/ unittest 回歸測試<br>＋pytest-qt pilot]
+    S --> T[tests/ unittest 回歸測試<br>＋pytest packaging／bundle／startup／GUI]
 ```
 
 | 主題 | 程式觸點 | 文件／測試同步 |
@@ -162,7 +162,7 @@ graph LR
 │                    button_imgs／settle_dialog／reward_dialog／ticket_dialog；門面見 `__init__.py`）
 ├── tools/           開發／維運工具（入庫，從專案根執行；不被核心模組 import）：
 │                    bump_version／gen_buttons／gen_quickstart／gen_shell_db
-└── tests/           既有 unittest 回歸測試＋兩個 pytest-qt offscreen pilot
+└── tests/           unittest 回歸測試＋pytest（含 packaging／bundle／startup 與 GUI pilot）
 ```
 
 - ⚠️ 一次性／現場交付腳本（`fix_audit_setup.py`／`fix_cat_status.py`／`seed_*.py`）刻意**不入庫、留根目錄**：`fix_*` 打包成 exe 發給現場放 `dbfile.db` 旁執行（靠「找腳本旁的 db」邏輯，不可改），`seed_*` 為本機壓測／塞假料丟棄腳本（git add 時跳過，見 CLAUDE）
@@ -180,14 +180,16 @@ graph LR
 
 ### 單元測試（tests/）
 
-既有回歸套件以 **unittest** 為主，涵蓋純邏輯、資料庫與 offscreen Qt 元件；offscreen 測試會實例化元件，但不開互動式 GUI 視窗。另有兩個獨立的 **pytest/pytest-qt pilot**，用來驗證最小 Qt 點擊與敘獎 lifecycle，不取代 unittest 完整套件。
+既有回歸套件以 **unittest** 為主，涵蓋純邏輯、資料庫與 offscreen Qt 元件；offscreen 測試會實例化元件，但不開互動式 GUI 視窗。完整 **pytest** 套件另涵蓋 packaging／bundle／startup 契約與 pytest-qt GUI pilot，不取代 unittest 完整套件。
 
-- **跑法**（專案根）：完整既有 suite 用 `python -m unittest discover -s tests`；檔名 `test_*.py`（探索預設，勿改名）。兩個 pytest/pytest-qt pilot（`test_pytest_qt_runtime.py`、`test_reward_gui_pilot.py`）在本次核准的 Codex 本機環境用：
+- **跑法**（專案根）：檔名 `test_*.py`（探索預設，勿改名）。本次核准的 Windows／Codex runtime 以同一支 Python 執行完整 unittest、pytest 與 PII gate：
   ```powershell
   $env:QT_QPA_PLATFORM = 'offscreen'
-  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests/test_pytest_qt_runtime.py tests/test_reward_gui_pilot.py -q
+  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s tests
+  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests -q
+  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest tests.test_no_pii
   ```
-  ⚠️ **Codex 本機專用**；Claude 或一般環境不可假設此路徑存在，應改用已安裝相同依賴的 Python。上列絕對路徑僅是本次已驗證的 Codex 本機 workflow／量測證據。
+  其他環境不可假設此絕對路徑存在，應改用已安裝 `requirements-dev.txt` 相同依賴的 Python 執行相同三個 `-m` 命令。完整 pytest 會一併驗證 packaging／bundle／startup 與 GUI pilot。
 - **需 PySide6 的測試**（受測模組 import 時載入 PySide6）：`test_db_utils`／`test_status`／`test_auth_manager`／`test_error_msg`／`test_audit`／`test_ref_sort`；純 stdlib：`test_archive_text`／`test_app_lock`／`test_db_backup`
 - **offscreen Qt 元件測試**（module 層設 `QT_QPA_PLATFORM=offscreen` 建 QApplication，實例化 widget 但不開視窗）：`test_nullable_date`／`test_ui_load`／`test_dialog_smoke`／`test_dbbrowse_sync`（整個瀏覽 Tab offscreen 實例化，驗 `_allRows`/`_docorder` 與表格列 1:1 不變式、`_diffUpdate` 增修刪、`setUpdatesEnabled` try/finally 防卡死、搜尋過濾一致性）
 - **涵蓋**：歸檔解析（含 PK 撞號雷）、流水號／重置／設定／歸檔定位、逾期與狀態色、權限與密碼、錯誤白話化、稽核 helper、操作紀錄解析、軟性互斥、自動備份、閒置逾時解析（`test_idle_timeouts`，0＝停用／壞值退預設）；`.ui` 全檔載入與對話框建構 smoke（offscreen）；罰單四檔（`test_ticket_data` domain／`test_ticket_tab` 登錄頁與欄寬伸縮／`test_ticket_browse` 瀏覽 gate／`test_ticket_print` 排序分頁合併）＋`test_combo_hint`（提示灰字六狀態）＋`test_window_geometry`；另 `test_no_pii` 防個資外洩（見 CLAUDE）
@@ -376,6 +378,8 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 - **送文者輸入模式（預設）**：原行為。陳報時填發文日期＋發文人員，送出即為已發文。
 - **自助取號模式**：承辦人自行陳報僅取文號，`report_date`／`sender_id` 寫 NULL＝**未發文**；送文者事後於陳報日到列印頁批次「結算發文」補齊。
 
+罰單簽收歸屬日則**唯一依 `Document_Ticket.register_date`**（實際發文／結算日期），與目前採送文者輸入模式或自助取號模式無關；切換模式不得改變歷史罰單的列印歸屬。
+
 **核心設計：自助取號的未發文＝`report_date IS NULL`**（不加新欄位／新表），只適用刑案與一般陳報。敘獎流程與 `report_input_mode` 完全脫鉤：Tab3 登錄時固定寫入 `create_date=今天`、`register_date=''`、`sender_id=NULL`，再由 Tab4「敘獎發文」批次補上／覆蓋發文日期與發文人員；列印頁的「結算發文」不處理敘獎。牽動四處，動這功能逐一檢查：
 
 1. **陳報頁（`tab_report`）**：覆寫 `_applyInputLock` → 先 `super()`（唯讀鎖）再 `_applySelfServiceMode`（自助模式下 `rpt_date`／`rpt_sender` 反灰＋tooltip）。`_submit` 自助模式帶 `report_date=None`／`sender_id=None`；`_submitCriminal`／`_submitGeneral` 驗證在自助模式**放行「發文人員」空值**（其餘必填不變）。反灰的陳報日期框以 `specialValueText(" ")` 哨兵**顯示空白**（v1.1.11；僅不可互動狀態使用，無鍵盤路徑、不踩可編輯空白欄的雷；切回送文者模式清哨兵並還原今天；`widgets` 的「日期空值補今天」邏輯對哨兵狀態放行）。
@@ -474,14 +478,14 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 ### 發布流程（維護者說「進版／發布版本／出一版」時走這裡）
 
-**用語約定**：「進版」「發布版本」「出一版」＝下列 7 步走到底、**GitHub Release 上架（5 asset）才算結束**。其中「bump_version＋git tag `v{版號}`＋§8 補一列」這組機械動作另稱「**版號進版**」（第 4 步）。版本號定義於 `lib/version.py`、只進第三碼，進版一律 `python tools/bump_version.py <版號>`（同時改 version.py、產 version_info.txt、同步 README 版號），勿手改。
+**用語約定**：「進版」「發布版本」「出一版」＝下列 7 步走到底、**GitHub Release 上架（5 asset）才算結束**。其中「bump_version＋git tag `v{版號}`＋§8 補一列」這組機械動作另稱「**版號進版**」（第 5 步）。版本號定義於 `lib/version.py`、只進第三碼，進版一律 `python tools/bump_version.py <版號>`（同時改 version.py、產 version_info.txt、同步 README 版號），勿手改。
 
 1. **寫文件內文**：技術章節補進 DEVELOPER.md；使用者有感的改動 README 也同步；HELP／QUICKSTART 對照 §2「跨功能影響對照表」逐列確認（歷來最常漏）
 2. **寫 handover**（需跨對話交接才寫，`docs/handover.md` 不入庫）
 3. **寫 release note**（`release_note_v{版號}.md`，不入庫；內容寫給使用者看，技術細節留 DEVELOPER.md）
-4. **版號進版**
-5. **推上去** + tag `v{版號}` + push tag（逐檔 add、PII 檢查等鐵則見 CLAUDE.md C 節）
-6. **build**：onefile 全新 build（見下方指令），**兩支 exe 都要重建**，回報成功/失敗（失敗才貼錯誤末段）
+4. **推送前完整 gate**：依 §4 的 Python 選擇方式執行完整 `python -m unittest discover -s tests`、Windows offscreen `python -m pytest tests -q`、`python -m unittest tests.test_no_pii`；**三項全部通過後才可推送與建立 tag**
+5. **版號進版並推上去**：bump＋commit，建立 tag `v{版號}`，再 push commit 與 tag（逐檔 add 等鐵則見 CLAUDE.md C 節）
+6. **build**：刪除既有 `build/`／`dist/` 後 onefile 全新 build（見下方指令），**兩支 exe 都要重建**；兩支 fresh build 完成後立即於同次執行 `python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager`，不得沿用舊 `build/` 或 `PKG-00.toc`。回報成功/失敗（失敗才貼錯誤末段）
 7. **發 GitHub Release**：5 asset，指令與 asset 取得方式見本節末「發 GitHub Release」
 
 > ⚠️ **順序鐵則**：文件／release note 要在「版號進版 commit」**之前**寫好，tag 才指向含完整文件的 commit；先打 tag 事後補文件＝退版重做。
@@ -516,7 +520,7 @@ python tools/check_bundle_deps.py
 ```
 
 - `check_excludes.py`：讀 spec 自己的 `excludes`／`hiddenimports`，把排除的模組擋掉後逐一 import，抓 **Python 層**的間接相依。**不需要 build**，改完 spec 立刻能跑
-- `check_bundle_deps.py`：解析包內每個 DLL／pyd 的 import table，確認連結期相依都在包裡，抓 **DLL 層**的間接相依。build 之後跑
+- `check_bundle_deps.py`：解析包內每個 DLL／pyd／exe 的 import table，確認連結期相依都在包裡，抓 **DLL 層**的間接相依。合法例外與程式一致：bundle 內已有、Windows system dirs 內存在、`api-ms-win-*`／`ext-ms-win-*` API-set，以及 `_APISET_TAIL` 所接受的 `l<數字>-<數字>-<數字>.dll`（少數 PE 將 api-set 名稱切成尾段的已知例外）；其餘候選 PE 只要來源缺失或無法解析即 **fail-closed**。目前沒有正常 PE 的通用白名單機制。若未來 fresh build 發現合法誤報，先分辨是哪一種：①**解析器把合法格式判成非法**＝checker 的 bug，要修解析器本身（踩過：import 名稱正規式只認 `.dll`，Qt6PrintSupport 匯入的 `WINSPOOL.DRV` 被判非法，整支產品誤報；PE 模組名合法副檔名還有 `.drv`／`.sys`／`.exe`／`.ocx`／`.cpl`）。**這種情況塞例外清單是把同類錯誤藏起來，下次換個 `.drv`／`.sys` 又炸一次**。②**格式確實無法解析的個案**，才新增針對該檔的精準例外。無論哪一種都不得為了讓檢查通過而放寬「缺件即失敗」的判定。兩支 fresh build 完成後須立即在同次執行 `python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager`，不得沿用舊 `build/`／`PKG-00.toc`
 
 ### 新增分頁時要改的地方
 
