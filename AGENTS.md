@@ -1,5 +1,10 @@
 # 給接手者（Codex 請先讀這節）
 
+**讀取中文文字檔一律明確指定 UTF-8。**
+
+- PowerShell 執行前先將 `$OutputEncoding` 與 `[Console]::OutputEncoding` 設為 UTF-8，不依賴系統預設編碼
+- 若出現亂碼，立即改用 UTF-8 重新讀取；不得依據亂碼內容判斷
+
 **開始工作前先讀取 `CLAUDE.md`。**
 
 
