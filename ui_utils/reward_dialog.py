@@ -16,6 +16,36 @@ from .widgets import (
 # 併發刪除白話提示（開啟時列已不存在／儲存時 0 列受影響共用）
 _ROW_GONE_TITLE = "資料已刪除"
 _ROW_GONE_MSG = "本筆敘獎資料已被刪除，畫面將更新。"
+_CONFLICT_TITLE = "資料已更新"
+_CONFLICT_MSG = "本筆資料已被其他電腦修改，本次未儲存。"
+
+_REWARD_EDIT_UPDATE_SQL = (
+    "UPDATE Document_Reward SET reason=?,recipients=? "
+    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL} "
+    "AND register_date IS ? AND sender_id IS ? "
+    "AND reason IS ? AND recipients IS ?"
+)
+_REWARD_BROWSE_UPDATE_SQL = (
+    "UPDATE Document_Reward SET register_date=?,sender_id=?,reason=?,recipients=? "
+    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL} "
+    "AND register_date IS ? AND sender_id IS ? "
+    "AND reason IS ? AND recipients IS ?"
+)
+
+
+def _classify_reward_update_miss(conn, conn_factory, db_path, doc_id):
+    """先釋放失敗 UPDATE 的交易，再用新連線判斷資料是否仍有效。"""
+    conn.rollback()
+    fresh = conn_factory(db_path)
+    try:
+        row = fresh.execute(
+            "SELECT 1 FROM Document_Reward "
+            f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}",
+            (doc_id,),
+        ).fetchone()
+        return row is not None
+    finally:
+        fresh.close()
 
 
 class RewardEditDialog(_BaseEditDialog):
@@ -120,6 +150,7 @@ class RewardEditDialog(_BaseEditDialog):
             self._row_missing = True
             return
         self.w_create_date.setText(str(row[0] or ""))
+        self._orig_values = (row[1], row[2], row[3], row[4])
         self._orig_register_date = row[1]
         if self.source == "browse":
             # register_date=''（未發文哨兵）→ 日期框留空；有日期＝已發文。
@@ -163,24 +194,31 @@ class RewardEditDialog(_BaseEditDialog):
             if self.source == "browse":
                 # 維持不變式：未發文 ⟺ (register_date='' 且 sender=NULL)
                 cur = conn.execute(
-                    "UPDATE Document_Reward SET register_date=?,sender_id=?,reason=?,recipients=? "
-                    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}",
-                    (date, sender_id, reason, recipients, self.doc_id))
+                    _REWARD_BROWSE_UPDATE_SQL,
+                    (date, sender_id, reason, recipients, self.doc_id,
+                     *self._orig_values))
             else:
                 # 敘獎登錄頁：只改事由與人員，發文欄位（register_date/sender_id）不動。
                 date = self._orig_register_date
                 cur = conn.execute(
-                    "UPDATE Document_Reward SET reason=?,recipients=? "
-                    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}",
-                    (reason, recipients, self.doc_id))
-            conn.commit()
+                    _REWARD_EDIT_UPDATE_SQL,
+                    (reason, recipients, self.doc_id, *self._orig_values))
             if cur.rowcount == 0:
-                # 併發刪除：無列受影響 → 非成功，彈提示、不 accept，
-                # 標記後由呼叫端重整畫面移除失效列。
-                self._row_missing = True
-                msgWarning(_ROW_GONE_TITLE, _ROW_GONE_MSG)
-                self.reject()
+                active = _classify_reward_update_miss(
+                    conn, getConn, self.db_path, self.doc_id)
+                if not active:
+                    self._row_missing = True
+                    msgWarning(_ROW_GONE_TITLE, _ROW_GONE_MSG)
+                    self.reject()
+                else:
+                    msgWarning(_CONFLICT_TITLE, _CONFLICT_MSG)
+                    self._load_data()
+                    if self._row_missing:
+                        # 提示期間該列又被刪除：不留下顯示舊值的視窗，改走刪除路徑。
+                        msgWarning(_ROW_GONE_TITLE, _ROW_GONE_MSG)
+                        self.reject()
                 return
+            conn.commit()
             self._updated = (self.doc_id, date, reason, recipients)
             self.accept()
         except Exception as exc:

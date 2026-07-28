@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (
 from lib.auth_manager import AuthManager
 from lib.base_tab import BaseTab, InputLockMixin
 from lib.db_utils import (
-    REWARD_ACTIVE_SQL, getResourcePath, isInputLocked, rewardState,
+    REWARD_ACTIVE_SQL, REWARD_PENDING_SQL, getResourcePath, isInputLocked,
+    rewardState,
 )
 from ui_utils import (
     attachStickyScroll, autoResizeTable, confirmBox, loadUi, makeDeleteBtn,
@@ -23,6 +24,21 @@ _ISSUE_DATE_COLOR = "#e67e22"
 _PENDING_BANNER_CSS = (
     "background-color: #fdf3e0; color: #8a5c14; border: 1px solid #f0d9a8;"
     "border-radius: 7px; padding: 6px 14px; font-weight: 600;")
+
+_REWARD_ISSUE_UPDATE_SQL = (
+    "UPDATE Document_Reward SET register_date=?, sender_id=? "
+    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL} AND register_date IS ?"
+)
+
+
+def _reward_issue_result(settled, issue_day, deleted, conflicted):
+    lines = [f"已成功更新 {settled} 筆發文日期（{issue_day}）"]
+    if deleted:
+        lines.append(f"有 {deleted} 筆已被刪除，本次未變動")
+    if conflicted:
+        lines.append(f"有 {conflicted} 筆已被他人發文，本次未變動")
+    partial = bool(deleted or conflicted)
+    return partial, ("部分未更新" if partial else "完成"), "\n".join(lines)
 
 
 class TabRewardIssue(BaseTab, InputLockMixin):
@@ -240,6 +256,35 @@ class TabRewardIssue(BaseTab, InputLockMixin):
             self._pending.clear()
             self._updatePendingBanner()
 
+    def _reloadPendingDocIds(self, doc_ids):
+        """重建清單，只保留原清單中目前仍未發文的 doc_id。"""
+        table = getattr(self, "table", None)
+        if table is None:
+            return
+        rows = []
+        conn = None
+        try:
+            conn = self._getConn()
+            for doc_id in doc_ids:
+                row = conn.execute(
+                    "SELECT doc_id,create_date,register_date,reason,recipients "
+                    "FROM Document_Reward "
+                    f"WHERE doc_id=? AND {REWARD_PENDING_SQL} "
+                    "AND sender_id IS NULL",
+                    (doc_id,),
+                ).fetchone()
+                if row is not None:
+                    rows.append(row)
+        finally:
+            if conn:
+                conn.close()
+
+        table.setRowCount(0)
+        self._pending.clear()
+        for row in rows:
+            self._insertRow(row)
+        self._updatePendingBanner()
+
     def handleIssue(self):
         # 唯讀硬 gate：UI 反灰只是提示，任何替代觸發路徑都必須在 UPDATE 前擋下。
         if (not AuthManager.instance().is_manager()
@@ -276,11 +321,13 @@ class TabRewardIssue(BaseTab, InputLockMixin):
         try:
             conn = self._getConn()
             already = 0
+            original_dates = {}
             for _, doc_id in pending:
                 row = conn.execute(
                     "SELECT register_date FROM Document_Reward WHERE doc_id=?",
                     (doc_id,),
                 ).fetchone()
+                original_dates[doc_id] = row[0] if row else None
                 if row and rewardState(row[0]) == "issued":
                     already += 1
         except Exception as exc:
@@ -306,36 +353,43 @@ class TabRewardIssue(BaseTab, InputLockMixin):
 
         conn = None
         settled = 0
-        updated_rows = []
+        skipped_ids = []
         try:
             conn = self._getConn()
-            for row_index, doc_id in pending:
+            for _row_index, doc_id in pending:
                 cursor = conn.execute(
-                    "UPDATE Document_Reward SET register_date=?, sender_id=? "
-                    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}",
-                    (issue_day, sender_id, doc_id),
+                    _REWARD_ISSUE_UPDATE_SQL,
+                    (issue_day, sender_id, doc_id, original_dates[doc_id]),
                 )
                 settled += cursor.rowcount
-                if cursor.rowcount:
-                    updated_rows.append(row_index)
+                if not cursor.rowcount:
+                    skipped_ids.append(doc_id)
             conn.commit()
 
-            for row_index in updated_rows:
-                item = self._centeredItem(issue_day)
-                item.setForeground(QColor(_ISSUE_DATE_COLOR))
-                self.table.setItem(row_index, 3, item)
+            deleted = 0
+            conflicted = 0
+            for doc_id in skipped_ids:
+                row = conn.execute(
+                    "SELECT 1 FROM Document_Reward "
+                    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}",
+                    (doc_id,),
+                ).fetchone()
+                if row is None:
+                    deleted += 1
+                else:
+                    conflicted += 1
 
-            skipped = len(pending) - settled
-            self._pending.clear()
-            self._updatePendingBanner()
             self._flagConvertReload(("reward",))
             for tab in getattr(getattr(self, "_manager", None), "tabs", {}).values():
                 if hasattr(tab, "reward_data_dirty"):
                     tab.reward_data_dirty = True
-            if skipped:
-                msgWarning(
-                    "部分未更新", f"有 {skipped} 筆在發文前已被刪除，本次未變動")
-            msgInfo("完成", f"已成功更新 {settled} 筆發文日期（{issue_day}）")
+            partial, title, text = _reward_issue_result(
+                settled, issue_day, deleted, conflicted)
+            if partial:
+                msgWarning(title, text)
+            else:
+                msgInfo(title, text)
+            self._reloadPendingDocIds([doc_id for _, doc_id in pending])
         except Exception as exc:
             if conn:
                 conn.rollback()

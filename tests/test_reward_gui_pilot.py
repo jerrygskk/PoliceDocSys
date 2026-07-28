@@ -179,7 +179,7 @@ def test_reward_lifecycle_pilot(qtbot, reward_db, monkeypatch):
     assert not pending_banner.isHidden(), "待發: banner 應顯示"
     assert pending[1:3] == ("", None), "待發: DB 不得改變"
 
-    # 發文：production 保留該列，只更新第 3 欄並清除 pending/banner。
+    # 發文：reload 後已發文列移除，只保留仍未發文的原 doc_id。
     issue_date.setDate(QDate(2026, 7, 24))
     sender_index = issue_sender.findData("P01")
     assert sender_index >= 0, "發文: 找不到 P01"
@@ -190,8 +190,7 @@ def test_reward_lifecycle_pilot(qtbot, reward_db, monkeypatch):
         QDate.currentDate().toString("yyyy-MM-dd"),
         "2026-07-24", "P01", "更新後事由", "王小明,名單外甲",
     ), "發文: DB 日期、人員、事由或受獎人不符"
-    assert issue_table.rowCount() == 1, "發文: production 應保留該列"
-    assert issue_table.item(0, 3).text() == "2026-07-24", "發文: UI 日期"
+    assert issue_table.rowCount() == 0, "發文: 已發文列不應保留"
     assert pending_set == set(), "發文: pending 應清空"
     assert pending_banner.isHidden(), "發文: banner 應隱藏"
 

@@ -84,6 +84,38 @@ class TestRewardBrowse(unittest.TestCase):
         self.assertEqual(by_id["10"]["sender_name"], "趙發文")
         self.assertIsNone(by_id["2"]["sender_name"])   # 無 sender → JOIN 回 NULL
 
+    def test_entry_edit_conflict_keeps_external_issue_and_reloads_latest_values(self):
+        """登錄頁開啟後遭他機發文：本機輸入不寫入，提示後直接載入最新資料。"""
+        from ui_utils.reward_dialog import RewardEditDialog
+
+        dlg = RewardEditDialog(self.db, "2", source="entry")
+        self.addCleanup(dlg.deleteLater)
+        dlg.w_reason.setText("本機尚未儲存")
+        dlg.w_recipients.setCurrentText("本機人員")
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "UPDATE Document_Reward SET register_date='2026-07-29',"
+            "sender_id='P02',reason='他機最新事由',recipients='他機人員' "
+            "WHERE doc_id='2'")
+        conn.commit()
+        conn.close()
+
+        with patch("ui_utils.reward_dialog.msgWarning") as warn:
+            dlg._on_save()
+
+        warn.assert_called_once_with(
+            "資料已更新", "本筆資料已被其他電腦修改，本次未儲存。")
+        conn = sqlite3.connect(self.db)
+        row = conn.execute(
+            "SELECT register_date,sender_id,reason,recipients "
+            "FROM Document_Reward WHERE doc_id='2'").fetchone()
+        conn.close()
+        self.assertEqual(
+            row, ("2026-07-29", "P02", "他機最新事由", "他機人員"))
+        self.assertEqual(dlg.w_reason.text(), "他機最新事由")
+        self.assertEqual(dlg.w_recipients.currentText(), "他機人員")
+        self.assertIsNone(dlg.get_updated())
+
     def test_reward_is_lazy_loaded(self):
         tab = self._tab()
         tab.markLoaded()

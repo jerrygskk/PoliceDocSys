@@ -149,9 +149,10 @@ class TestRewardIssue(unittest.TestCase):
         confirm_text = confirm.call_args.args[1]
         self.assertIn("共 2 筆敘獎（其中 1 筆將覆蓋原發文日期）", confirm_text)
         warning.assert_called_once_with(
-            "部分未更新", "有 1 筆在發文前已被刪除，本次未變動")
-        info.assert_called_once_with(
-            "完成", "已成功更新 1 筆發文日期（2026-07-21）")
+            "部分未更新",
+            "已成功更新 1 筆發文日期（2026-07-21）\n"
+            "有 1 筆已被刪除，本次未變動")
+        info.assert_not_called()
 
         conn = sqlite3.connect(self.db_path)
         rows = dict(conn.execute(
@@ -163,13 +164,80 @@ class TestRewardIssue(unittest.TestCase):
         self.assertIsNone(senders["NEW"])
         self.assertEqual(rows["OLD"], "2026-07-21")
         self.assertEqual(senders["OLD"], 7)
-        self.assertEqual(self.tab.table.rowCount(), 2)
-        self.assertEqual(self.tab.table.item(0, 3).text(), "")
-        self.assertEqual(self.tab.table.item(1, 3).text(), "2026-07-21")
+        self.assertEqual(self.tab.table.rowCount(), 0)
         self.assertEqual(self.tab._pending, set())
         self.assertFalse(self.tab._pending_banner.isVisible())
         self.assertTrue(self.reward_page.reward_data_dirty)
         self.assertEqual(self.browse_page._pending_reload_keys, {"reward"})
+
+    def test_issue_splits_deleted_and_concurrently_issued_then_reloads(self):
+        self._insert("ISSUED", "")
+        self._insert("DELETED", "")
+        self._insert("OK", "")
+        self._query("ISSUED")
+        self._query("DELETED")
+        self._query("OK")
+
+        def race_during_confirmation(*_args, **_kwargs):
+            conn = sqlite3.connect(self.db_path)
+            conn.execute(
+                "UPDATE Document_Reward SET register_date='2026-07-20',"
+                "sender_id=8 WHERE doc_id='ISSUED'")
+            conn.execute(
+                "UPDATE Document_Reward SET register_date=NULL "
+                "WHERE doc_id='DELETED'")
+            conn.commit()
+            conn.close()
+            return True
+
+        with patch("tabs.tab_reward_issue.confirmBox",
+                   side_effect=race_during_confirmation), \
+                patch("tabs.tab_reward_issue.msgInfo") as info, \
+                patch("tabs.tab_reward_issue.msgWarning") as warning:
+            self.tab.handleIssue()
+
+        warning.assert_called_once_with(
+            "部分未更新",
+            "已成功更新 1 筆發文日期（2026-07-21）\n"
+            "有 1 筆已被刪除，本次未變動\n"
+            "有 1 筆已被他人發文，本次未變動",
+        )
+        info.assert_not_called()
+        conn = sqlite3.connect(self.db_path)
+        rows = dict(conn.execute(
+            "SELECT doc_id,register_date FROM Document_Reward"))
+        conn.close()
+        self.assertEqual(rows["ISSUED"], "2026-07-20")
+        self.assertIsNone(rows["DELETED"])
+        self.assertEqual(rows["OK"], "2026-07-21")
+        self.assertEqual(self.tab.table.rowCount(), 0)
+        self.assertEqual(self.tab._pending, set())
+
+    def test_issue_reload_preserves_only_original_doc_id_still_pending(self):
+        self._insert("OLD", "2026-06-30")
+        self._insert("NEW", "")
+        self._query("OLD")
+        self._query("NEW")
+
+        def return_old_to_pending(*_args, **_kwargs):
+            conn = sqlite3.connect(self.db_path)
+            conn.execute(
+                "UPDATE Document_Reward SET register_date='',sender_id=NULL "
+                "WHERE doc_id='OLD'")
+            conn.commit()
+            conn.close()
+            return True
+
+        with patch("tabs.tab_reward_issue.confirmBox",
+                   side_effect=return_old_to_pending), \
+                patch("tabs.tab_reward_issue.msgInfo"), \
+                patch("tabs.tab_reward_issue.msgWarning"):
+            self.tab.handleIssue()
+
+        self.assertEqual(self.tab.table.rowCount(), 1)
+        self.assertEqual(self.tab.table.item(0, 1).text(), "OLD")
+        self.assertEqual(self.tab.table.item(0, 3).text(), "")
+        self.assertEqual(self.tab._pending, {"OLD"})
 
     def test_issue_empty_sender_and_empty_list_are_rejected(self):
         with patch("tabs.tab_reward_issue.msgInfo") as info:
@@ -267,29 +335,27 @@ class TestRewardIssue(unittest.TestCase):
         self.assertFalse(self.reward_page.reward_data_dirty)
         self.assertEqual(self.browse_page._pending_reload_keys, set())
 
-    def test_issue_reissues_all_retained_rows_including_already_issued(self):
-        # 比照交辦發文送全列：保留的已發文列在下次發文會一併被覆蓋重發。
+    def test_issue_reload_removes_issued_rows_and_requery_allows_reissue(self):
         self._insert("FIRST", "")
         self._query("FIRST")
         with patch("tabs.tab_reward_issue.confirmBox", return_value=True), \
                 patch("tabs.tab_reward_issue.msgInfo"):
             self.tab.handleIssue()
 
-        self.assertEqual(self.tab.table.rowCount(), 1)
-        self.assertEqual(self.tab.table.item(0, 3).text(), "2026-07-21")
+        self.assertEqual(self.tab.table.rowCount(), 0)
         self.assertEqual(self.tab._pending, set())
 
         self._insert("SECOND", "")
+        self._query("FIRST")
         self._query("SECOND")
         self.assertEqual(self.tab.table.rowCount(), 2)
-        self.assertEqual(self.tab._pending, {"SECOND"})
+        self.assertEqual(self.tab._pending, {"FIRST", "SECOND"})
         self.tab.issue_date.setDate(QDate(2026, 7, 22))
 
         with patch("tabs.tab_reward_issue.confirmBox", return_value=True) as confirm, \
                 patch("tabs.tab_reward_issue.msgInfo"):
             self.tab.handleIssue()
 
-        # 送全列：FIRST（已發文，將覆蓋）＋ SECOND（未發文），共 2 筆
         self.assertIn("共 2 筆敘獎（其中 1 筆將覆蓋原發文日期）",
                       confirm.call_args.args[1])
         conn = sqlite3.connect(self.db_path)
@@ -300,25 +366,21 @@ class TestRewardIssue(unittest.TestCase):
             "FIRST": "2026-07-22",
             "SECOND": "2026-07-22",
         })
-        self.assertEqual(self.tab.table.rowCount(), 2)
-        self.assertEqual(self.tab.table.item(0, 3).text(), "2026-07-22")
-        self.assertEqual(self.tab.table.item(1, 3).text(), "2026-07-22")
+        self.assertEqual(self.tab.table.rowCount(), 0)
         self.assertEqual(self.tab._pending, set())
         self.assertTrue(self.tab._pending_banner.isHidden())
 
-    def test_issue_resends_retained_rows_and_still_guards_sender(self):
-        # 保留列（_pending 已空）仍參與送全列：sender guard 生效、有效送文者則重發。
+    def test_requeried_issued_row_still_guards_sender_and_can_reissue(self):
         self._insert("DONE", "")
         self._query("DONE")
         with patch("tabs.tab_reward_issue.confirmBox", return_value=True), \
                 patch("tabs.tab_reward_issue.msgInfo"):
             self.tab.handleIssue()
 
-        self.assertEqual(self.tab.table.rowCount(), 1)
+        self.assertEqual(self.tab.table.rowCount(), 0)
         self.assertEqual(self.tab._pending, set())
-        self.assertEqual(self.tab.table.item(0, 3).text(), "2026-07-21")
 
-        # _pending 已空，但保留列仍被收集 → 未選送文者時擋下、不進 confirm
+        self._query("DONE")
         self.tab.issue_sender.setCurrentIndex(0)
         with patch("tabs.tab_reward_issue.msgWarning") as warning, \
                 patch("tabs.tab_reward_issue.confirmBox") as confirm:
@@ -326,7 +388,6 @@ class TestRewardIssue(unittest.TestCase):
         warning.assert_called_once_with("欄位未填", "請選擇發文人員。")
         confirm.assert_not_called()
 
-        # 選回有效送文者、改日期 → 保留列被重發（退件重發，免重掃）
         self.tab.issue_sender.setCurrentIndex(1)
         self.tab.issue_date.setDate(QDate(2026, 7, 22))
         with patch("tabs.tab_reward_issue.confirmBox", return_value=True) as confirm, \
@@ -339,7 +400,7 @@ class TestRewardIssue(unittest.TestCase):
             "SELECT register_date FROM Document_Reward WHERE doc_id='DONE'").fetchone()
         conn.close()
         self.assertEqual(row[0], "2026-07-22")
-        self.assertEqual(self.tab.table.item(0, 3).text(), "2026-07-22")
+        self.assertEqual(self.tab.table.rowCount(), 0)
 
     def test_ref_changed_refreshes_sender_choices_and_clears_flag(self):
         conn = sqlite3.connect(self.db_path)
