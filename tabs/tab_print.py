@@ -1110,15 +1110,15 @@ class TabPrint(BaseTab):
             self.lbl_unissued.setText("未發文：—")
 
     def _on_settle(self):
-        """開啟結算彈窗，結算成功後自動設今日日期並產生簽收表。"""
+        """開啟結算彈窗，成功後以實際結算日自動產生簽收表。"""
         from ui_utils.settle_dialog import SettleDialog
         dlg = SettleDialog(self.db_path, parent=self.tab_widget)
         dlg.exec()
         if dlg.settled():
             self._refresh_settle_group()
-            # 結算後自動設今日日期並產生簽收表（一條龍動線）
+            # 結算後以對話框實際選定的發文日產生簽收表（一條龍動線）
             if self.date_edit:
-                self.date_edit.setDate(QDate.currentDate())
+                self.date_edit.setDate(dlg.settledDate())
             self._on_generate()
 
     def on_activated(self):

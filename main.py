@@ -80,7 +80,7 @@ from PySide6.QtGui import QFont
 from lib.theme import APPLE_STYLE
 from lib.version import __version__
 from lib.db_utils import getResourcePath
-from ui_utils import loadUi, msgInfo
+from ui_utils import loadUi, msgInfo, installDateEditWheelGuard
 from lib.auth_manager import AuthManager
 from lib.app_profile import AppProfile, FULL_PROFILE
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）
@@ -591,6 +591,7 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
     # 共用入口依 profile 重設未捕捉例外來源，避免獨立版記成完整版產品。
     _setup_error_handler(profile.product_name)
     app = QApplication(sys.argv)
+    installDateEditWheelGuard(app)
     app.setFont(QFont("Microsoft JhengHei", 14))
     app.setStyleSheet(APPLE_STYLE)
 

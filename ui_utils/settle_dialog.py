@@ -8,24 +8,26 @@ settle_dialog.py — 自助取號模式「結算發文」彈窗
   - 全選核取方塊：三態顯示「顯示中列」全勾/部分/全不勾，點擊只勾/取消顯示中列
   - 底部即時計數（將結算 N 筆｜排除 m 筆）
   - 確認後同一 transaction 逐類別批次 UPDATE：刑案／一般補
-    report_date=今日+sender_id；任一步失敗則 rollback
+    report_date=選定發文日期+sender_id；任一步失敗則 rollback
   - 送文者僅在勾選中含「需送文者」型態時才必填
   - 開放擴充（open-closed）：日後新增類別只需再加一筆 SETTLE_META
 """
-from datetime import date
-
-from PySide6.QtCore    import Qt, QObject, QEvent
+from PySide6.QtCore    import Qt, QObject, QEvent, QDate, QRect, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox,
     QTableWidget, QTableWidgetItem, QAbstractItemView,
-    QHeaderView, QSizePolicy, QFrame, QCheckBox, QWidget, QButtonGroup,
+    QHeaderView, QSizePolicy, QFrame, QCheckBox, QWidget, QButtonGroup, QDateEdit,
+    QStyle, QStyleOptionButton,
 )
 from PySide6.QtGui     import QColor
 
 from lib.db_utils    import getConn, loadActivePersonnel
 from lib.archive_text import _trimName
-from ui_utils.ui_common import msgInfo, msgWarning, confirmBox, reportError
+from ui_utils.ui_common import (
+    BTN_CANCEL, BTN_CONFIRM, confirmBox, msgInfo, msgWarning, reportError,
+)
+from ui_utils.widgets import setupDateEditToToday
 
 _ORANGE = QColor("#e67e22")
 _GRAY   = QColor("#aeaeb2")
@@ -37,7 +39,7 @@ _BLACK  = QColor("#000000")
 #   label       類型欄顯示文字
 #   color       類型欄前景色
 #   query       查未發文列 SQL，回三欄 (doc_id, 承辦人, 主旨)
-#   update      結算補值 SQL（with_sender 帶 (today, sender_id, doc_id)，否則 (today, doc_id)）
+#   update      結算補值 SQL（with_sender 帶 (issue_date, sender_id, doc_id)，否則 (issue_date, doc_id)）
 #   with_sender 結算時是否需選送文者（現行三型態皆需；False 分支留給日後不需送文者的型態）
 #   strict      rowcount!=1 是否視為併發衝突並整批 rollback（罰單為 True；
 #               刑案／一般沿用既有「部分結算」語意，預設 False）
@@ -61,7 +63,8 @@ SETTLE_META = (
             "  AND subject_summary IS NOT NULL AND subject_summary != ''"
         ),
         "update": ("UPDATE Document_Criminal SET report_date=?, sender_id=? "
-                   "WHERE doc_id=? AND (report_date IS NULL OR report_date='')"),
+                   "WHERE doc_id=? AND (report_date IS NULL OR report_date='') "
+                   "AND subject_summary IS NOT NULL AND subject_summary != ''"),
         "with_sender": True,
     },
     {
@@ -83,7 +86,8 @@ SETTLE_META = (
             "  AND subject IS NOT NULL AND subject != ''"
         ),
         "update": ("UPDATE Document_General SET report_date=?, sender_id=? "
-                   "WHERE doc_id=? AND (report_date IS NULL OR report_date='')"),
+                   "WHERE doc_id=? AND (report_date IS NULL OR report_date='') "
+                   "AND subject IS NOT NULL AND subject != ''"),
         "with_sender": True,
     },
     {
@@ -113,36 +117,17 @@ SETTLE_META = (
 
 _META_BY_KEY = {m["key"]: m for m in SETTLE_META}
 
-_DLG_SS = """
-QDialog, QWidget { background-color: #ffffff; color: #000000; }
-QLabel            { color: #1c1c1e; font-size: 13pt; }
-QLineEdit {
-    background-color: #ffffff; color: #1c1c1e;
-    border: 1px solid #c6c6c8; border-radius: 4px;
-    padding: 4px 8px; font-size: 13pt;
+_SURFACE_SS = """
+QDialog, QWidget {
+    background-color: #ffffff;
+    color: #000000;
 }
-QLineEdit:focus { border-color: #8fa8c8; }
-QComboBox {
-    background-color: #ffffff; color: #1c1c1e;
-    border: 1px solid #c6c6c8; border-radius: 4px;
-    padding: 4px 8px; font-size: 13pt;
-}
-QComboBox:hover { border-color: #8fa8c8; }
-QComboBox:disabled { background-color: #f2f2f7; color: #aeaeb2; }
-QComboBox QAbstractItemView {
-    background-color: #ffffff; border: 1px solid #c6c6c8;
-    border-radius: 8px; outline: none;
-    selection-background-color: #6e8fac; selection-color: #ffffff;
-}
-QComboBox QAbstractItemView::item {
-    color: #1c1c1e; padding: 4px 8px; min-height: 28px;
-}
-QComboBox QAbstractItemView::item:hover { background-color: #e5e5ea; }
-QComboBox QAbstractItemView::item:selected { background-color: #6e8fac; color: #ffffff; }
+"""
+
+_TABLE_SS = """
 QTableWidget {
     background-color: #ffffff; color: #1c1c1e;
     border: 1px solid #d1d1d6; gridline-color: #e5e5ea;
-    font-size: 13pt;
 }
 QTableWidget::item { padding: 2px 4px; }
 QTableWidget::item:hover { background-color: transparent; }
@@ -151,41 +136,18 @@ QHeaderView::section {
     padding: 4px 6px; border: none;
     border-right: 1px solid #e5e5ea;
     border-bottom: 1px solid #d1d1d6;
-    font-size: 12pt; font-weight: 600;
-}
-QCheckBox { color: #1c1c1e; spacing: 6px; }
-QCheckBox::indicator {
-    width: 18px; height: 18px;
-    border: 1.5px solid #c6c6c8; border-radius: 4px;
-    background-color: #ffffff;
-}
-QCheckBox::indicator:checked {
-    background-color: #8fa8c8; border-color: #8fa8c8;
+    font-size: 13pt; font-weight: 600;
 }
 QCheckBox::indicator:indeterminate {
     background-color: #c6d3e2; border-color: #8fa8c8;
 }
-QCheckBox:disabled { color: #aeaeb2; }
-QCheckBox::indicator:disabled {
-    background-color: #e5e5ea; border-color: #d1d1d6;
-}
-QPushButton {
-    background-color: #a1b4cb; color: #ffffff;
-    border: none; border-radius: 8px;
-    padding: 8px 20px; font-size: 13pt; font-weight: 600;
-}
-QPushButton:hover    { background-color: #4977b1; }
-QPushButton:pressed  { background-color: #39649a; }
-QPushButton:disabled { background-color: #d1d9e3; color: #ffffff; }
-QPushButton#btn_cancel {
-    background-color: #f2f2f7; color: #1c1c1e;
-    border: 1px solid #d1d1d6;
-}
-QPushButton#btn_cancel:hover { background-color: #e5e5ea; }
+"""
+
+_CHIP_SS = """
 QPushButton#chip {
     background-color: #eef2f7; color: #3a3a3c;
     border: 1px solid #d1d9e3; border-radius: 13px;
-    padding: 4px 14px; font-size: 12pt; font-weight: 500;
+    padding: 4px 14px; font-weight: 500;
 }
 QPushButton#chip:hover   { background-color: #e0e7f0; }
 QPushButton#chip:checked {
@@ -258,7 +220,7 @@ class SettlementConflict(Exception):
     pass
 
 
-def settle_selected(conn, selected, today_str, sender_id):
+def settle_selected(conn, selected, issue_date_str, sender_id):
     """依 SETTLE_META 逐類別批次執行結算 UPDATE，回傳實際結算筆數。
 
     - `selected`：{key: [doc_id, ...]}（通常為 `_DocTable.checked_by_key()` 結果）
@@ -277,9 +239,9 @@ def settle_selected(conn, selected, today_str, sender_id):
         for meta in SETTLE_META:
             for doc_id in selected.get(meta["key"], []):
                 if meta["with_sender"]:
-                    cur = conn.execute(meta["update"], (today_str, sender_id, doc_id))
+                    cur = conn.execute(meta["update"], (issue_date_str, sender_id, doc_id))
                 else:
-                    cur = conn.execute(meta["update"], (today_str, doc_id))
+                    cur = conn.execute(meta["update"], (issue_date_str, doc_id))
                 if meta.get("strict") and cur.rowcount != 1:
                     raise SettlementConflict(
                         f"{meta['label']}（編號 {doc_id}）已由其他電腦發文或刪除，"
@@ -292,6 +254,77 @@ def settle_selected(conn, selected, today_str, sender_id):
     return settled_n
 
 
+class _CheckableHeader(QHeaderView):
+    """在第一欄 section 內原生繪製三態核取方塊的表頭。"""
+
+    clicked = Signal(bool)
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self._check_state = Qt.Unchecked
+        # 只借用 QCheckBox 的 theme metrics／繪製器，不顯示也不疊在表頭上。
+        # 如此表頭與資料列 indicator 的尺寸、顏色仍完全一致。
+        self._indicator_style = QCheckBox()
+        self._indicator_style.setStyleSheet("QCheckBox { spacing: 0px; }")
+        self.setSectionsClickable(True)
+
+    def checkState(self):
+        return self._check_state
+
+    def setCheckState(self, state):
+        if self._check_state == state:
+            return
+        self._check_state = state
+        self.updateSection(0)
+
+    def _section_rect(self, logical_index):
+        return QRect(
+            self.sectionViewportPosition(logical_index),
+            0,
+            self.sectionSize(logical_index),
+            self.height(),
+        )
+
+    def indicatorRect(self, logical_index=0):
+        """回傳 indicator 在 header viewport 內的實際繪製範圍。"""
+        section_rect = self._section_rect(logical_index)
+        option = QStyleOptionButton()
+        option.initFrom(self._indicator_style)
+        native_rect = self._indicator_style.style().subElementRect(
+            QStyle.SE_CheckBoxIndicator, option, self._indicator_style)
+        indicator_rect = QRect(0, 0, native_rect.width(), native_rect.height())
+        indicator_rect.moveCenter(section_rect.center())
+        return indicator_rect
+
+    def paintSection(self, painter, rect, logical_index):
+        super().paintSection(painter, rect, logical_index)
+        if logical_index != 0:
+            return
+
+        option = QStyleOptionButton()
+        option.initFrom(self._indicator_style)
+        option.rect = self.indicatorRect(logical_index)
+        option.state &= ~(
+            QStyle.State_On | QStyle.State_Off | QStyle.State_NoChange)
+        if self._check_state == Qt.Checked:
+            option.state |= QStyle.State_On
+        elif self._check_state == Qt.PartiallyChecked:
+            option.state |= QStyle.State_NoChange
+        else:
+            option.state |= QStyle.State_Off
+        self._indicator_style.style().drawPrimitive(
+            QStyle.PE_IndicatorCheckBox, option, painter,
+            self._indicator_style)
+
+    def mouseReleaseEvent(self, event):
+        if (event.button() == Qt.LeftButton
+                and self.logicalIndexAt(event.position().toPoint()) == 0):
+            self.clicked.emit(self._check_state != Qt.Checked)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class _DocTable(QTableWidget):
     """單一結算清單表格（刑案／一般混列，依 SETTLE_META 分組）。"""
 
@@ -300,6 +333,8 @@ class _DocTable(QTableWidget):
 
     def __init__(self, parent=None):
         super().__init__(0, 5, parent)
+        self.setStyleSheet(_TABLE_SS)
+        self.setHorizontalHeader(_CheckableHeader(Qt.Horizontal, self))
         self.setHorizontalHeaderLabels(self.HEADERS)
         self.verticalHeader().setVisible(False)
         self.setSelectionMode(QAbstractItemView.NoSelection)
@@ -319,34 +354,9 @@ class _DocTable(QTableWidget):
         # 滾輪攔截（踩雷表 #3：滾輪事件在 viewport）
         self._wheel_filter = _WheelFilter(self)
         self.viewport().installEventFilter(self._wheel_filter)
-        # 全選核取方塊：直接放在表頭勾選欄上（免文字說明，tooltip 補充）。
-        # 與列內勾選框同一置中方式（容器＋AlignCenter，容器鋪滿該欄），
-        # 確保與資料列的勾選框水平垂直皆對齊；勿改回 sizeHint 手算位移
-        # （QCheckBox 無文字時 sizeHint 含 spacing 留白，indicator 會偏左上）。
-        self._chk_all_cont = QWidget(hdr)
-        self._chk_all_cont.setStyleSheet("background: transparent;")
-        _hl = QHBoxLayout(self._chk_all_cont)
-        _hl.setContentsMargins(0, 0, 0, 0)
-        _hl.setAlignment(Qt.AlignCenter)
-        self.chk_all = QCheckBox()
-        self.chk_all.setTristate(True)
-        self.chk_all.setFocusPolicy(Qt.NoFocus)
-        _hl.addWidget(self.chk_all)
-        hdr.installEventFilter(self)
-        hdr.sectionResized.connect(lambda *_: self._place_header_chk())
-        self._place_header_chk()
-
-    def _place_header_chk(self):
-        hdr = self.horizontalHeader()
-        self._chk_all_cont.setGeometry(
-            hdr.sectionViewportPosition(self.COL_CHK), 0,
-            self.columnWidth(self.COL_CHK), hdr.height())
-
-    def eventFilter(self, obj, event):
-        if (obj is self.horizontalHeader()
-                and event.type() in (QEvent.Resize, QEvent.Show)):
-            self._place_header_chk()
-        return super().eventFilter(obj, event)
+        # 保留 SettleDialog 對 chk_all 的三態／clicked 使用契約；實體就是表頭，
+        # 不再於 header viewport 上疊加 QWidget/QCheckBox。
+        self.chk_all = hdr
 
     def _make_chk_widget(self, checked=True):
         """建一個置中的 QCheckBox 容器（視覺用，列點擊才觸發 toggle）。"""
@@ -356,6 +366,7 @@ class _DocTable(QTableWidget):
         hl.setContentsMargins(0, 0, 0, 0)
         hl.setAlignment(Qt.AlignCenter)
         cb = QCheckBox()
+        cb.setStyleSheet("QCheckBox { spacing: 0px; }")
         cb.setChecked(checked)
         cb.setAttribute(Qt.WA_TransparentForMouseEvents)  # 滑鼠事件交給列點擊
         cb.setFocusPolicy(Qt.NoFocus)
@@ -502,8 +513,9 @@ class SettleDialog(QDialog):
         self.setWindowTitle("結算發文")
         self.setMinimumWidth(1000)
         self.setMinimumHeight(620)
-        self.setStyleSheet(_DLG_SS)
+        self.setStyleSheet(_SURFACE_SS)
         self._settled = False
+        self._settled_date = None
         self._build()
         self._load()
 
@@ -518,19 +530,20 @@ class SettleDialog(QDialog):
         top.setSpacing(10)
 
         cap_date = QLabel("發文日期")
-        cap_date.setStyleSheet("font-size: 11pt; color: #8e8e93; font-weight: 500;")
+        cap_date.setStyleSheet("color: #8e8e93; font-weight: 500;")
         top.addWidget(cap_date)
 
-        chip_date = QLabel(date.today().strftime("%Y/%m/%d"))
-        chip_date.setStyleSheet(
-            "font-size: 14pt; font-weight: 600; color: #39649a;"
-            "background-color: #eef4fb; border: 1px solid #d6e3f0;"
-            "border-radius: 13px; padding: 3px 14px;")
-        top.addWidget(chip_date)
+        self.issue_date = QDateEdit()
+        self.issue_date.setDate(QDate.currentDate())
+        self.issue_date.setDisplayFormat("yyyy-MM-dd")
+        self.issue_date.setCalendarPopup(True)
+        self.issue_date.setMinimumWidth(220)
+        setupDateEditToToday(self.issue_date)
+        top.addWidget(self.issue_date)
 
         top.addSpacing(28)
         cap_sender = QLabel("送文者")
-        cap_sender.setStyleSheet("font-size: 11pt; color: #8e8e93; font-weight: 500;")
+        cap_sender.setStyleSheet("color: #8e8e93; font-weight: 500;")
         top.addWidget(cap_sender)
         self.cmb_sender = QComboBox()
         self.cmb_sender.setMinimumWidth(230)
@@ -546,6 +559,7 @@ class SettleDialog(QDialog):
         self._chips = {}
         chip_all = QPushButton("全部 0")
         chip_all.setObjectName("chip")
+        chip_all.setStyleSheet(_CHIP_SS)
         chip_all.setCheckable(True)
         chip_all.setChecked(True)
         chip_all.setCursor(Qt.PointingHandCursor)
@@ -555,6 +569,7 @@ class SettleDialog(QDialog):
         for meta in SETTLE_META:
             b = QPushButton(f"{meta['label']} 0")
             b.setObjectName("chip")
+            b.setStyleSheet(_CHIP_SS)
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
             self._chips[meta["key"]] = b
@@ -588,12 +603,13 @@ class SettleDialog(QDialog):
         bot = QHBoxLayout()
         bot.setSpacing(12)
         self.lbl_count = QLabel("將結算 0 筆｜排除 0 筆")
-        self.lbl_count.setStyleSheet("color: #3a3a3c; font-size: 12pt;")
+        self.lbl_count.setStyleSheet("color: #3a3a3c;")
         bot.addWidget(self.lbl_count)
         bot.addStretch()
         self.btn_confirm = QPushButton("確認結算")
         self.btn_cancel  = QPushButton("取消")
-        self.btn_cancel.setObjectName("btn_cancel")
+        self.btn_confirm.setStyleSheet(BTN_CONFIRM)
+        self.btn_cancel.setStyleSheet(BTN_CANCEL)
         bot.addWidget(self.btn_confirm)
         bot.addWidget(self.btn_cancel)
         root.addLayout(bot)
@@ -722,12 +738,13 @@ class SettleDialog(QDialog):
             return
 
         sender_name = self.cmb_sender.currentText()
-        today_str   = date.today().strftime("%Y-%m-%d")
-        today_disp  = date.today().strftime("%Y 年 %m 月 %d 日")
+        issue_date = self.issue_date.date()
+        issue_date_str = issue_date.toString("yyyy-MM-dd")
+        issue_date_disp = issue_date.toString("yyyy 年 MM 月 dd 日")
         excl_count  = self._tbl.excluded_count()
         parts = self._count_parts(counts)
 
-        msg_lines = [f"發文日期：{today_disp}"]
+        msg_lines = [f"發文日期：{issue_date_disp}"]
         if need_sender:
             msg_lines.append(f"送文者：{sender_name}")
         msg_lines.append(f"將結算 {total} 筆（{parts}）" if parts
@@ -743,7 +760,7 @@ class SettleDialog(QDialog):
         try:
             conn = getConn(self.db_path)
             try:
-                settled_n = settle_selected(conn, by, today_str, sender_id)
+                settled_n = settle_selected(conn, by, issue_date_str, sender_id)
             finally:
                 conn.close()
         except SettlementConflict as e:
@@ -756,6 +773,15 @@ class SettleDialog(QDialog):
             reportError("結算失敗", e, parent=self)
             return
 
+        if settled_n == 0:
+            msgWarning(
+                "沒有公文完成結算",
+                "勾選的公文在確認前已由其他電腦發文或刪除，"
+                "沒有任何公文完成結算，請確認最新清單後再試。",
+                parent=self)
+            self._load()
+            return
+
         skipped = total - settled_n
         if skipped > 0:
             msgInfo("部分公文未結算",
@@ -763,8 +789,13 @@ class SettleDialog(QDialog):
                     f"實際結算 {settled_n} 筆。")
 
         self._settled = True
+        self._settled_date = QDate(issue_date)
         self.accept()
 
     def settled(self):
         """結算是否成功完成。"""
         return self._settled
+
+    def settledDate(self):
+        """回傳成功結算時實際寫入的日期快照；未成功則為 None。"""
+        return QDate(self._settled_date) if self._settled_date is not None else None

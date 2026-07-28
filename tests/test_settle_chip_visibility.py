@@ -203,6 +203,80 @@ class TestSettleCompletionRefresh(unittest.TestCase):
 
         fake._settle_group.setVisible.assert_called_with(False)
 
+    def test_successful_settlement_generates_receipt_for_selected_date(self):
+        """一條龍列印必須帶結算彈窗選定的日期，不可回填今天。"""
+        from PySide6.QtCore import QDate
+        from PySide6.QtWidgets import QApplication, QLabel
+        from tabs.tab_print import TabPrint
+
+        QApplication.instance() or QApplication([])
+        date_edit = Mock()
+        fake = SimpleNamespace(
+            db_path=self._path,
+            tab_widget=None,
+            date_edit=date_edit,
+            _settle_group=Mock(),
+            lbl_unissued=QLabel(),
+            _on_generate=Mock(),
+        )
+        fake._refresh_unissued = lambda counts=None, unavailable=False: TabPrint._refresh_unissued(
+            fake, counts, unavailable)
+        fake._refresh_settle_group = lambda: TabPrint._refresh_settle_group(fake)
+
+        class SelectedDateSettlement:
+            def __init__(self, db_path, parent=None):
+                pass
+
+            def exec(self):
+                pass
+
+            def settled(self):
+                return True
+
+            def settledDate(self):
+                return QDate(2026, 7, 9)
+
+        with patch("ui_utils.settle_dialog.SettleDialog", SelectedDateSettlement):
+            TabPrint._on_settle(fake)
+
+        date_edit.setDate.assert_called_once_with(QDate(2026, 7, 9))
+        fake._on_generate.assert_called_once_with()
+
+    def test_unsuccessful_settlement_does_not_generate_receipt(self):
+        """零筆成功的對話框結果不得觸發自動列印。"""
+        from PySide6.QtWidgets import QApplication, QLabel
+        from tabs.tab_print import TabPrint
+
+        QApplication.instance() or QApplication([])
+        date_edit = Mock()
+        fake = SimpleNamespace(
+            db_path=self._path,
+            tab_widget=None,
+            date_edit=date_edit,
+            _settle_group=Mock(),
+            lbl_unissued=QLabel(),
+            _on_generate=Mock(),
+        )
+
+        class NoSuccessfulSettlement:
+            def __init__(self, db_path, parent=None):
+                pass
+
+            def exec(self):
+                pass
+
+            def settled(self):
+                return False
+
+            def settledDate(self):
+                return None
+
+        with patch("ui_utils.settle_dialog.SettleDialog", NoSuccessfulSettlement):
+            TabPrint._on_settle(fake)
+
+        date_edit.setDate.assert_not_called()
+        fake._on_generate.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

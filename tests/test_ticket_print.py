@@ -507,6 +507,25 @@ class TestQueryTicketPrintRows(unittest.TestCase):
         created_rows = queryTicketPrintRows(self.db_path, "2026-07-20")
         self.assertNotIn("SELF20260720", [r["ticket_no"] for r in created_rows])
 
+    def test_ticket_settled_to_selected_past_date_prints_on_that_date(self):
+        """結算選定日期必須直接成為罰單簽收表的查詢日期。"""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            doc_id = createTicket(
+                conn, issuer_id="P1", ticket_no="SELECTED20260709", self_service=True,
+                sender_id=None, create_date="2026-07-20", role="user")
+            conn.commit()
+            self.assertEqual(
+                settle_selected(conn, {"crim": [], "gen": [], "ticket": [doc_id]},
+                                "2026-07-09", "P1"),
+                1,
+            )
+        finally:
+            conn.close()
+
+        selected_rows = queryTicketPrintRows(self.db_path, "2026-07-09")
+        self.assertIn("SELECTED20260709", [r["ticket_no"] for r in selected_rows])
+
     def test_issued_rows_exclude_unissued_and_keep_ticket_sort_order(self):
         rows = queryTicketPrintRows(self.db_path, "2026-07-23")
         ticket_nos = [row["ticket_no"] for row in rows]

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup,
 )
 
-from .ui_common import msgWarning
+from .ui_common import confirmBox, msgWarning, reportError
 
 # ── 面板共用樣式 ───────────────────────────────────────────────────
 # 白卡片＋標題浮框；子元件顏色皆明設（§2 雷：新 Widget 繼承全域深色會看不見）。
@@ -86,6 +86,23 @@ _SAVE_SS = """
     QPushButton:pressed  { background-color: #39649a; }
     QPushButton:disabled { background-color: #d1d9e3; color: #ffffff; }
 """
+
+
+def mode_residue_warning(transitions, counts):
+    """回傳切回送文者模式且仍有未發文資料的正式提醒文字。"""
+    labels = {
+        "crim": ("件", "刑案陳報"),
+        "gen": ("件", "一般陳報"),
+        "ticket": ("張", "罰單"),
+    }
+    lines = []
+    for kind, (old_self, new_self) in transitions.items():
+        count = counts.get(kind, 0)
+        if old_self and not new_self and count > 0:
+            unit, label = labels[kind]
+            lines.append(
+                f"目前有 {count} {unit}{label}尚未發文，切換後仍需到「簽收單列印」頁結算。")
+    return "\n".join(lines) or None
 
 
 def _save_row(layout, extra_left=None):
@@ -984,10 +1001,29 @@ class InputModePanel(_SettingsPanel):
             return False
         am = AuthManager.instance()
         labels = dict(self._ROWS)
+        transitions = {
+            kind: (isSelfServiceMode(self.db_path, kind), rb_self.isChecked())
+            for kind, (_, rb_self) in self._radios.items()
+        }
+        if any(old_self and not new_self
+               for old_self, new_self in transitions.values()):
+            from ui_utils.settle_dialog import count_unissued
+            try:
+                counts = count_unissued(self.db_path)
+            except Exception as e:
+                reportError("讀取未發文資料失敗", e, parent=self)
+                self.reload()
+                return False
+            warning = mode_residue_warning(transitions, counts)
+            if warning and not confirmBox(
+                    "提醒", warning, confirm_text="仍要切換", cancel_text="取消",
+                    default_confirm=False, parent=self):
+                self.reload()
+                return False
         for kind, (rb_sender, rb_self) in self._radios.items():
             label_text = labels[kind]
             new_self = rb_self.isChecked()
-            old_self = isSelfServiceMode(self.db_path, kind)
+            old_self = transitions[kind][0]
             setSetting(self.db_path, REPORT_MODE_KEYS[kind], "1" if new_self else "0")
             if new_self != old_self:
                 name = lambda s: "自助取號" if s else "送文者輸入"  # noqa: E731

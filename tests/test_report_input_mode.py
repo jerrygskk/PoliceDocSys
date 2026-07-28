@@ -4,7 +4,6 @@ test_report_input_mode.py — 自助取號模式純邏輯測試
 涵蓋：
   - isSelfServiceMode：未設定＝False、"1"＝True、壞值 fallback False
   - 結算 SQL round-trip：勾選補值、排除維持 NULL、trigger 更新 last_modified
-    （結算不寫稽核 LOG——量大無意義，維護者決策）
   - 待歸檔查詢排除未發文（report_date IS NULL 者不回傳）
 """
 import sqlite3
@@ -228,7 +227,7 @@ class TestPerKindMode(unittest.TestCase):
 
 
 class TestSettleRoundTrip(unittest.TestCase):
-    """結算 SQL round-trip：補值、排除、稽核、trigger。"""
+    """結算 SQL round-trip：補值、排除、trigger。"""
 
     def setUp(self):
         self.conn = _make_db()
@@ -520,6 +519,13 @@ class TestSettleSelectedAtomicity(unittest.TestCase):
         finally:
             conn.close()
 
+    def _read_rows(self, sql):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return conn.execute(sql).fetchall()
+        finally:
+            conn.close()
+
     def _criminal_report_date(self):
         return self._read_row(
             "SELECT report_date FROM Document_Criminal "
@@ -529,6 +535,26 @@ class TestSettleSelectedAtomicity(unittest.TestCase):
         return self._read_row(
             "SELECT register_date FROM Document_Ticket "
             "WHERE doc_id='T0050'")[0]
+
+    def _add_general_for_settlement(self):
+        self.conn.execute(
+            "INSERT INTO Document_General "
+            "(doc_id, report_date, sender_id, dept_id, gen_cat_id, subject, processor_id) "
+            "VALUES ('G0050', NULL, NULL, 'D01', 'GC01', '混合結算一般', 'P001')")
+        self.conn.commit()
+
+    def test_selected_non_today_issue_date_round_trips_all_three_types(self):
+        """選擇過去的發文日，刑案、一般與罰單都必須原樣寫入。"""
+        from ui_utils.settle_dialog import settle_selected
+        self._add_general_for_settlement()
+
+        selected = {"crim": ["C0050"], "gen": ["G0050"], "ticket": ["T0050"]}
+        self.assertEqual(settle_selected(self.conn, selected, "2026-07-09", "P001"), 3)
+        self.assertEqual(self._criminal_report_date(), "2026-07-09")
+        self.assertEqual(
+            self._read_row("SELECT report_date FROM Document_General WHERE doc_id='G0050'")[0],
+            "2026-07-09")
+        self.assertEqual(self._ticket_register_date(), "2026-07-09")
 
     def test_mixed_settlement_rolls_back_on_ticket_conflict(self):
         from ui_utils.settle_dialog import SettlementConflict, settle_selected
@@ -565,15 +591,6 @@ class TestSettleSelectedAtomicity(unittest.TestCase):
         # 只驗 trigger 確實有寫入而非 NULL（NULL 代表 trigger 未觸發，指紋算不出來）。
         self.assertIsNotNone(after)
 
-    def test_settlement_writes_no_audit_row(self):
-        # 結算不寫稽核 LOG 是既有維護者決策（量大無查核意義，見 DEVELOPER
-        # 「自助取號模式」§3），本測試鎖住此行為避免日後不小心補寫造成雙軌。
-        from ui_utils.settle_dialog import settle_selected
-        settle_selected(self.conn, {"crim": ["C0050"], "gen": [], "ticket": ["T0050"]},
-                         "2026-07-23", "P001")
-        rows = self._read_row("SELECT COUNT(*) FROM Audit_Log")
-        self.assertEqual(rows[0], 0)
-
     def test_non_strict_type_conflict_skips_without_raising(self):
         """刑案／一般沿用既有部分結算語意：非 strict 型態衝突不 raise、不 rollback。"""
         from ui_utils.settle_dialog import settle_selected
@@ -587,6 +604,49 @@ class TestSettleSelectedAtomicity(unittest.TestCase):
         self.assertEqual(settled_n, 1)  # 只有罰單真的被結算
         self.assertEqual(self._criminal_report_date(), "2026-07-22")  # 維持原值
         self.assertEqual(self._ticket_register_date(), "2026-07-23")
+
+    def test_criminal_soft_deleted_after_load_is_not_revived_or_audited(self):
+        """載入後被軟刪除的刑案空殼不得被結算 UPDATE 復活。"""
+        from ui_utils.settle_dialog import settle_selected
+        self.conn.execute(
+            "UPDATE Document_Criminal "
+            "SET report_date=NULL, sender_id=NULL, subject_summary=NULL "
+            "WHERE doc_id='C0050'")
+        self.conn.commit()
+
+        settled_n = settle_selected(
+            self.conn, {"crim": ["C0050"], "gen": [], "ticket": []},
+            "2026-07-23", "P001")
+
+        self.assertEqual(settled_n, 0)
+        self.assertEqual(
+            self._read_row(
+                "SELECT report_date, sender_id, subject_summary "
+                "FROM Document_Criminal WHERE doc_id='C0050'"),
+            (None, None, None))
+        self.assertEqual(self._read_row("SELECT COUNT(*) FROM Audit_Log")[0], 0)
+
+    def test_general_soft_deleted_after_load_is_not_revived_or_audited(self):
+        """載入後被軟刪除的一般公文空殼不得被結算 UPDATE 復活。"""
+        from ui_utils.settle_dialog import settle_selected
+        self._add_general_for_settlement()
+        self.conn.execute(
+            "UPDATE Document_General "
+            "SET report_date=NULL, sender_id=NULL, subject='' "
+            "WHERE doc_id='G0050'")
+        self.conn.commit()
+
+        settled_n = settle_selected(
+            self.conn, {"crim": [], "gen": ["G0050"], "ticket": []},
+            "2026-07-23", "P001")
+
+        self.assertEqual(settled_n, 0)
+        self.assertEqual(
+            self._read_row(
+                "SELECT report_date, sender_id, subject "
+                "FROM Document_General WHERE doc_id='G0050'"),
+            (None, None, ""))
+        self.assertEqual(self._read_row("SELECT COUNT(*) FROM Audit_Log")[0], 0)
 
 
 class TestSettleConcurrencyGuard(unittest.TestCase):
@@ -658,6 +718,28 @@ class TestSettleConcurrencyGuard(unittest.TestCase):
         self.assertEqual(tuple(crim), ("2026-07-20", "P002"))
 
 
+class TestModeResidueWarning(unittest.TestCase):
+    """切回送文者模式時，僅提示該型態留下的未發文資料。"""
+
+    def test_returns_none_without_self_to_sender_residue(self):
+        from ui_utils.settings_panels import mode_residue_warning
+
+        self.assertIsNone(mode_residue_warning(
+            {"crim": (True, False), "gen": (False, True)},
+            {"crim": 0, "gen": 9, "ticket": 2}))
+
+    def test_lists_each_switching_type_with_its_count(self):
+        from ui_utils.settings_panels import mode_residue_warning
+
+        self.assertEqual(mode_residue_warning(
+            {"crim": (True, False), "gen": (True, False),
+             "ticket": (True, False)},
+            {"crim": 2, "gen": 4, "ticket": 3}),
+            "目前有 2 件刑案陳報尚未發文，切換後仍需到「簽收單列印」頁結算。\n"
+            "目前有 4 件一般陳報尚未發文，切換後仍需到「簽收單列印」頁結算。\n"
+            "目前有 3 張罰單尚未發文，切換後仍需到「簽收單列印」頁結算。")
+
+
 class TestInputModePanelSave(unittest.TestCase):
     """設定面板儲存後三個 key 皆為明確值。"""
 
@@ -716,6 +798,90 @@ class TestInputModePanelSave(unittest.TestCase):
         self._auth._role = "user"
         self.assertFalse(panel._save())
         self.assertIsNone(getSetting(self._path, REPORT_MODE_KEYS["crim"], None))
+
+    def _audit_count(self):
+        conn = sqlite3.connect(self._path)
+        try:
+            return conn.execute("SELECT COUNT(*) FROM Audit_Log").fetchone()[0]
+        finally:
+            conn.close()
+
+    def _mode_values(self):
+        from lib.db_utils import REPORT_MODE_KEYS, getSetting
+        return {kind: getSetting(self._path, key, None)
+                for kind, key in REPORT_MODE_KEYS.items()}
+
+    def test_cancel_residue_warning_writes_nothing_and_reloads_radios(self):
+        from lib.db_utils import REPORT_MODE_KEYS, setSetting
+        from ui_utils.settings_panels import InputModePanel
+        setSetting(self._path, REPORT_MODE_KEYS["crim"], "1")
+        before_values = self._mode_values()
+        panel = InputModePanel(self._path)
+        panel._radios["crim"][0].setChecked(True)
+
+        with mock.patch("ui_utils.settle_dialog.count_unissued",
+                        return_value={"crim": 2, "gen": 0, "ticket": 0}) as count, \
+             mock.patch("ui_utils.settings_panels.confirmBox", return_value=False) as confirm:
+            self.assertFalse(panel._save())
+
+        count.assert_called_once_with(self._path)
+        self.assertEqual(confirm.call_args.args[0], "提醒")
+        self.assertEqual(confirm.call_args.kwargs["confirm_text"], "仍要切換")
+        self.assertEqual(confirm.call_args.kwargs["cancel_text"], "取消")
+        self.assertFalse(confirm.call_args.kwargs["default_confirm"])
+        self.assertEqual(self._mode_values(), before_values)
+        self.assertTrue(panel._radios["crim"][1].isChecked())
+        self.assertEqual(self._audit_count(), 0)
+
+    def test_confirm_residue_warning_saves_and_audits_normally(self):
+        from lib.db_utils import REPORT_MODE_KEYS, getSetting, setSetting
+        from ui_utils.settings_panels import InputModePanel
+        setSetting(self._path, REPORT_MODE_KEYS["ticket"], "1")
+        panel = InputModePanel(self._path)
+        panel._radios["ticket"][0].setChecked(True)
+
+        with mock.patch("ui_utils.settle_dialog.count_unissued",
+                        return_value={"crim": 0, "gen": 0, "ticket": 3}), \
+             mock.patch("ui_utils.settings_panels.confirmBox", return_value=True):
+            self.assertTrue(panel._save())
+
+        self.assertEqual(getSetting(self._path, REPORT_MODE_KEYS["ticket"], None), "0")
+        self.assertEqual(self._audit_count(), 1)
+
+    def test_sender_to_self_does_not_prompt_for_residue(self):
+        from ui_utils.settings_panels import InputModePanel
+        panel = InputModePanel(self._path)
+        panel._radios["gen"][1].setChecked(True)
+
+        with mock.patch("ui_utils.settle_dialog.count_unissued") as count, \
+             mock.patch("ui_utils.settings_panels.confirmBox") as confirm:
+            self.assertTrue(panel._save())
+
+        count.assert_not_called()
+        confirm.assert_not_called()
+
+    def test_residue_probe_failure_reports_error_reloads_and_writes_nothing(self):
+        """殘料探查失敗時須 fail closed，且 radio 回復資料庫原值。"""
+        from lib.db_utils import REPORT_MODE_KEYS, setSetting
+        from ui_utils.settings_panels import InputModePanel
+        setSetting(self._path, REPORT_MODE_KEYS["crim"], "1")
+        before_values = self._mode_values()
+        panel = InputModePanel(self._path)
+        panel._radios["crim"][0].setChecked(True)
+
+        with mock.patch(
+                "ui_utils.settle_dialog.count_unissued",
+                side_effect=sqlite3.OperationalError("probe failed")), \
+             mock.patch("ui_utils.settings_panels.reportError") as report, \
+             mock.patch("lib.db_utils.setSetting") as write:
+            self.assertFalse(panel._save())
+
+        report.assert_called_once()
+        self.assertEqual(report.call_args.args[0], "讀取未發文資料失敗")
+        write.assert_not_called()
+        self.assertEqual(self._mode_values(), before_values)
+        self.assertTrue(panel._radios["crim"][1].isChecked())
+        self.assertEqual(self._audit_count(), 0)
 
 
 class TestResetLegacyKeyCleanup(unittest.TestCase):

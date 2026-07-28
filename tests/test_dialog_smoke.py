@@ -12,7 +12,9 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QDate
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication, QDateEdit, QLabel
 import res.resources_rc
 _app = QApplication.instance() or QApplication([])
 
@@ -680,6 +682,160 @@ class TestConvertDialog(_DialogBase):
 
 
 class TestSettleDialog(_DialogBase):
+    def test_theme_contract_uses_global_controls_and_shared_buttons(self):
+        """結算視窗只保留專用狀態樣式，其餘控制項繼承全域 theme。"""
+        from lib.theme import APPLE_STYLE
+        from ui_utils.ui_common import BTN_CANCEL, BTN_CONFIRM
+        from ui_utils.settle_dialog import SettleDialog
+
+        # 比照 main.runApplication：字型與樣式表都由 QApplication 提供，
+        # 彈窗本身不得再自行 setFont（會被全域樣式表的 `*` 規則蓋掉＝死碼，
+        # 又把字體名稱抄成第二份來源）。
+        old_style = _app.styleSheet()
+        old_font = _app.font()
+        _app.setFont(QFont("Microsoft JhengHei", 14))
+        _app.setStyleSheet(APPLE_STYLE)
+        try:
+            dlg = SettleDialog(self.db)
+            self.assertEqual(dlg.font().family(), "Microsoft JhengHei")
+            for widget in (
+                dlg.issue_date, dlg.issue_date.lineEdit(), dlg.cmb_sender,
+                dlg.edit_kw, dlg._tbl,
+            ):
+                self.assertEqual(widget.font().pointSize(), 14)
+            for label in dlg.findChildren(QLabel):
+                self.assertEqual(label.font().pointSize(), 14)
+            for chip in dlg._chips.values():
+                self.assertEqual(chip.font().pointSize(), 14)
+            # 表頭字級由共用表格樣式提供，不得在元件上再寫死字體／字級
+            self.assertEqual(dlg._tbl.horizontalHeader().styleSheet(), "")
+            self.assertIn("font-size: 13pt", dlg._tbl.styleSheet())
+            self.assertNotIn("font-family", dlg._tbl.styleSheet())
+            self.assertEqual(dlg.btn_confirm.styleSheet(), BTN_CONFIRM)
+            self.assertEqual(dlg.btn_cancel.styleSheet(), BTN_CANCEL)
+            self.assertIn("QDialog", dlg.styleSheet())
+            self.assertIn("QWidget", dlg.styleSheet())
+            self.assertIn("background-color: #ffffff", dlg.styleSheet().lower())
+            self.assertIn("color: #000000", dlg.styleSheet().lower())
+            self.assertNotIn("QLineEdit", dlg.styleSheet())
+            self.assertNotIn("QComboBox", dlg.styleSheet())
+            self.assertNotIn("QDateEdit", dlg.styleSheet())
+            self.assertIn("QTableWidget::item:hover", dlg._tbl.styleSheet())
+            self.assertIn("QCheckBox::indicator:indeterminate", dlg._tbl.styleSheet())
+            self.assertIn("QPushButton#chip:checked", dlg._chips["all"].styleSheet())
+        finally:
+            dlg.deleteLater()
+            _app.setStyleSheet(old_style)
+            _app.setFont(old_font)
+
+    def test_issue_date_is_required_calendar_date_and_exposed_after_settlement(self):
+        """發文日期可選，但尚未成功結算時不得暴露成功日期。"""
+        from ui_utils.settle_dialog import SettleDialog
+        dlg = SettleDialog(self.db)
+
+        self.assertIsInstance(dlg.issue_date, QDateEdit)
+        self.assertTrue(dlg.issue_date.calendarPopup())
+        self.assertEqual(dlg.issue_date.displayFormat(), "yyyy-MM-dd")
+        self.assertEqual(dlg.issue_date.date(), QDate.currentDate())
+        self.assertEqual(dlg.issue_date.minimumWidth(), 220)
+        self.assertIsNone(dlg.settledDate())
+        dlg.deleteLater()
+
+    def test_confirm_uses_selected_issue_date_for_settlement(self):
+        """確認結算時必須把使用者選定的過去日期寫入，而非重新取今天。"""
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL "
+                     "WHERE doc_id='2'")
+        conn.commit()
+        conn.close()
+        from ui_utils.settle_dialog import SettleDialog
+        dlg = SettleDialog(self.db)
+        dlg.issue_date.setDate(QDate(2026, 7, 9))
+        dlg.cmb_sender.setCurrentIndex(1)
+
+        with mock.patch("ui_utils.settle_dialog.confirmBox", return_value=True), \
+             mock.patch("ui_utils.settle_dialog.settle_selected", return_value=1) as settle:
+            dlg._on_confirm()
+
+        self.assertEqual(settle.call_args.args[2], "2026-07-09")
+        self.assertTrue(dlg.settled())
+        self.assertEqual(dlg.settledDate(), QDate(2026, 7, 9))
+        dlg.issue_date.setDate(QDate(2026, 7, 10))
+        self.assertEqual(dlg.settledDate(), QDate(2026, 7, 9))
+        dlg.deleteLater()
+
+    def test_cancel_confirmation_keeps_settled_date_empty(self):
+        """取消確認不建立結算成功日期快照。"""
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL "
+                     "WHERE doc_id='2'")
+        conn.commit()
+        conn.close()
+        from ui_utils.settle_dialog import SettleDialog
+        dlg = SettleDialog(self.db)
+        dlg.cmb_sender.setCurrentIndex(1)
+
+        with mock.patch("ui_utils.settle_dialog.confirmBox", return_value=False):
+            dlg._on_confirm()
+
+        self.assertFalse(dlg.settled())
+        self.assertIsNone(dlg.settledDate())
+        dlg.deleteLater()
+
+    def test_zero_updated_rows_warns_reloads_and_keeps_dialog_open(self):
+        """全部列於確認前失效時，不得誤報成功或關閉對話框。"""
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL "
+                     "WHERE doc_id='2'")
+        conn.commit()
+        conn.close()
+        from ui_utils.settle_dialog import SettleDialog
+        dlg = SettleDialog(self.db)
+        dlg.issue_date.setDate(QDate(2026, 7, 9))
+        dlg.cmb_sender.setCurrentIndex(1)
+
+        with mock.patch("ui_utils.settle_dialog.confirmBox", return_value=True), \
+             mock.patch("ui_utils.settle_dialog.settle_selected", return_value=0), \
+             mock.patch("ui_utils.settle_dialog.msgWarning") as warning, \
+             mock.patch("ui_utils.settle_dialog.msgInfo"), \
+             mock.patch.object(SettleDialog, "_load", autospec=True) as load, \
+             mock.patch.object(dlg, "accept") as accept:
+            dlg._on_confirm()
+
+        warning.assert_called_once()
+        self.assertIn("沒有任何公文完成結算", warning.call_args.args[1])
+        load.assert_called_once_with(dlg)
+        accept.assert_not_called()
+        self.assertFalse(dlg.settled())
+        self.assertIsNone(dlg.settledDate())
+        dlg.deleteLater()
+
+    def test_partial_success_accepts_and_snapshots_selected_date(self):
+        """非 strict 部分成功仍完成流程，快照使用實際寫入日期。"""
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL "
+                     "WHERE doc_id='2'")
+        conn.execute("UPDATE Document_General SET report_date=NULL, sender_id=NULL "
+                     "WHERE doc_id='3'")
+        conn.commit()
+        conn.close()
+        from ui_utils.settle_dialog import SettleDialog
+        dlg = SettleDialog(self.db)
+        dlg.issue_date.setDate(QDate(2026, 7, 9))
+        dlg.cmb_sender.setCurrentIndex(1)
+
+        with mock.patch("ui_utils.settle_dialog.confirmBox", return_value=True), \
+             mock.patch("ui_utils.settle_dialog.settle_selected", return_value=1), \
+             mock.patch("ui_utils.settle_dialog.msgInfo") as info, \
+             mock.patch.object(dlg, "accept") as accept:
+            dlg._on_confirm()
+
+        info.assert_called_once()
+        accept.assert_called_once()
+        self.assertTrue(dlg.settled())
+        self.assertEqual(dlg.settledDate(), QDate(2026, 7, 9))
+        dlg.deleteLater()
+
     def test_builds_with_unissued_rows(self):
         # 結算對話框列的是「未發文」（report_date IS NULL）名單，
         # fixture 預設都有日期 → 先把刑案那筆改成 NULL 才有資料可列
@@ -726,6 +882,7 @@ class TestSettleDialog(_DialogBase):
         self.assertIn("編號 2", warn_text)
         m_load.assert_called_once()
         self.assertFalse(dlg.settled())
+        self.assertIsNone(dlg.settledDate())
         dlg.deleteLater()
 
     def test_processor_name_trimmed_and_search_matches_display(self):

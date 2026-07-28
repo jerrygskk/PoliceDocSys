@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, QDate, QObject, QEvent, QTimer, Signal, QRegularExpression
 from PySide6.QtWidgets import (
-    QComboBox, QCompleter, QLabel, QLineEdit, QCalendarWidget,
+    QComboBox, QCompleter, QLabel, QLineEdit, QCalendarWidget, QDateEdit,
     QStyledItemDelegate, QStyle, QStyleOptionViewItem,
 )
 from PySide6.QtGui import (
@@ -301,6 +301,41 @@ def preserveScroll(table, func):
     if sb:
         QTimer.singleShot(0, lambda b=sb, v=pos: b.setValue(min(v, b.maximum())))
     return result
+
+
+class _DateEditWheelGuard(QObject):
+    """在 QApplication 層攔截 QDateEdit 與其內部子元件的滑鼠滾輪。"""
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Wheel:
+            return False
+
+        current = obj
+        while current is not None:
+            # 月曆 popup 與其子元件必須維持原本的月份捲動行為。
+            if isinstance(current, QCalendarWidget):
+                return False
+            if isinstance(current, QDateEdit):
+                event.accept()
+                return True
+            current = current.parent()
+        return False
+
+
+def installDateEditWheelGuard(app=None):
+    """冪等安裝全域日期框滑鼠滾輪防護，回傳由 QApplication 持有的 filter。"""
+    if app is None:
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+    if app is None:
+        raise RuntimeError("installDateEditWheelGuard 需要 QApplication")
+
+    guard = getattr(app, "_date_edit_wheel_guard", None)
+    if guard is None:
+        guard = _DateEditWheelGuard(app)
+        app.installEventFilter(guard)
+        app._date_edit_wheel_guard = guard
+    return guard
 
 
 def setupDateEditToToday(date_edit):
