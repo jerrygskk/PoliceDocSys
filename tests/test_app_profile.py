@@ -2,7 +2,11 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from lib.app_profile import ENTRY_PROFILE, FULL_PROFILE
+from lib.app_profile import (
+    ENTRY_PROFILE,
+    FULL_PROFILE,
+    visibleTabKeys,
+)
 
 
 FULL_TAB_KEYS = (
@@ -62,3 +66,32 @@ def test_menu_labels_still_readable_after_hardening():
     assert ENTRY_PROFILE.menu_labels["settings"] == "系統設定"
     assert FULL_PROFILE.menu_labels["print"] == "簽收單列印"
     assert set(ENTRY_PROFILE.menu_labels) == set(ENTRY_PROFILE.menu_keys)
+
+
+def test_full_profile_visible_tabs_follow_role_matrix():
+    assert visibleTabKeys("user", FULL_PROFILE) == (
+        "assignment_issue", "assignment_receive", "report", "reward",
+        "reward_issue", "ticket", "print", "browse", "settings",
+    )
+    assert visibleTabKeys("archive", FULL_PROFILE) == (
+        "assignment_issue", "assignment_receive", "report", "reward",
+        "reward_issue", "ticket", "print", "browse", "archive", "settings",
+    )
+    assert visibleTabKeys("admin", FULL_PROFILE) == FULL_PROFILE.tab_keys
+
+
+def test_entry_profile_role_matrix_never_adds_full_only_tabs():
+    for role in ("user", "archive", "admin"):
+        assert visibleTabKeys(role, ENTRY_PROFILE) == ENTRY_PROFILE.tab_keys
+
+
+def test_unknown_role_uses_least_privileged_visibility():
+    assert visibleTabKeys("unexpected", FULL_PROFILE) == visibleTabKeys(
+        "user", FULL_PROFILE
+    )
+
+
+def test_general_user_keeps_both_issue_tabs_and_settings():
+    visible = set(visibleTabKeys("user", FULL_PROFILE))
+    assert {"assignment_issue", "reward_issue", "settings"} <= visible
+    assert {"archive", "audit"}.isdisjoint(visible)

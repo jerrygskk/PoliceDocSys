@@ -43,6 +43,21 @@ class AppProfile:
         return key in self.settings_pages
 
 
+_ROLE_HIDDEN_TAB_KEYS = MappingProxyType({
+    "user": frozenset({"archive", "audit"}),
+    "archive": frozenset({"audit"}),
+    "admin": frozenset(),
+})
+
+
+def visibleTabKeys(role: str, profile: AppProfile) -> tuple[str, ...]:
+    """依角色隱藏 Profile 既有 Tab；未知角色採一般使用者最小權限。"""
+    hidden = _ROLE_HIDDEN_TAB_KEYS.get(
+        role, _ROLE_HIDDEN_TAB_KEYS["user"]
+    )
+    return tuple(key for key in profile.tab_keys if key not in hidden)
+
+
 FULL_PROFILE = AppProfile(
     key="full",
     product_name="公文收發管理系統",
