@@ -942,6 +942,18 @@ class TestHelpPageMapping(unittest.TestCase):
             self.assertEqual(helpPageIndex(pos, FULL_PROFILE.tab_keys), pos)
             self.assertEqual(helpPageIndex(pos, None), pos)
 
+    def test_help_mapping_keeps_full_profile_index_for_each_role(self):
+        from lib.app_profile import FULL_PROFILE, visibleTabKeys
+        from ui_utils.help_dialog import helpPageIndex
+
+        for role in ("user", "archive", "admin"):
+            for key in visibleTabKeys(role, FULL_PROFILE):
+                fixed_index = FULL_PROFILE.tab_keys.index(key)
+                self.assertEqual(
+                    helpPageIndex(fixed_index, FULL_PROFILE.tab_keys),
+                    fixed_index,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

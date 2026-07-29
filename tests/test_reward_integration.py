@@ -333,6 +333,30 @@ class RewardIntegrationTests(unittest.TestCase):
             self.assertIn(view_name, views_section)
         self.assertIn("`idx_task/crim/gen/reward/ticket_lastmod`", developer)
 
+    def test_help_and_quickstart_explain_role_based_tabs(self):
+        from ui_utils.help_content import HELP_PAGES, QUICKSTART
+
+        def text_values(value):
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, dict):
+                return [
+                    text
+                    for item in value.values()
+                    for text in text_values(item)
+                ]
+            if isinstance(value, (list, tuple)):
+                return [text for item in value for text in text_values(item)]
+            return [str(value)]
+
+        help_text = "\n".join(text_values(HELP_PAGES))
+        quickstart_text = "\n".join(text_values(QUICKSTART))
+        for text in (help_text, quickstart_text):
+            self.assertIn("一般使用者", text)
+            self.assertIn("歸檔管理員", text)
+            self.assertIn("操作紀錄", text)
+            self.assertIn("資料庫設定", text)
+
     def test_quickstart_build_renders_only_approved_indexes(self):
         from reportlab.platypus import Spacer
         from tools import gen_quickstart
