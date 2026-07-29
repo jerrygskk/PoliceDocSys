@@ -531,7 +531,6 @@ class MainMenu:
         if not self.ui:
             sys.exit(1)
 
-        self.selected_tab = -1
         self.selected_tab_key = None
 
         # 版本號顯示（單一來源 lib/version.py）
@@ -601,7 +600,6 @@ class MainMenu:
             msgInfo("提示", "此功能尚未開放，敬請期待")
             return
         self.selected_tab_key = key
-        self.selected_tab = self.tab_index_by_key[key]
         self.ui.accept()
 
 
@@ -781,7 +779,12 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
         if menu.ui.exec() != QDialog.Accepted or not menu.selected_tab_key:
             # 仍在 Qt callback 內，保留既有 sys.exit 結束語意（見上方註解）。
             sys.exit(0)
+        _startup_index = mgr.tab_widget.currentIndex()
         mgr.requestTab(menu.selected_tab_key)
+        if mgr.tab_widget.currentIndex() == _startup_index:
+            # 選到既有 current index（通常是 Tab0）時，Qt 不會送 currentChanged；
+            # 補跑一次切頁後處理，讓開窗後的欄寬與焦點初始化不缺席。
+            mgr._onTabChanged(_startup_index)
 
         # 開窗前先依「實際可用桌面範圍」（已扣工作列）收斂視窗尺寸／位置，
         # 避免縮放倍率、螢幕解析度或投影機造成視窗一開就超出畫面。

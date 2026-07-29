@@ -374,6 +374,118 @@ def test_run_application_default_profile_is_full():
     assert sig.parameters["profile"].default is FULL_PROFILE
 
 
+@pytest.mark.parametrize(
+    ("selected_key", "expected_manual_activations", "expected_signals"),
+    (
+        ("assignment_issue", [0], []),
+        ("assignment_receive", [], [1]),
+    ),
+)
+def test_run_application_activates_selected_startup_tab_exactly_once(
+        qtbot, shell_db, monkeypatch, qapp, selected_key,
+        expected_manual_activations, expected_signals):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    activations = []
+    signals = []
+    manager.tab_widget.currentChanged.connect(signals.append)
+    original_on_tab_changed = manager._onTabChanged
+
+    def track_activation(index):
+        activations.append(index)
+        original_on_tab_changed(index)
+
+    monkeypatch.setattr(manager, "_onTabChanged", track_activation)
+
+    class _Signal:
+        def __init__(self):
+            self.callback = None
+
+        def connect(self, callback):
+            self.callback = callback
+
+    class _Loading:
+        def __init__(self, *args, **kwargs):
+            self.dataReady = _Signal()
+            self.loadFailed = _Signal()
+
+        def show(self):
+            self.dataReady.callback({})
+
+        def raise_(self):
+            pass
+
+        def activateWindow(self):
+            pass
+
+        def finishAndClose(self):
+            pass
+
+    class _AboutToQuit:
+        def connect(self, callback):
+            pass
+
+    class _App:
+        aboutToQuit = _AboutToQuit()
+
+        def __init__(self, args):
+            pass
+
+        def setFont(self, font):
+            pass
+
+        def setStyleSheet(self, style):
+            pass
+
+        def setWindowIcon(self, icon):
+            pass
+
+        def exec(self):
+            return 0
+
+        @staticmethod
+        def primaryScreen():
+            return qapp.primaryScreen()
+
+    class _MenuUi:
+        def exec(self):
+            return main_module.QDialog.Accepted
+
+        def windowState(self):
+            return main_module.Qt.WindowNoState
+
+        def setWindowState(self, state):
+            pass
+
+        def raise_(self):
+            pass
+
+        def activateWindow(self):
+            pass
+
+    class _Menu:
+        def __init__(self, profile, tab_index_by_key):
+            self.selected_tab_key = selected_key
+            self.ui = _MenuUi()
+
+    import lib.loading_screen as loading_module
+
+    monkeypatch.setattr(main_module, "QApplication", _App)
+    monkeypatch.setattr(main_module, "installDateEditWheelGuard", lambda app: None)
+    monkeypatch.setattr(main_module, "MainMenu", _Menu)
+    monkeypatch.setattr(main_module, "_buildDocumentManagerOrExit",
+                        lambda *args: manager)
+    monkeypatch.setattr(loading_module, "LoadingScreen", _Loading)
+
+    assert runApplication(FULL_PROFILE) == 0
+    qtbot.wait(200)
+    assert manager.tab_widget.currentIndex() == manager.tab_index(selected_key)
+    assert activations == expected_manual_activations
+    assert signals == expected_signals
+    focus_widget = manager.tabs[manager.tab_index(selected_key)].get_focus_widget()
+    assert focus_widget.hasFocus()
+
+
 def test_entry_manager_never_builds_full_only_tabs(qtbot, shell_db):
     from tabs import TabRewardIssue, TabPrint, TabArchive
 
