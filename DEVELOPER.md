@@ -18,7 +18,7 @@ Windows 桌面應用，PySide6 + SQLite，管理警察單位公文（交辦單�
 main.py
   └─ loading_screen（載入 .ui、註冊 qrc）
       └─ MainMenu（主選單，選要進哪個 Tab）
-          └─ DocumentManager（主視窗，建立 8 個 Tab）
+          └─ DocumentManager（主視窗，依 Profile 建立 Tab）
 ```
 
 - `DocumentManager.TAB_CLASSES`＝`{index: TabClass}`，新增 Tab 在此登記
@@ -33,6 +33,7 @@ main.py
 - **`main.py`（完整版）與 `standalone_main.py`（獨立版「公文快速登錄系統」）共用同一條 `runApplication(profile)`**：兩支入口都只是薄殼，各自帶自己的 `AppProfile` 呼叫它，流程本身不分支、不判斷是哪支 exe
 - **能力差異全部集中在 `lib/app_profile.py` 的 `AppProfile`**（`FULL_PROFILE`／`ENTRY_PROFILE` 兩份設定）：`tab_keys`／`menu_keys`／`menu_labels`／`browse_keys`／`preload_keys`／`settings_pages`／`system_panels`／`input_lock_flows`／`input_mode_flows`／`preheat_keys`／`banner_path`／`allows_db_rescue`。**模組本身不判斷 EXE 名稱、不寫散落的 standalone 布林**——新增能力差異一律加 profile 欄位，不寫 `if is_entry` 之類分支。詳見 §10「獨立版：公文快速登錄系統」
 - **Tab 由 `profile.tab_keys` 組裝**：`DocumentManager.TAB_CLASSES` 現為 `{key: (模組路徑, 類別名)}` 的**模組座標**，`create_tab()`／`_resolve_tab_class()` 在建立分頁當下才 `importlib` 動態載入並快取（避免獨立版僅因 import 就連帶付出完整版分頁的載入成本，如 `tab_print` 的 matplotlib）；`TAB_FACTORIES` 只登記需要額外收 profile 能力設定的分頁（`browse` 傳 `allowed_keys=profile.browse_keys`、`settings` 傳 `profile=profile`），其餘分頁一律走預設路徑，不在建立迴圈散落 if 判斷
+- **Profile 與角色顯隱是兩個階段**：啟動時可依 `profile.tab_keys` 對 `.ui` 的完整版頁籤由高到低 `removeTab()`，形成該程式固定的能力範圍；程式執行中角色切換只以 `setTabVisible()` 顯示／隱藏已建立頁籤，**不可再 `removeTab()` 或重排 index**。角色只能縮小目前 Profile 的可見集合，不能讓 Profile 未核准的頁籤出現
 
 ### 資料流
 
@@ -89,6 +90,7 @@ graph LR
 | **自動備份／備份還原**（`backup_second_dir`／異地／quick_check／還原子頁） | `run_auto_backup(extra_dirs=)`＋`_run_gfs`＋`quick_check`／`list_backups`／`verify_backup`／`restore_backup`（db_backup）；`main.py` 啟動 quick_check→備份；`BackupPanel`（settings_panels）；`BackupRestorePanel`（backup_restore_panel）；tab_settings nav 第 6 子頁四處掛載（`_nav_btns`／兩份 loaders／`_applyRolePermissions`）；Reset 不清 `backup_second_dir` | §10「平時自動備份（`lib/db_backup.py`）」＋§5 面板表＋「備份還原子頁」＋§6 App_Settings 列；HELP 設定頁；QUICKSTART；README FAQ 資料安全段；`tests/test_db_backup` |
 | **陳報模式**（`report_input_mode`／自助取號） | `isSelfServiceMode`（db_utils）；`InputModePanel`（settings_panels）；陳報頁與罰單頁 `_applyInputLock`→`_applySelfServiceMode`，提交帶 NULL 與放行發文人員；**刑案／一般編輯彈窗 `_BaseEditDialog._lockReportFieldsIfSelfService()`**（自助模式且非管理身分才反灰陳報日期／發文人員，涵蓋陳報／瀏覽／歸檔三處開啟點）；列印頁 `_settle_group`／`_refresh_settle_group`／`_on_settle`＋`SettleDialog`／`count_unissued`（settle_dialog 的 `SETTLE_META` 含刑案／一般／罰單，罰單衝突 strict rollback）；歸檔 `_queryUnarchived`／`_tableSignature` 排除未發文列；瀏覽頁未發文欄位橘字提示；Reset 不清。敘獎登錄／發文流程不受此設定影響 | §5「自助取號模式」＋§5 面板表＋§6 App_Settings 列；HELP 陳報/列印/設定頁；QUICKSTART；README 功能段＋陳報模式 TIP；`tests/test_report_input_mode` |
 | **權限／角色**（新增任何「受限身分不可做」） | **每條觸發路徑 guard**（按鈕/雙擊/行內編輯/Enter/右鍵/拖拉，見 CLAUDE.md 協作偏好 B）；`role_changed`→`_onRolePerm`/`_applyRolePermissions`；遮罩頁（歸檔/稽核）；閒置登出後的行為 | **§10「權限」權限矩陣必更新**；HELP 各頁的權限描述；QUICKSTART 權限段；上機以受限身分逐路徑驗證 |
+| **角色 TAB 顯隱**（user／archive／admin） | `visibleTabKeys` 權限矩陣；`DocumentManager` 執行期顯隱與登出 fallback；`MainMenu` 全入口 `requestTab`；設定頁登入與待前往目標 | §10「權限」9／10／11 TAB 清單；HELP 固定 Profile index 映射；QUICKSTART 權限段；README 登入說明；角色切換、主選單導向、登出／閒置登出與 HELP mapping 測試 |
 | **新增 App_Settings key**（通用步驟） | db_utils 常數＋讀取 helper（含 fallback 預設）；`db_seed` 要不要播種；Reset 清不清（`performYearEndReset`）；生效時機（即時讀 vs 重啟） | §6 App_Settings 那一列；對應 tests |
 | **系統設定新面板** | `settings_panels.py` 新類別＋`ui_utils/__init__` 匯出；tab_settings **四份清單**（建立/`_applyRolePermissions`/`_loadSystem`/`_dirtyPanels`）；`_save()` 開頭權限 guard；儲存鈕 dirty UX（亮/灰/clearFocus） | §5 面板表；HELP 設定頁；QUICKSTART |
 | **參照表結構／改名行為** | `_ref_changed` 旗標路徑（PITFALLS SQL 組）；預覽表 `_refreshPreviewNames`；歸檔比對 `_loadNameDict`；`RefItemDialog` 三份 config | §10「參照項對話框」；HELP 設定頁 |
@@ -325,6 +327,7 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 - **內容單一來源** `ui_utils/help_content.py`：七頁說明以結構化 `HELP_PAGES` 描述，`_render_html()` 產彈窗 HTML、`render_review_text()` 產純文字校稿；tooltip 候選存 `HELP_TIPS`。改說明只動 `HELP_PAGES`
 - **彈窗** `ui_utils/help_dialog.py`：`helpDialog(parent, tab_index)` 以 `QTextBrowser` 顯示；`attachHelpButton` 於 `main.py` tabs 建完後呼叫一次，掛分頁列右上角 `setCornerWidget` 說明鈕（依 `currentIndex()` 開對應頁）
+- **頁碼固定映射**：`HELP_PAGES` 的 index 永遠對應 `FULL_PROFILE.tab_keys` 的固定 Profile 順序；`helpPageIndex()` 依分頁 key 換算內容 ID，不以角色顯隱後畫面上的「第幾個可見頁籤」重新編號。角色切換只改可見性，因此 HELP 仍須開到同一功能的說明
 - ⚠️ `QTextBrowser` 是 Qt rich-text 子集：**不吃 CSS `letter-spacing`**（設在 `QFont`，`_LETTER_SPACING`）、**不支援圓角／陰影／flex／懸掛縮排**（色塊用單格表格 `bgcolor`、懸掛縮排用兩欄表格）；`font-family` 須用裸字型名（逗號清單會被當不存在字型）
 - **按鈕／子頁籤示意圖**：用預烤圓角 SVG（`<img>` 內嵌），由 `python tools/gen_buttons.py` 依 `BUTTONS`／`TABS` 批次產至 `res/buttons/`（`:/btn/`）與 `res/tabs/`（`:/tab/`），對照表 `ui_utils/button_imgs.py`。**新增按鈕完整步驟見 PITFALLS SVG 組**（漏登記 qrc 會破圖）
 - **速查卡**：母本 `QUICKSTART`（同檔），`python tools/gen_quickstart.py`（reportlab 嵌微軟正黑體、`_check_glyphs` 字形檢查）產 `docs/Quick_Start.pdf`（A4 直式 2 頁，`docs/` 未入庫）。改說明同時動到速查卡時 `QUICKSTART` 要一併同步
@@ -660,6 +663,15 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 - **便捷判斷**（勿在各處寫字串比較）：`is_admin()`／`is_archive()`／`is_manager()`（admin or archive，給「歸檔管理也能做」用）／`actor_name()`（稽核 operator 用）
 - **變更密碼**：`change_password()` 依當前登入身分改對應那組（admin→admin、archive→archive）；user 不得改。高風險，**Enter 不送出**（防誤按）、只能滑鼠點。**變更成功後即 `logout()` 降回一般使用者**（`tab_settings._changePassword`），要求以新密碼重新登入（避免舊 session 沿用、確認新密碼可用）
 
+**角色 TAB 顯隱**（完整 Profile 固定 index 0–10，執行期只改可見性）：
+
+- `user` 顯示 **9 個**：Tab0–7、Tab9；隱藏 Tab8「檔案歸檔」與 Tab10「操作紀錄」
+- `archive` 顯示 **10 個**：Tab0–9；隱藏 Tab10「操作紀錄」
+- `admin` 顯示 **11 個**：Tab0–10
+- Tab9「資料庫設定」三角色都保持顯示，因為它同時是一般使用者與歸檔管理者的登入入口；user 進入後只能使用登入介面，登入後再依既有權限開放設定內容
+- 主選單 11 個入口都保留。選到目前角色隱藏的功能時，統一導向 Tab9 並開啟登入畫面，不直接改寫角色或繞過密碼；登入成功且目標對新角色可見才前往原目標。登入失敗、取消，或使用者先離開設定頁時，放棄該次待前往目標
+- 登出、變更密碼後自動登出或閒置登出若發生在即將隱藏的頁籤，先回 Tab9 再套用顯隱；若目前業務頁對 user 仍可見，則留在原頁
+
 **權限矩陣**（歸檔管理＝一般使用者＋下列加項；空白＝同一般使用者）：
 
 | Tab | admin | 歸檔管理 archive | 一般使用者 user |
@@ -672,9 +684,9 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 | 罰單登錄 Tab5 | 全可改（本次登錄清單可改可刪） | 同一般（本次登錄清單可改可刪） | 可登錄、本次登錄清單可改可刪 |
 | 簽收單列印 Tab6 | 可用 | 可用 | 可用 |
 | 資料庫瀏覽 Tab7 | 全可改（含刪除） | 刑案／一般可修改；**交辦／敘獎／罰單不可改**；一律無刪除（刪除鈕僅 admin） | 不開放編輯 |
-| 檔案歸檔 Tab8 | 可用 | 可用 | 無法使用 |
-| 設定 Tab9 | 全可用 | 可視：變更密碼／登出／系統設定子頁（僅歸檔資料夾面板可改，簽收表標題／閒置逾時面板整塊反灰）；參照維護＋跨年度重置 disable 灰掉 | 無法使用 |
-| 操作紀錄 Tab10 | 可檢視（唯讀／篩選／匯出 CSV） | 無法使用（遮罩導引登入） | 無法使用（遮罩導引登入） |
+| 檔案歸檔 Tab8 | 可用 | 可用 | **TAB 隱藏**；主選單入口導向設定登入 |
+| 設定 Tab9 | 全可用 | 可視：變更密碼／登出／系統設定子頁（僅歸檔資料夾面板可改，簽收表標題／閒置逾時面板整塊反灰）；參照維護＋跨年度重置 disable 灰掉 | **TAB 保持顯示作登入入口**；未登入時不開放設定內容 |
+| 操作紀錄 Tab10 | 可檢視（唯讀／篩選／匯出 CSV） | **TAB 隱藏**；主選單入口導向設定登入 | **TAB 隱藏**；主選單入口導向設定登入 |
 
 > 敘獎登錄、敘獎發文與罰單登錄本身不設角色 gate（三身分皆可登錄／改／刪本次登錄清單；敘獎可輸入編號批次發文）。**瀏覽頁編輯改為逐子頁判定**（`tab_dbbrowse._canEditKey(key)`）：**交辦（task）／敘獎（reward）／罰單（ticket）僅 admin 可改**；**刑案（crim）／一般（gen）** 維持 `is_manager()`（歸檔管理者可改）。刪除一律 `is_admin()`。編輯 gate 涵蓋四條進入點：`_onRolePerm`、`_fillRow`、`_onLinkCell`、`_onEdit`；各 browse 對話框儲存另有 admin 內層防線。測試 `tests/test_reward_browse.py`／`tests/test_ticket_browse.py`。
 
@@ -753,7 +765,7 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 - **Reset 與 log**：①先寫 Reset log（含清除筆數）②整庫自動備份（歷史 log 隨備份保存）③`performYearEndReset` 清主表時含 `Audit_Log`（當前庫歸零、歷史在備份）
 - ⚠️ **DB 須含本表才寫稽核**：舊庫未跑 `fix_audit_setup.py` 則程式照跑但稽核一筆不寫（靜默退化成單一 admin、無 log）。`fix_audit_setup.py` 一次性、不入庫
 
-**檢視 UI（Tab10，`tabs/tab_audit.py`）**：唯讀、**僅 admin**（非 admin 顯示遮罩導引設定頁登入，牆同歸檔頁 `outer_stack`、連 `role_changed`）。
+**檢視 UI（Tab10，`tabs/tab_audit.py`）**：唯讀、**僅 admin**；archive／user 執行期隱藏此 TAB，從主選單選取時改由 Tab9 開啟登入畫面。頁面本身仍保留角色 guard，避免未來新增入口時只靠顯隱保護。
 
 - 全量載入（`ORDER BY log_id DESC`）後 `setRowHidden` 篩選；`detail` 經 `parseDetail` 拆「類別／動作／內容」三欄
 - 欄位：時間｜身分｜類別｜動作｜內容｜對象人。刪除／重置／登入失敗動作紅字＋紅「●」（`setForeground`，勿用 `::item{color}`）；身分 admin 鋼藍、archive 灰藍、空白灰
