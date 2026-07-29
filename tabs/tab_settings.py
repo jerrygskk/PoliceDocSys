@@ -635,6 +635,18 @@ class TabSettings(BaseTab):
             loader()
 
     # ── 登入 ────────────────────────────────────────────────────
+    def showLoginPrompt(self, target_label=None):
+        self._outer_stack.setCurrentIndex(0)
+        if target_label:
+            self._lbl_login_ttl.setText(f"請登入以使用「{target_label}」")
+        else:
+            self._lbl_login_ttl.setText("管理者驗證")
+        self.lbl_login_err.setText("")
+        self.w_password.setFocus()
+
+    def clearLoginPrompt(self):
+        self._lbl_login_ttl.setText("管理者驗證")
+
     def _doLogin(self):
         pwd = self.w_password.text()
         if not pwd:
@@ -728,6 +740,7 @@ class TabSettings(BaseTab):
             self._switchPage(self._PAGE_PERSONNEL)
         else:
             self._outer_stack.setCurrentIndex(0)
+            self.clearLoginPrompt()
             self.w_password.clear()
             self.lbl_login_err.setText("")
             self._arch_warn_shown = False  # 重置，下次登入仍會檢查

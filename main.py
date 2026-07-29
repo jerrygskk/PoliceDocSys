@@ -184,6 +184,7 @@ class DocumentManager:
         self._IDX_SETTINGS = self.tab_index_by_key.get("settings")
         self._IDX_DBBROWSE = self.tab_index_by_key.get("browse")
         self._IDX_AUDIT    = self.tab_index_by_key.get("audit")
+        self._pending_tab_key = None
 
         # 瀏覽頁三表：用啟動預查資料分段建表，逐表更新載入進度條（65~100%）。
         # 建表必須在主執行緒，故放在此處（非背景 worker）；processEvents 讓進度條即時重繪。
@@ -391,8 +392,35 @@ class DocumentManager:
 
         self._prev_tab_index = self.tab_widget.currentIndex()
 
+    def requestTab(self, key):
+        index = self.tab_index(key)
+        if index is None:
+            self._pending_tab_key = None
+            return False
+
+        if self._isTabVisible(key):
+            self._pending_tab_key = None
+            self.tab_widget.setCurrentIndex(index)
+            self._prev_tab_index = index
+            return True
+
+        self._pending_tab_key = key
+        settings = self.tabs.get(self._IDX_SETTINGS)
+        label = self.profile.menu_labels.get(key, key)
+        if settings and hasattr(settings, "showLoginPrompt"):
+            settings.showLoginPrompt(label)
+        self.tab_widget.setCurrentIndex(self._IDX_SETTINGS)
+        self._prev_tab_index = self._IDX_SETTINGS
+        return False
+
     def _onRoleChanged(self, role):
         self._applyTabVisibility(role)
+        pending = self._pending_tab_key
+        if not pending:
+            return
+        self._pending_tab_key = None
+        if self._isTabVisible(pending):
+            self.requestTab(pending)
 
     def _onTabChanged(self, index):
         from ui_utils import autoResizeTable
@@ -403,6 +431,10 @@ class DocumentManager:
 
         # 從設定 Tab 切出來：先處理未儲存的排序變更（D3c）
         settings_tab = self.tabs.get(self._IDX_SETTINGS)
+        if (self._pending_tab_key
+                and self._prev_tab_index == self._IDX_SETTINGS
+                and index != self._IDX_SETTINGS):
+            self._pending_tab_key = None
         if (self._prev_tab_index == self._IDX_SETTINGS
                 and settings_tab
                 and hasattr(settings_tab, '_promptUnsaved')):
@@ -749,12 +781,10 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
             w.raise_()
             w.activateWindow()
         QTimer.singleShot(0, _bringMenuFront)
-        if menu.ui.exec() != QDialog.Accepted or menu.selected_tab < 0:
+        if menu.ui.exec() != QDialog.Accepted or not menu.selected_tab_key:
             # 仍在 Qt callback 內，保留既有 sys.exit 結束語意（見上方註解）。
             sys.exit(0)
-        mgr.tab_widget.blockSignals(True)
-        mgr.tab_widget.setCurrentIndex(menu.selected_tab)
-        mgr.tab_widget.blockSignals(False)
+        mgr.requestTab(menu.selected_tab_key)
 
         # 開窗前先依「實際可用桌面範圍」（已扣工作列）收斂視窗尺寸／位置，
         # 避免縮放倍率、螢幕解析度或投影機造成視窗一開就超出畫面。
@@ -766,7 +796,6 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
         apply_startup_geometry(mgr.window, QApplication.primaryScreen())
 
         mgr.window.show()
-        QTimer.singleShot(50, lambda: mgr._onTabChanged(menu.selected_tab))
 
     def _on_load_failed(exc_type, exc_value):
         # 背景載入執行緒例外（如磁碟空間不足）：乾淨顯示訊息再結束，不讓程式悶死無聲消失。

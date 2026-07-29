@@ -49,12 +49,15 @@ def _detach_manager_signals():
     已釋放的視窗（RuntimeError: Internal C++ object already deleted），
     在 pytest-qt 的例外攔截下會讓「別支」測試莫名紅燈。故每支測試後拆掉本次
     新增的連線，回到乾淨狀態。"""
-    signal = AuthManager.instance().role_changed
+    auth = AuthManager.instance()
+    auth._role = "user"
+    signal = auth.role_changed
     yield
     try:
         signal.disconnect()
     except (RuntimeError, TypeError):
         pass   # 本來就沒有連線
+    auth._role = "user"
 
 
 def _visible_tab_keys(manager):
@@ -101,6 +104,129 @@ def test_role_change_updates_visibility_without_reindexing(qtbot, shell_db):
     assert _visible_tab_keys(manager) == FULL_PROFILE.tab_keys
     assert manager.tab_index_by_key == original_mapping
     assert manager.tab_widget.count() == 11
+
+
+def test_request_hidden_tab_routes_user_to_settings_login(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+
+    assert manager.requestTab("archive") is False
+    assert manager.tab_widget.currentIndex() == manager.tab_index("settings")
+    assert manager._prev_tab_index == manager.tab_index("settings")
+    assert manager._pending_tab_key == "archive"
+
+    settings = manager.tabs[manager.tab_index("settings")]
+    assert settings._outer_stack.currentIndex() == 0
+    assert "檔案歸檔" in settings._lbl_login_ttl.text()
+
+
+def test_request_visible_tab_opens_it_without_pending_login(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+
+    assert manager.requestTab("reward_issue") is True
+    assert manager.tab_widget.currentIndex() == manager.tab_index("reward_issue")
+    assert manager._pending_tab_key is None
+
+
+def test_archive_login_continues_archive_but_not_audit(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = AuthManager.instance()
+
+    manager.requestTab("archive")
+    auth._role = "archive"
+    auth.role_changed.emit("archive")
+    assert manager.tab_widget.currentIndex() == manager.tab_index("archive")
+    assert manager._pending_tab_key is None
+
+    auth._role = "user"
+    auth.role_changed.emit("user")
+    manager.requestTab("audit")
+    auth._role = "archive"
+    auth.role_changed.emit("archive")
+    assert manager.tab_widget.currentIndex() == manager.tab_index("settings")
+    assert manager._pending_tab_key is None
+
+
+def test_admin_login_continues_audit_target(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = AuthManager.instance()
+
+    manager.requestTab("audit")
+    auth._role = "admin"
+    auth.role_changed.emit("admin")
+    assert manager.tab_widget.currentIndex() == manager.tab_index("audit")
+    assert manager._pending_tab_key is None
+
+
+def test_unknown_key_clears_older_pending_target(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+
+    manager.requestTab("audit")
+    assert manager._pending_tab_key == "audit"
+
+    assert manager.requestTab("not-a-tab") is False
+    assert manager._pending_tab_key is None
+
+
+def test_login_prompt_resets_when_returning_to_user(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    settings = manager.tabs[manager.tab_index("settings")]
+
+    settings.showLoginPrompt("操作紀錄")
+    assert "操作紀錄" in settings._lbl_login_ttl.text()
+    settings._onRoleChanged("user")
+    assert settings._lbl_login_ttl.text() == "管理者驗證"
+
+
+def test_restricted_route_tracks_settings_as_previous_tab(
+        qtbot, shell_db, monkeypatch):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    settings = manager.tabs[manager.tab_index("settings")]
+    calls = []
+    monkeypatch.setattr(
+        settings, "_promptUnsaved",
+        lambda context: calls.append(context),
+    )
+
+    manager.requestTab("archive")
+    manager.requestTab("browse")
+
+    assert calls == ["leave"]
+
+
+def test_leaving_login_page_abandons_pending_target(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = AuthManager.instance()
+
+    manager.requestTab("audit")
+    manager.tab_widget.setCurrentIndex(manager.tab_index("browse"))
+    assert manager._pending_tab_key is None
+
+    auth._role = "admin"
+    auth.role_changed.emit("admin")
+    assert manager.tab_widget.currentIndex() == manager.tab_index("browse")
+
+
+def test_failed_login_while_staying_on_login_page_retains_pending(
+        qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    settings = manager.tabs[manager.tab_index("settings")]
+
+    manager.requestTab("audit")
+    settings.w_password.setText("incorrect-password")
+    settings._doLogin()
+
+    assert manager.tab_widget.currentIndex() == manager.tab_index("settings")
+    assert manager._pending_tab_key == "audit"
+    assert settings.lbl_login_err.text() == "密碼錯誤，請再試一次"
 
 
 def test_entry_manager_visibility_never_adds_removed_tabs(qtbot, shell_db):
