@@ -100,10 +100,16 @@ class TestLogin(_AuthBase):
         self.assertEqual(self.auth.current_role, "user")
 
     def test_logout(self):
+        seen = []
+        self.auth.role_changed.connect(seen.append)
         self.auth.login("admin", self.db_path)
+        seen.clear()
+
         self.auth.logout()
+
         self.assertEqual(self.auth.current_role, "user")
         self.assertFalse(self.auth.is_manager())
+        self.assertEqual(seen, ["user"])
 
     def test_bad_db_path(self):
         self.assertFalse(self.auth.login("admin", "Z:/does/not/exist.db"))

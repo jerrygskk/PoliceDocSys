@@ -106,6 +106,83 @@ def test_role_change_updates_visibility_without_reindexing(qtbot, shell_db):
     assert manager.tab_widget.count() == 11
 
 
+def test_logout_from_admin_only_tab_falls_back_to_settings(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = AuthManager.instance()
+    auth._role = "admin"
+    manager._onRoleChanged("admin")
+    manager.requestTab("audit")
+    assert manager.tab_widget.currentIndex() == manager.tab_index("audit")
+
+    auth._role = "user"
+    manager._onRoleChanged("user")
+
+    assert manager.tab_widget.currentIndex() == manager.tab_index("settings")
+    assert not manager.tab_widget.isTabVisible(manager.tab_index("audit"))
+    assert manager._prev_tab_index == manager.tab_index("settings")
+
+
+def test_logout_keeps_current_business_tab_when_still_visible(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = AuthManager.instance()
+    auth._role = "admin"
+    manager._onRoleChanged("admin")
+    manager.requestTab("reward_issue")
+    previous = manager.tab_index("browse")
+    manager._prev_tab_index = previous
+
+    auth._role = "user"
+    manager._onRoleChanged("user")
+
+    assert manager.tab_widget.currentIndex() == manager.tab_index("reward_issue")
+    assert manager.tab_widget.isTabVisible(manager.tab_index("reward_issue"))
+    assert manager._prev_tab_index == previous
+
+
+def _enter_admin_audit(manager):
+    auth = AuthManager.instance()
+    auth._role = "admin"
+    auth.role_changed.emit("admin")
+    manager.requestTab("audit")
+    assert manager.tab_widget.currentIndex() == manager.tab_index("audit")
+    return auth
+
+
+def test_real_logout_signal_falls_back_and_hides_audit(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = _enter_admin_audit(manager)
+
+    auth.logout()
+
+    assert auth.current_role == "user"
+    assert manager.tab_widget.currentIndex() == manager.tab_index("settings")
+    assert not manager.tab_widget.isTabVisible(manager.tab_index("audit"))
+    assert manager._prev_tab_index == manager.tab_index("settings")
+
+
+def test_idle_timeout_uses_logout_signal_and_falls_back(
+        qtbot, shell_db, monkeypatch):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = _enter_admin_audit(manager)
+    notices = []
+    monkeypatch.setattr(
+        main_module, "msgInfo",
+        lambda title, text, parent=None: notices.append((title, text)),
+    )
+
+    manager._onIdleTimeout()
+
+    assert auth.current_role == "user"
+    assert manager.tab_widget.currentIndex() == manager.tab_index("settings")
+    assert not manager.tab_widget.isTabVisible(manager.tab_index("audit"))
+    assert manager._prev_tab_index == manager.tab_index("settings")
+    assert notices and notices[0][0] == "自動登出"
+
+
 def test_request_hidden_tab_routes_user_to_settings_login(qtbot, shell_db):
     manager = DocumentManager(profile=FULL_PROFILE)
     qtbot.addWidget(manager.window)

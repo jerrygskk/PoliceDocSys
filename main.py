@@ -382,15 +382,12 @@ class DocumentManager:
             None,
         )
 
-        if current_key not in visible:
-            fallback = self._IDX_SETTINGS
-            if fallback is not None:
-                self.tab_widget.setCurrentIndex(fallback)
+        if current_key not in visible and self._IDX_SETTINGS is not None:
+            self.tab_widget.setCurrentIndex(self._IDX_SETTINGS)
+            self._prev_tab_index = self._IDX_SETTINGS
 
         for key, index in self.tab_index_by_key.items():
             self.tab_widget.setTabVisible(index, key in visible)
-
-        self._prev_tab_index = self.tab_widget.currentIndex()
 
     def requestTab(self, key):
         index = self.tab_index(key)
