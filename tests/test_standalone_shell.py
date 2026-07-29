@@ -57,6 +57,13 @@ def _detach_manager_signals():
         pass   # 本來就沒有連線
 
 
+def _visible_tab_keys(manager):
+    return tuple(
+        key for key, index in manager.tab_index_by_key.items()
+        if manager.tab_widget.isTabVisible(index)
+    )
+
+
 def test_full_manager_keeps_all_current_tab_keys(qtbot, shell_db):
     manager = DocumentManager(profile=FULL_PROFILE)
     qtbot.addWidget(manager.window)
@@ -65,6 +72,43 @@ def test_full_manager_keeps_all_current_tab_keys(qtbot, shell_db):
     assert manager.tab_index("browse") == 7
     assert manager.tab_index("audit") == 10
     assert manager.tab_widget.count() == 11
+
+
+def test_full_manager_initial_user_visibility_hides_archive_and_audit(
+        qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    assert _visible_tab_keys(manager) == (
+        "assignment_issue", "assignment_receive", "report", "reward",
+        "reward_issue", "ticket", "print", "browse", "settings",
+    )
+    assert manager.tab_widget.count() == 11
+    assert manager.tab_index("settings") == 9
+    assert manager.tab_index("audit") == 10
+
+
+def test_role_change_updates_visibility_without_reindexing(qtbot, shell_db):
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    original_mapping = dict(manager.tab_index_by_key)
+
+    manager._applyTabVisibility("archive")
+    assert _visible_tab_keys(manager) == tuple(
+        key for key in FULL_PROFILE.tab_keys if key != "audit"
+    )
+
+    manager._applyTabVisibility("admin")
+    assert _visible_tab_keys(manager) == FULL_PROFILE.tab_keys
+    assert manager.tab_index_by_key == original_mapping
+    assert manager.tab_widget.count() == 11
+
+
+def test_entry_manager_visibility_never_adds_removed_tabs(qtbot, shell_db):
+    manager = DocumentManager(profile=ENTRY_PROFILE)
+    qtbot.addWidget(manager.window)
+    manager._applyTabVisibility("admin")
+    assert _visible_tab_keys(manager) == ENTRY_PROFILE.tab_keys
+    assert manager.tab_widget.count() == 4
 
 
 def test_entry_manager_builds_only_four_tabs(qtbot, shell_db):

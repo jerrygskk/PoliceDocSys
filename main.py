@@ -82,7 +82,7 @@ from lib.version import __version__
 from lib.db_utils import getResourcePath
 from ui_utils import loadUi, msgInfo, installDateEditWheelGuard
 from lib.auth_manager import AuthManager
-from lib.app_profile import AppProfile, FULL_PROFILE
+from lib.app_profile import AppProfile, FULL_PROFILE, visibleTabKeys
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）
 
 
@@ -214,11 +214,13 @@ class DocumentManager:
             from ui_utils import attachHelpButton
             attachHelpButton(self.tab_widget, self.window,
                              tab_keys=self.profile.tab_keys)
+            self._applyTabVisibility(AuthManager.instance().current_role)
 
         # 標題隨身份切換
         self._base_title = self.profile.product_name
         self._updateTitle(AuthManager.instance().current_role)
         AuthManager.instance().role_changed.connect(self._updateTitle)
+        AuthManager.instance().role_changed.connect(self._onRoleChanged)
 
         # 閒置逾時（分）可於設定頁「系統設定」調整，存 App_Settings；
         # 啟動時讀一次（改值須重啟生效），讀不到／不合法走預設（登出 10、關閉 14.5），
@@ -362,6 +364,35 @@ class DocumentManager:
     def tab_index(self, key):
         """profile 允許的 Tab key → 實際 tabWidget index；不存在回傳 None。"""
         return self.tab_index_by_key.get(key)
+
+    def _visibleTabKeys(self, role=None):
+        role = role or AuthManager.instance().current_role
+        return visibleTabKeys(role, self.profile)
+
+    def _isTabVisible(self, key, role=None):
+        return key in self._visibleTabKeys(role)
+
+    def _applyTabVisibility(self, role):
+        visible = set(self._visibleTabKeys(role))
+        current = self.tab_widget.currentIndex()
+        current_key = next(
+            (key for key, index in self.tab_index_by_key.items()
+             if index == current),
+            None,
+        )
+
+        if current_key not in visible:
+            fallback = self._IDX_SETTINGS
+            if fallback is not None:
+                self.tab_widget.setCurrentIndex(fallback)
+
+        for key, index in self.tab_index_by_key.items():
+            self.tab_widget.setTabVisible(index, key in visible)
+
+        self._prev_tab_index = self.tab_widget.currentIndex()
+
+    def _onRoleChanged(self, role):
+        self._applyTabVisibility(role)
 
     def _onTabChanged(self, index):
         from ui_utils import autoResizeTable
