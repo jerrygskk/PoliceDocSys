@@ -39,32 +39,34 @@ def _make_db():
 
 
 def _insert_gen(conn, doc_id="20", **over):
-    row = dict(report_date="2026-06-28", sender_id="P01", dept_id="D01",
+    row = dict(create_date="2026-06-25", report_date="2026-06-28",
+               sender_id="P01", dept_id="D01",
                gen_cat_id="GC01", subject="超商竊盜案移送", processor_id="P02",
                is_reported=1, is_electronic="")
     row.update(over)
     conn.execute(
-        "INSERT INTO Document_General(doc_id,report_date,sender_id,dept_id,"
+        "INSERT INTO Document_General(doc_id,create_date,report_date,sender_id,dept_id,"
         "gen_cat_id,subject,processor_id,is_reported,is_electronic) "
-        "VALUES(?,?,?,?,?,?,?,?,?)",
-        (doc_id, row["report_date"], row["sender_id"], row["dept_id"],
+        "VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (doc_id, row["create_date"], row["report_date"], row["sender_id"], row["dept_id"],
          row["gen_cat_id"], row["subject"], row["processor_id"],
          row["is_reported"], row["is_electronic"]))
     conn.commit()
 
 
 def _insert_crim(conn, doc_id="5", **over):
-    row = dict(report_date="2026-06-28", sender_id="P01", case_type="CT01",
+    row = dict(create_date="2026-06-24", report_date="2026-06-28",
+               sender_id="P01", case_type="CT01",
                case_status="CS01", processor_id="P02",
                subject_summary="超商竊盜案移送", occurrence_date="2026-06-20",
                reporter_name="張老闆", receiver_id="P03", is_reported=1,
                is_electronic="")
     row.update(over)
     conn.execute(
-        "INSERT INTO Document_Criminal(doc_id,report_date,sender_id,case_type,"
+        "INSERT INTO Document_Criminal(doc_id,create_date,report_date,sender_id,case_type,"
         "case_status,processor_id,subject_summary,occurrence_date,reporter_name,"
-        "receiver_id,is_reported,is_electronic) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-        (doc_id, row["report_date"], row["sender_id"], row["case_type"],
+        "receiver_id,is_reported,is_electronic) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (doc_id, row["create_date"], row["report_date"], row["sender_id"], row["case_type"],
          row["case_status"], row["processor_id"], row["subject_summary"],
          row["occurrence_date"], row["reporter_name"], row["receiver_id"],
          row["is_reported"], row["is_electronic"]))
@@ -74,8 +76,9 @@ def _insert_crim(conn, doc_id="5", **over):
 class TestMapping(unittest.TestCase):
     def test_gen_to_crim_common(self):
         m = doc_convert.mapGenToCrim(dict(
-            report_date="d", sender_id="P01", processor_id="P02",
+            create_date="c", report_date="d", sender_id="P01", processor_id="P02",
             subject="主旨X", is_reported=1))
+        self.assertEqual(m["create_date"], "c")
         self.assertEqual(m["subject_summary"], "主旨X")   # 主旨欄名互換
         self.assertEqual(m["processor_id"], "P02")
         self.assertEqual(m["is_reported"], 1)
@@ -83,8 +86,9 @@ class TestMapping(unittest.TestCase):
 
     def test_crim_to_gen_common(self):
         m = doc_convert.mapCrimToGen(dict(
-            report_date="d", sender_id="P01", processor_id="P02",
+            create_date="c", report_date="d", sender_id="P01", processor_id="P02",
             subject_summary="主旨Y", is_reported=0))
+        self.assertEqual(m["create_date"], "c")
         self.assertEqual(m["subject"], "主旨Y")           # 主旨欄名互換
         self.assertNotIn("subject_summary", m)
 
@@ -166,13 +170,14 @@ class TestConvertRoundTrip(unittest.TestCase):
 
         self.assertEqual(new_id, "6")                     # 目標刑案表 Seq 5+1
         crim = self.conn.execute(
-            "SELECT subject_summary,processor_id,case_type,case_status,"
+            "SELECT create_date,subject_summary,processor_id,case_type,case_status,"
             "occurrence_date,receiver_id,reporter_name,is_reported "
             "FROM Document_Criminal WHERE doc_id='6'").fetchone()
-        self.assertEqual(crim[0], "超商竊盜案移送")        # 主旨帶過
-        self.assertEqual(crim[1], "P02")                  # 陳報人→承辦人
-        self.assertEqual(crim[2], "CT01")                 # 補填
-        self.assertEqual(crim[7], 1)                      # is_reported 照搬
+        self.assertEqual(crim[0], "2026-06-25")           # 登錄日期照搬
+        self.assertEqual(crim[1], "超商竊盜案移送")        # 主旨帶過
+        self.assertEqual(crim[2], "P02")                  # 陳報人→承辦人
+        self.assertEqual(crim[3], "CT01")                 # 補填
+        self.assertEqual(crim[8], 1)                      # is_reported 照搬
 
         # 來源表 Seq 不動
         seq_gen = self.conn.execute(
@@ -182,9 +187,9 @@ class TestConvertRoundTrip(unittest.TestCase):
 
         # 原列成空殼
         old = self.conn.execute(
-            "SELECT subject,report_date,dept_id FROM Document_General "
+            "SELECT create_date,subject,report_date,dept_id FROM Document_General "
             "WHERE doc_id='20'").fetchone()
-        self.assertEqual(old, (None, None, None))
+        self.assertEqual(old, (None, None, None, None))
 
         # 稽核一筆、含雙號與丟失欄
         a = self._audit()
@@ -209,11 +214,12 @@ class TestConvertRoundTrip(unittest.TestCase):
 
         self.assertEqual(new_id, "21")                    # 一般 Seq 20+1
         gen = self.conn.execute(
-            "SELECT subject,dept_id,gen_cat_id,is_reported FROM Document_General "
+            "SELECT create_date,subject,dept_id,gen_cat_id,is_reported FROM Document_General "
             "WHERE doc_id='21'").fetchone()
-        self.assertEqual(gen[0], "超商竊盜案移送")
-        self.assertEqual(gen[1], "D01")
-        self.assertEqual(gen[2], "GC01")
+        self.assertEqual(gen[0], "2026-06-24")
+        self.assertEqual(gen[1], "超商竊盜案移送")
+        self.assertEqual(gen[2], "D01")
+        self.assertEqual(gen[3], "GC01")
         a = self._audit()
         self.assertIn("刑案5→一般21", a[5])
         self.assertIn("受理人=林大偉", a[5])

@@ -660,6 +660,9 @@ QRadioButton:checked {
         lbl_id.setStyleSheet("font-weight: bold;")
         form.addRow("陳報編號：", lbl_id)
 
+        self.w_create_date = QLabel("")
+        form.addRow("登錄日期：", self.w_create_date)
+
         # 陳報日期（可空白＝未發文哨兵；填日期＝發文，此時發文人員必填）
         self.w_report_date = NullableDateEdit()
         self.w_report_date.setPlaceholderText("未發文")
@@ -762,7 +765,7 @@ QRadioButton:checked {
     def _load_data(self):
         conn = _get_conn(self.db_path)
         row = conn.execute("""
-            SELECT report_date, sender_id, case_type, case_status,
+            SELECT create_date, report_date, sender_id, case_type, case_status,
                    processor_id, receiver_id, subject_summary,
                    occurrence_date, reporter_name, is_reported, is_electronic
             FROM Document_Criminal WHERE doc_id=?
@@ -771,9 +774,11 @@ QRadioButton:checked {
         if not row:
             return
 
-        report_date, sender_id, case_type, case_status, \
+        create_date, report_date, sender_id, case_type, case_status, \
             proc_id, recv_id, subject, occ_date, reporter, \
             is_reported, is_electronic = row
+
+        self.w_create_date.setText(str(create_date or ""))
 
         # 有值＝已發文；NULL＝未發文（自助取號未結算列）→ 留空，不填今日
         if report_date:
@@ -878,7 +883,7 @@ QRadioButton:checked {
         """儲存後回傳更新後的顯示值，供表格刷新用"""
         conn = _get_conn(self.db_path)
         row = conn.execute("""
-            SELECT 送文編號, 發文分類, 案類, 嫌疑人_案由,
+            SELECT 送文編號, 登錄日期, 發文分類, 案類, 嫌疑人_案由,
                    主承辦人, 受理人, 受理日期, 報案人
             FROM View_Criminal_Full WHERE 送文編號=?
         """, (self.doc_id,)).fetchone()
@@ -930,6 +935,9 @@ class GeneralEditDialog(_BaseEditDialog):
         lbl_id = QLabel(str(self.doc_id))
         lbl_id.setStyleSheet("font-weight: bold;")
         form.addRow("陳報編號：", lbl_id)
+
+        self.w_create_date = QLabel("")
+        form.addRow("登錄日期：", self.w_create_date)
 
         # 陳報日期（可空白＝未發文哨兵；填日期＝發文，此時發文人員必填）
         self.w_report_date = NullableDateEdit()
@@ -1015,7 +1023,7 @@ class GeneralEditDialog(_BaseEditDialog):
     def _load_data(self):
         conn = _get_conn(self.db_path)
         row = conn.execute("""
-            SELECT report_date, sender_id, dept_id, gen_cat_id,
+            SELECT create_date, report_date, sender_id, dept_id, gen_cat_id,
                    subject, processor_id, is_reported, is_electronic
             FROM Document_General WHERE doc_id=?
         """, (self.doc_id,)).fetchone()
@@ -1023,8 +1031,10 @@ class GeneralEditDialog(_BaseEditDialog):
         if not row:
             return
 
-        report_date, sender_id, dept_id, gen_cat_id, subject, proc_id, \
+        create_date, report_date, sender_id, dept_id, gen_cat_id, subject, proc_id, \
             is_reported, is_electronic = row
+
+        self.w_create_date.setText(str(create_date or ""))
 
         # 有值＝已發文；NULL＝未發文（自助取號未結算列）→ 留空，不填今日
         if report_date:
@@ -1107,7 +1117,7 @@ class GeneralEditDialog(_BaseEditDialog):
         """儲存後回傳更新後的顯示值，供表格刷新用"""
         conn = _get_conn(self.db_path)
         row = conn.execute("""
-            SELECT 送文編號, 業務單位, 陳報主旨, 陳報人, 分類
+            SELECT 送文編號, 登錄日期, 業務單位, 陳報主旨, 陳報人, 分類
             FROM View_General_Full WHERE 送文編號=?
         """, (self.doc_id,)).fetchone()
         conn.close()

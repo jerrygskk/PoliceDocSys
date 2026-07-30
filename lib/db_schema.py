@@ -34,11 +34,11 @@ _TABLES = (
 )""",
     # Document_Criminal
     """CREATE TABLE IF NOT EXISTS Document_Criminal (
-    doc_id VARCHAR(50) PRIMARY KEY, report_date DATE, sender_id VARCHAR(10), case_type VARCHAR(10), case_status VARCHAR(10), processor_id VARCHAR(10), subject_summary TEXT, occurrence_date DATE, reporter_name VARCHAR(50), receiver_id VARCHAR(10), is_reported BOOLEAN, is_electronic TEXT, last_modified DATETIME
+    doc_id VARCHAR(50) PRIMARY KEY, create_date DATE, report_date DATE, sender_id VARCHAR(10), case_type VARCHAR(10), case_status VARCHAR(10), processor_id VARCHAR(10), subject_summary TEXT, occurrence_date DATE, reporter_name VARCHAR(50), receiver_id VARCHAR(10), is_reported BOOLEAN, is_electronic TEXT, last_modified DATETIME
 )""",
     # Document_General
     """CREATE TABLE IF NOT EXISTS Document_General (
-    doc_id VARCHAR(50) PRIMARY KEY, report_date DATE, sender_id VARCHAR(10), dept_id VARCHAR(10), gen_cat_id VARCHAR(10), subject TEXT, processor_id VARCHAR(10), is_reported BOOLEAN, is_electronic TEXT, last_modified DATETIME
+    doc_id VARCHAR(50) PRIMARY KEY, create_date DATE, report_date DATE, sender_id VARCHAR(10), dept_id VARCHAR(10), gen_cat_id VARCHAR(10), subject TEXT, processor_id VARCHAR(10), is_reported BOOLEAN, is_electronic TEXT, last_modified DATETIME
 )""",
     # Document_Task
     """CREATE TABLE IF NOT EXISTS Document_Task (
@@ -132,6 +132,8 @@ _TABLES = (
 # 既有表新增欄位：(表, 欄, 型別宣告)，缺欄才加。
 _COLUMNS = (
     ("Ref_CaseTypes", "alias", "TEXT"),
+    ("Document_Criminal", "create_date", "DATE"),
+    ("Document_General", "create_date", "DATE"),
     ("Document_Reward", "sender_id", "VARCHAR(10)"),
     ("Document_Reward", "create_date", "DATE"),
 )
@@ -142,6 +144,7 @@ _VIEWS = (
     """CREATE VIEW IF NOT EXISTS View_Criminal_Full AS
 SELECT
     C.doc_id AS '送文編號',
+    C.create_date AS '登錄日期',
     C.report_date AS '陳報日期',
     P1.staff_name AS '送文人員',
     COALESCE(CT.case_type_name, C.case_type) AS '案類',
@@ -163,6 +166,7 @@ LEFT JOIN Ref_Case_Status CS ON C.case_status = CS.status_id""",
     """CREATE VIEW IF NOT EXISTS View_General_Full AS
 SELECT
     G.doc_id AS '送文編號',
+    G.create_date AS '登錄日期',
     G.report_date AS '陳報日期',
     P1.staff_name AS '送文人員',
     D.dept_name AS '業務單位',

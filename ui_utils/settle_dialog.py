@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui     import QColor
 
 from lib.db_utils    import getConn, loadActivePersonnel
+from lib.ticket_utils import ticketNoNaturalKey
 from lib.archive_text import _trimName
 from ui_utils.ui_common import (
     BTN_CANCEL, BTN_CONFIRM, confirmBox, msgInfo, msgWarning, reportError,
@@ -38,7 +39,8 @@ _BLACK  = QColor("#000000")
 #   key         內部識別（存入列 UserRole、計數 dict 鍵）
 #   label       類型欄顯示文字
 #   color       類型欄前景色
-#   query       查未發文列 SQL，回三欄 (doc_id, 承辦人, 主旨)
+#   query       查未發文列 SQL，前三欄固定為 (doc_id, 承辦人, 主旨)
+#   sort_key    選填；查詢後的 Python 排序 key
 #   update      結算補值 SQL（with_sender 帶 (issue_date, sender_id, doc_id)，否則 (issue_date, doc_id)）
 #   with_sender 結算時是否需選送文者（現行三型態皆需；False 分支留給日後不需送文者的型態）
 #   strict      rowcount!=1 是否視為併發衝突並整批 rollback（罰單為 True；
@@ -95,17 +97,18 @@ SETTLE_META = (
         "label": "罰單",
         "color": "#6b4fa3",
         "query": (
-            "SELECT doc_id, issuer_name, ticket_no "
+            "SELECT doc_id, issuer_name, ticket_no, issuer_sort_order "
             "FROM Document_Ticket_Full "
             "WHERE register_date='' "
-            "  AND ticket_no IS NOT NULL AND ticket_no != '' "
-            "ORDER BY issuer_sort_order, ticket_no COLLATE NOCASE"
+            "  AND ticket_no IS NOT NULL AND ticket_no != ''"
         ),
         "count_query": (
             "SELECT COUNT(*) FROM Document_Ticket "
             "WHERE register_date='' "
             "  AND ticket_no IS NOT NULL AND ticket_no != ''"
         ),
+        "sort_key": lambda row: (
+            row[3], row[1] or "", ticketNoNaturalKey(row[2])),
         "update": ("UPDATE Document_Ticket SET register_date=?, sender_id=? "
                    "WHERE doc_id=? AND register_date=''"),
         "with_sender": True,
@@ -166,6 +169,8 @@ def load_unissued(db_path):
     try:
         for meta in SETTLE_META:
             rows = conn.execute(meta["query"]).fetchall()
+            if sort_key := meta.get("sort_key"):
+                rows.sort(key=sort_key)
             result[meta["key"]] = [
                 {"doc_id": r[0], "processor": _trimName(r[1]), "subject": r[2] or ""}
                 for r in rows

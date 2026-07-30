@@ -38,6 +38,7 @@ def convertKinds(src_kind):
 def mapGenToCrim(row):
     """一般列 dict → 刑案共通欄 dict（不含 doc_id 與補填欄）。"""
     return {
+        "create_date":     row.get("create_date"),
         "report_date":     row.get("report_date"),
         "sender_id":       row.get("sender_id"),
         "processor_id":    row.get("processor_id"),   # 陳報人 → 承辦人
@@ -49,6 +50,7 @@ def mapGenToCrim(row):
 def mapCrimToGen(row):
     """刑案列 dict → 一般共通欄 dict（不含 doc_id 與補填欄）。"""
     return {
+        "create_date":  row.get("create_date"),
         "report_date":  row.get("report_date"),
         "sender_id":    row.get("sender_id"),
         "processor_id": row.get("processor_id"),      # 承辦人 → 陳報人

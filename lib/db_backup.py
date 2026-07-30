@@ -420,9 +420,11 @@ def backup_doc_counts(path):
                 "task": cnt("SELECT COUNT(*) FROM Document_Task "
                             "WHERE receive_date IS NOT NULL"),
                 "crim": cnt("SELECT COUNT(*) FROM Document_Criminal "
-                            "WHERE report_date IS NOT NULL"),
+                            "WHERE subject_summary IS NOT NULL "
+                            "AND TRIM(subject_summary) <> ''"),
                 "gen":  cnt("SELECT COUNT(*) FROM Document_General "
-                            "WHERE report_date IS NOT NULL"),
+                            "WHERE subject IS NOT NULL "
+                            "AND TRIM(subject) <> ''"),
                 "reward": cnt("SELECT COUNT(*) FROM Document_Reward "
                               f"WHERE {REWARD_ACTIVE_SQL}"),
                 "ticket": cnt("SELECT COUNT(*) FROM Document_Ticket "

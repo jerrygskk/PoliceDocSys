@@ -27,13 +27,13 @@ def _make_db():
             dept_id TEXT, subject TEXT, processor_id TEXT, deadline TEXT,
             dispatch_date TEXT, sender_id TEXT, timestamp TEXT);
         CREATE TABLE Document_Criminal (
-            doc_id TEXT PRIMARY KEY, report_date TEXT, sender_id TEXT,
+            doc_id TEXT PRIMARY KEY, create_date TEXT, report_date TEXT, sender_id TEXT,
             case_type TEXT, case_status TEXT, processor_id TEXT,
             subject_summary TEXT, occurrence_date TEXT, reporter_name TEXT,
             receiver_id TEXT, is_reported INTEGER DEFAULT 0,
             is_electronic TEXT DEFAULT '');
         CREATE TABLE Document_General (
-            doc_id TEXT PRIMARY KEY, report_date TEXT, sender_id TEXT,
+            doc_id TEXT PRIMARY KEY, create_date TEXT, report_date TEXT, sender_id TEXT,
             dept_id TEXT, gen_cat_id TEXT, subject TEXT, processor_id TEXT,
             is_reported INTEGER DEFAULT 0, is_electronic TEXT DEFAULT '');
         CREATE TABLE Document_Reward (
@@ -101,8 +101,8 @@ class TestSoftDelete(unittest.TestCase):
 
     def test_criminal_delete_by_user_records_sender(self):
         self.conn.execute(
-            "INSERT INTO Document_Criminal(doc_id, sender_id, subject_summary,"
-            " processor_id) VALUES('C1','P03','竊盜','P02')")
+            "INSERT INTO Document_Criminal(doc_id, create_date, sender_id, subject_summary,"
+            " processor_id) VALUES('C1','2026-07-29','P03','竊盜','P02')")
         subj = db_utils.softDeleteDoc(
             self.conn, table="Document_Criminal", doc_id="C1",
             role="archive", is_admin=False)
@@ -110,11 +110,18 @@ class TestSoftDelete(unittest.TestCase):
         self.assertEqual(subj, "竊盜")
         self.assertEqual(self._audit()[0], "張陳報")   # 刑案 operator 來源 = sender
         self.assertEqual(self._trash()[1], "李承辦")
+        self.assertIsNone(self.conn.execute(
+            "SELECT create_date FROM Document_Criminal WHERE doc_id='C1'"
+        ).fetchone()[0])
+        payload = self.conn.execute(
+            "SELECT payload FROM Trash_Documents ORDER BY trash_id DESC LIMIT 1"
+        ).fetchone()[0]
+        self.assertIn('"create_date": "2026-07-29"', payload)
 
     def test_browse_delete_operator_always_blank(self):
         self.conn.execute(
-            "INSERT INTO Document_General(doc_id, sender_id, subject, processor_id)"
-            " VALUES('G1','P03','陳報事項','P02')")
+            "INSERT INTO Document_General(doc_id, create_date, sender_id, subject, processor_id)"
+            " VALUES('G1','2026-07-28','P03','陳報事項','P02')")
         # 瀏覽頁：audit_operator=False → 即使非 admin 也留空
         db_utils.softDeleteDoc(
             self.conn, table="Document_General", doc_id="G1",
@@ -122,6 +129,9 @@ class TestSoftDelete(unittest.TestCase):
         self.conn.commit()
         self.assertIsNone(self._audit()[0])
         self.assertEqual(self._trash()[0], "陳報事項")
+        self.assertIsNone(self.conn.execute(
+            "SELECT create_date FROM Document_General WHERE doc_id='G1'"
+        ).fetchone()[0])
 
     def test_reward_delete_clears_sender(self):
         self.conn.execute(

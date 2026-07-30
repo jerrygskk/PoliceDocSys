@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QDate
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication, QDateEdit, QLabel
+from PySide6.QtWidgets import QApplication, QDateEdit, QLabel, QTableWidget
 import res.resources_rc
 _app = QApplication.instance() or QApplication([])
 
@@ -44,14 +44,14 @@ def _make_db_file():
             ('Document_Task',10),('Document_Criminal',5),('Document_General',20);
         INSERT INTO Document_Task(doc_id,receive_date,receive_id,subject,processor_id)
             VALUES('1','2026-07-01','P01','交辦主旨','P02');
-        INSERT INTO Document_Criminal(doc_id,report_date,sender_id,case_type,
+        INSERT INTO Document_Criminal(doc_id,create_date,report_date,sender_id,case_type,
             case_status,processor_id,subject_summary,occurrence_date,
             is_reported,is_electronic)
-            VALUES('2','2026-07-01','P01','CT01','CS01','P02','刑案主旨',
+            VALUES('2','2026-07-16','2026-07-01','P01','CT01','CS01','P02','刑案主旨',
                    '2026-06-01',0,'');
-        INSERT INTO Document_General(doc_id,report_date,sender_id,dept_id,
+        INSERT INTO Document_General(doc_id,create_date,report_date,sender_id,dept_id,
             gen_cat_id,subject,processor_id,is_reported,is_electronic)
-            VALUES('3','2026-07-01','P01','D01','GC01','一般主旨','P02',0,'');
+            VALUES('3','2026-07-16','2026-07-01','P01','D01','GC01','一般主旨','P02',0,'');
         INSERT INTO Document_Reward(doc_id,create_date,register_date,reason,recipients)
             VALUES('4','2026-07-16','2026-07-17','協助查緝','王小明, 名單外甲');
         INSERT INTO Document_Ticket(doc_id,create_date,register_date,sender_id,
@@ -110,6 +110,27 @@ class TestEditDialogs(_DialogBase):
         dlg = CriminalEditDialog(self.db, "2")
         self.assertEqual(dlg.w_subject.text(), "刑案主旨")
         dlg.deleteLater()
+
+    def test_report_edits_show_and_preserve_readonly_create_date(self):
+        from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
+        for cls, doc, subject_attr, changed_subject, table in (
+                (CriminalEditDialog, "2", "w_subject", "刑案主旨更新",
+                 "Document_Criminal"),
+                (GeneralEditDialog, "3", "w_subject", "一般主旨更新",
+                 "Document_General")):
+            with self.subTest(dialog=cls.__name__):
+                dlg = cls(self.db, doc)
+                self.assertIsInstance(dlg.w_create_date, QLabel)
+                self.assertEqual(dlg.w_create_date.text(), "2026-07-16")
+                getattr(dlg, subject_attr).setText(changed_subject)
+                dlg._on_save()
+                conn = sqlite3.connect(self.db)
+                create_date = conn.execute(
+                    f"SELECT create_date FROM {table} WHERE doc_id=?",
+                    (doc,)).fetchone()[0]
+                conn.close()
+                self.assertEqual(create_date, "2026-07-16")
+                dlg.deleteLater()
 
     def _set_self_service(self, on):
         conn = sqlite3.connect(self.db)
@@ -679,6 +700,35 @@ class TestConvertDialog(_DialogBase):
         from ui_utils.convert_dialog import ConvertDialog
         dlg = ConvertDialog(self.db, "gen", "3")
         dlg.deleteLater()
+
+
+class TestReportPreviewCreateDate(_DialogBase):
+    def test_preview_headers_put_create_date_after_doc_id(self):
+        from tabs.tab_report import CRIM_HEADERS, GEN_HEADERS
+        self.assertEqual(CRIM_HEADERS[1:3], ["編號", "登錄日期"])
+        self.assertEqual(GEN_HEADERS[1:3], ["編號", "登錄日期"])
+
+    def test_preview_rows_show_create_date_without_shifting_existing_values(self):
+        from tabs.tab_report import CRIM_HEADERS, GEN_HEADERS, TabReport
+        tab = TabReport(None, self.db)
+        tab.crim_table = QTableWidget(0, len(CRIM_HEADERS))
+        tab.gen_table = QTableWidget(0, len(GEN_HEADERS))
+
+        tab._insertCrimRow(
+            "2", "2026-07-16", "現行", "竊盜案", "刑案主旨",
+            "陳志豪", "", "", "2026-06-01")
+        self.assertEqual(
+            [tab.crim_table.item(0, col).text() for col in range(2, 10)],
+            ["07-16-2026", "現行", "竊盜案", "刑案主旨",
+             "陳志豪", "", "06-01-2026", ""])
+
+        tab._insertGenRow(
+            "3", "2026-07-16", "偵查隊", "一般主旨", "陳志豪", "業務")
+        self.assertEqual(
+            [tab.gen_table.item(0, col).text() for col in range(2, 7)],
+            ["07-16-2026", "偵查隊", "一般主旨", "陳志豪", "業務"])
+        tab.crim_table.deleteLater()
+        tab.gen_table.deleteLater()
 
 
 class TestSettleDialog(_DialogBase):

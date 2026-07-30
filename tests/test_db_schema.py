@@ -124,6 +124,67 @@ class TestEnsureSchema(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_upgrades_legacy_report_tables_without_backfill_or_view_rebuild(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute(
+                "CREATE TABLE Document_Criminal ("
+                "doc_id TEXT PRIMARY KEY, report_date DATE, sender_id TEXT, "
+                "case_type TEXT, case_status TEXT, processor_id TEXT, "
+                "subject_summary TEXT, occurrence_date DATE, "
+                "reporter_name TEXT, receiver_id TEXT, is_reported BOOLEAN, "
+                "is_electronic TEXT, last_modified DATETIME)")
+            conn.execute(
+                "CREATE TABLE Document_General ("
+                "doc_id TEXT PRIMARY KEY, report_date DATE, sender_id TEXT, "
+                "dept_id TEXT, gen_cat_id TEXT, subject TEXT, "
+                "processor_id TEXT, is_reported BOOLEAN, "
+                "is_electronic TEXT, last_modified DATETIME)")
+            conn.execute(
+                "INSERT INTO Document_Criminal"
+                "(doc_id, report_date, subject_summary) VALUES(?, ?, ?)",
+                ("C1", "2026-07-01", "舊刑案"))
+            conn.execute(
+                "INSERT INTO Document_General"
+                "(doc_id, report_date, subject) VALUES(?, ?, ?)",
+                ("G1", "2026-07-02", "舊一般"))
+            conn.execute(
+                "CREATE VIEW View_Criminal_Full AS "
+                "SELECT doc_id AS '送文編號' FROM Document_Criminal")
+            conn.execute(
+                "CREATE VIEW View_General_Full AS "
+                "SELECT doc_id AS '送文編號' FROM Document_General")
+            conn.commit()
+        finally:
+            conn.close()
+
+        db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertIn("create_date", _cols(conn, "Document_Criminal"))
+            self.assertIn("create_date", _cols(conn, "Document_General"))
+            self.assertIsNone(conn.execute(
+                "SELECT create_date FROM Document_Criminal WHERE doc_id='C1'"
+            ).fetchone()[0])
+            self.assertIsNone(conn.execute(
+                "SELECT create_date FROM Document_General WHERE doc_id='G1'"
+            ).fetchone()[0])
+            self.assertNotIn("登錄日期", _cols(conn, "View_Criminal_Full"))
+            self.assertNotIn("登錄日期", _cols(conn, "View_General_Full"))
+        finally:
+            conn.close()
+
+    def test_fresh_report_views_include_create_date(self):
+        db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertIn("登錄日期", _cols(conn, "View_Criminal_Full"))
+            self.assertIn("登錄日期", _cols(conn, "View_General_Full"))
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,9 @@
 """
 import os
 import sys
+import shutil
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 
@@ -22,11 +24,60 @@ from lib.db_utils import (
     getSetting, setSetting, resolveArchivedPdf, ARCHIVE_ROOT_KEY,
 )
 
+FIX_REPORT_CREATE_DATE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "fix_add_report_create_date.py",
+)
+
 
 def _build_schema(conn):
     # 直接套用正式 schema 的「程式碼唯一來源」，避免測試自刻假 schema 與正式走鐘。
     # 不播種子（種子在 db_seed），測試自行塞所需資料列。
     db_schema.applySchema(conn)
+
+
+def _build_legacy_report_schema(db_path, *, pending=False):
+    conn = sqlite3.connect(db_path)
+    try:
+        _build_schema(conn)
+        conn.execute("DROP VIEW View_Criminal_Full")
+        conn.execute("DROP VIEW View_General_Full")
+        conn.execute(
+            "ALTER TABLE Document_Criminal DROP COLUMN create_date")
+        conn.execute(
+            "ALTER TABLE Document_General DROP COLUMN create_date")
+        conn.execute(
+            "CREATE VIEW View_Criminal_Full AS "
+            "SELECT doc_id AS '送文編號' FROM Document_Criminal")
+        conn.execute(
+            "CREATE VIEW View_General_Full AS "
+            "SELECT doc_id AS '送文編號' FROM Document_General")
+        conn.executemany(
+            "INSERT INTO Document_Criminal"
+            "(doc_id, report_date, subject_summary) VALUES(?, ?, ?)",
+            [
+                ("C1", "2026-07-01", "舊刑案"),
+                ("C-DELETED", None, None),
+            ])
+        conn.executemany(
+            "INSERT INTO Document_General"
+            "(doc_id, report_date, subject) VALUES(?, ?, ?)",
+            [
+                ("G1", "2026-07-02", "舊一般"),
+                ("G-DELETED", None, None),
+            ])
+        if pending:
+            conn.execute(
+                "INSERT INTO Document_Criminal"
+                "(doc_id, report_date, subject_summary) VALUES(?, ?, ?)",
+                ("C-PENDING", None, "未發文刑案"))
+            conn.execute(
+                "INSERT INTO Document_General"
+                "(doc_id, report_date, subject) VALUES(?, ?, ?)",
+                ("G-PENDING", " ", "未發文一般"))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 class _DbTestBase(unittest.TestCase):
@@ -59,6 +110,154 @@ class TestGetConn(_DbTestBase):
         finally:
             conn.close()
         self.assertEqual(val, 3000)
+
+
+@unittest.skipUnless(
+    os.path.isfile(FIX_REPORT_CREATE_DATE),
+    "一次性 fix 腳本刻意不入庫；僅在維護者工作區存在時驗證",
+)
+class TestReportCreateDateFix(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmpdir.name, "dbfile.db")
+        self.fix_script = os.path.join(
+            self.tmpdir.name, "fix_add_report_create_date.py")
+        shutil.copy2(FIX_REPORT_CREATE_DATE, self.fix_script)
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _run_fix(self):
+        return subprocess.run(
+            [sys.executable, self.fix_script],
+            cwd=self.tmpdir.name,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            env={
+                **os.environ,
+                "PYTHONPATH": os.path.dirname(FIX_REPORT_CREATE_DATE),
+            },
+        )
+
+    def _backup_names(self):
+        return [
+            name for name in os.listdir(self.tmpdir.name)
+            if name.startswith("dbfile.before_report_create_date_")
+            and name.endswith(".db")
+        ]
+
+    def test_backfills_rebuilds_views_and_is_idempotent(self):
+        _build_legacy_report_schema(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertNotIn("create_date", [
+                r[1] for r in conn.execute(
+                    "PRAGMA table_info(Document_Criminal)")])
+            self.assertNotIn("create_date", [
+                r[1] for r in conn.execute(
+                    "PRAGMA table_info(Document_General)")])
+            self.assertNotIn("登錄日期", [r[1] for r in conn.execute(
+                "PRAGMA table_info(View_Criminal_Full)")])
+            self.assertNotIn("登錄日期", [r[1] for r in conn.execute(
+                "PRAGMA table_info(View_General_Full)")])
+        finally:
+            conn.close()
+
+        result = self._run_fix()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(
+                [r[1] for r in conn.execute(
+                    "PRAGMA table_info(Document_Criminal)")].count(
+                        "create_date"),
+                1)
+            self.assertEqual(
+                [r[1] for r in conn.execute(
+                    "PRAGMA table_info(Document_General)")].count(
+                        "create_date"),
+                1)
+            self.assertEqual(conn.execute(
+                "SELECT create_date FROM Document_Criminal "
+                "WHERE doc_id='C1'").fetchone()[0], "2026-07-01")
+            self.assertEqual(conn.execute(
+                "SELECT create_date FROM Document_General "
+                "WHERE doc_id='G1'").fetchone()[0], "2026-07-02")
+            self.assertIsNone(conn.execute(
+                "SELECT create_date FROM Document_Criminal "
+                "WHERE doc_id='C-DELETED'").fetchone()[0])
+            self.assertIsNone(conn.execute(
+                "SELECT create_date FROM Document_General "
+                "WHERE doc_id='G-DELETED'").fetchone()[0])
+            self.assertIn("登錄日期", [r[1] for r in conn.execute(
+                "PRAGMA table_info(View_Criminal_Full)")])
+            self.assertIn("登錄日期", [r[1] for r in conn.execute(
+                "PRAGMA table_info(View_General_Full)")])
+            self.assertEqual(
+                conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+            self.assertEqual(
+                conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            conn.execute(
+                "INSERT INTO Document_Criminal"
+                "(doc_id, create_date, report_date, subject_summary) "
+                "VALUES(?, ?, ?, ?)",
+                ("C-NEW", "2026-07-29", "2026-07-28", "新版刑案"))
+            conn.commit()
+        finally:
+            conn.close()
+
+        rerun = self._run_fix()
+        self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(conn.execute(
+                "SELECT create_date FROM Document_Criminal "
+                "WHERE doc_id='C-NEW'").fetchone()[0], "2026-07-29")
+            self.assertEqual(
+                [r[1] for r in conn.execute(
+                    "PRAGMA table_info(Document_Criminal)")].count(
+                        "create_date"),
+                1)
+            self.assertEqual(
+                [r[1] for r in conn.execute(
+                    "PRAGMA table_info(Document_General)")].count(
+                        "create_date"),
+                1)
+        finally:
+            conn.close()
+        self.assertEqual(len(self._backup_names()), 2)
+
+    def test_pending_rows_do_not_block_schema_upgrade(self):
+        _build_legacy_report_schema(self.db_path, pending=True)
+
+        result = self._run_fix()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertIn("create_date", [
+                r[1] for r in conn.execute(
+                    "PRAGMA table_info(Document_Criminal)")])
+            self.assertIn("create_date", [
+                r[1] for r in conn.execute(
+                    "PRAGMA table_info(Document_General)")])
+            self.assertIsNone(conn.execute(
+                "SELECT create_date FROM Document_Criminal "
+                "WHERE doc_id='C-PENDING'").fetchone()[0])
+            self.assertEqual(conn.execute(
+                "SELECT create_date FROM Document_General "
+                "WHERE doc_id='G-PENDING'").fetchone()[0], " ")
+            self.assertIn("登錄日期", [r[1] for r in conn.execute(
+                "PRAGMA table_info(View_Criminal_Full)")])
+            self.assertIn("登錄日期", [r[1] for r in conn.execute(
+                "PRAGMA table_info(View_General_Full)")])
+        finally:
+            conn.close()
+        self.assertEqual(len(self._backup_names()), 1)
 
 
 class TestNextDocId(_DbTestBase):

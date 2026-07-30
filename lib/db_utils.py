@@ -229,12 +229,12 @@ _DELETE_CLEAR_SQL = {
         "dept_id=NULL, subject=NULL, processor_id=NULL, deadline=NULL, "
         "dispatch_date=NULL, sender_id=NULL, timestamp=NULL WHERE doc_id=?"),
     "Document_Criminal": (
-        "UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL, "
+        "UPDATE Document_Criminal SET create_date=NULL, report_date=NULL, sender_id=NULL, "
         "case_type=NULL, case_status=NULL, processor_id=NULL, "
         "subject_summary=NULL, occurrence_date=NULL, reporter_name=NULL, "
         "receiver_id=NULL, is_reported=0, is_electronic='' WHERE doc_id=?"),
     "Document_General": (
-        "UPDATE Document_General SET report_date=NULL, sender_id=NULL, "
+        "UPDATE Document_General SET create_date=NULL, report_date=NULL, sender_id=NULL, "
         "dept_id=NULL, gen_cat_id=NULL, subject=NULL, processor_id=NULL, "
         "is_reported=0, is_electronic='' WHERE doc_id=?"),
     "Document_Reward": (

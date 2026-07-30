@@ -183,8 +183,11 @@ def _resetDocCounts(conn):
     """跨年度重置前的 active 主表筆數；排除軟刪除空殼。"""
     queries = {
         "task": "SELECT COUNT(*) FROM Document_Task WHERE receive_date IS NOT NULL",
-        "crim": "SELECT COUNT(*) FROM Document_Criminal WHERE report_date IS NOT NULL",
-        "gen": "SELECT COUNT(*) FROM Document_General WHERE report_date IS NOT NULL",
+        "crim": ("SELECT COUNT(*) FROM Document_Criminal "
+                 "WHERE subject_summary IS NOT NULL "
+                 "AND TRIM(subject_summary) <> ''"),
+        "gen": ("SELECT COUNT(*) FROM Document_General "
+                "WHERE subject IS NOT NULL AND TRIM(subject) <> ''"),
         "reward": f"SELECT COUNT(*) FROM Document_Reward WHERE {REWARD_ACTIVE_SQL}",
         "ticket": f"SELECT COUNT(*) FROM Document_Ticket WHERE {TICKET_ACTIVE_SQL}",
     }

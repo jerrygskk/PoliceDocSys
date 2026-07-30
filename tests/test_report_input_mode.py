@@ -9,6 +9,7 @@ test_report_input_mode.py — 自助取號模式純邏輯測試
 import sqlite3
 import sys
 import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -67,6 +68,146 @@ def _set_setting(conn, key, value):
         "INSERT OR REPLACE INTO App_Settings (key, value) VALUES (?,?)",
         (key, value))
     conn.commit()
+
+
+class _FakeCombo:
+    def __init__(self, data, text=""):
+        self._data = data
+        self._text = text or str(data or "")
+
+    def currentData(self):
+        return self._data
+
+    def currentText(self):
+        return self._text
+
+
+class _FakeLineEdit:
+    def __init__(self, text):
+        self._text = text
+
+    def text(self):
+        return self._text
+
+    def clear(self):
+        self._text = ""
+
+
+class _FakeRadio:
+    def __init__(self, checked):
+        self._checked = checked
+
+    def isChecked(self):
+        return self._checked
+
+
+class _FakeNullableDate:
+    def validateNow(self):
+        pass
+
+    def isBlank(self):
+        return False
+
+    def hasError(self):
+        return False
+
+    def getDate(self):
+        from PySide6.QtCore import QDate
+        return QDate(2026, 7, 20)
+
+
+class _FixedQDate:
+    @staticmethod
+    def currentDate():
+        return _FixedQDate()
+
+    def toString(self, _format):
+        return "2026-07-29"
+
+
+class TestReportCreateDate(unittest.TestCase):
+    """新增公文時，登錄日期固定為送出當天而非使用者選定的發文日。"""
+
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = _make_db_file(self.db_path)
+        conn.close()
+
+        from tabs.tab_report import TabReport
+        self.tab = TabReport(None, self.db_path)
+        self.tab.radio_status_a = _FakeRadio(True)
+        self.tab.radio_status_b = _FakeRadio(False)
+        self.tab.crim_casetype = _FakeCombo("CT01", "測試案類")
+        self.tab.crim_processor = _FakeCombo("P001", "王承辦")
+        self.tab.crim_receiver = _FakeCombo("P001", "王承辦")
+        self.tab.crim_subject = _FakeLineEdit("刑案陳報")
+        self.tab.crim_occdate = _FakeNullableDate()
+        self.tab.crim_reporter = _FakeLineEdit("報案人")
+        self.tab.crim_table = None
+
+        self.tab.radio_gen_cat_a = _FakeRadio(True)
+        self.tab.radio_gen_cat_b = _FakeRadio(False)
+        self.tab.gen_dept = _FakeCombo("D01", "測試單位")
+        self.tab.gen_processor = _FakeCombo("P001", "王承辦")
+        self.tab.gen_subject = _FakeLineEdit("一般陳報")
+        self.tab.gen_table = None
+
+    def tearDown(self):
+        os.remove(self.db_path)
+
+    @staticmethod
+    def _manager_auth():
+        auth = mock.Mock()
+        auth.is_manager.return_value = True
+        return auth
+
+    def test_sender_mode_criminal_uses_today_not_selected_report_date(self):
+        from tabs import tab_report
+        with mock.patch.object(tab_report.AuthManager, "instance",
+                               return_value=self._manager_auth()), \
+             mock.patch.object(tab_report, "QDate", _FixedQDate), \
+             mock.patch.object(tab_report, "msgWarning",
+                               side_effect=AssertionError("unexpected warning")), \
+             mock.patch.object(tab_report, "reportError",
+                               side_effect=lambda _title, exc: (_ for _ in ()).throw(exc)), \
+             mock.patch.object(tab_report, "DEBUG_MODE", True):
+            self.tab._submitCriminal("2026-07-15", "P001")
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT create_date, report_date, sender_id "
+                "FROM Document_Criminal WHERE subject_summary='刑案陳報'"
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row, ("2026-07-29", "2026-07-15", "P001"))
+
+    def test_self_service_general_uses_today_and_leaves_report_fields_null(self):
+        from tabs import tab_report
+        conn = sqlite3.connect(self.db_path)
+        _set_setting(conn, "report_mode_gen", "1")
+        conn.close()
+        with mock.patch.object(tab_report.AuthManager, "instance",
+                               return_value=self._manager_auth()), \
+             mock.patch.object(tab_report, "QDate", _FixedQDate), \
+             mock.patch.object(tab_report, "msgWarning",
+                               side_effect=AssertionError("unexpected warning")), \
+             mock.patch.object(tab_report, "reportError",
+                               side_effect=lambda _title, exc: (_ for _ in ()).throw(exc)), \
+             mock.patch.object(tab_report, "DEBUG_MODE", True):
+            self.tab._submitGeneral(None, None)
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT create_date, report_date, sender_id "
+                "FROM Document_General WHERE subject='一般陳報'"
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row, ("2026-07-29", None, None))
 
 
 class TestSeedDefaults(unittest.TestCase):
@@ -716,6 +857,22 @@ class TestSettleConcurrencyGuard(unittest.TestCase):
 
         self.assertEqual(crim_cur.rowcount, 1)
         self.assertEqual(tuple(crim), ("2026-07-20", "P002"))
+
+    def test_settle_preserves_create_date(self):
+        self.conn.execute(
+            "INSERT INTO Document_Criminal "
+            "(doc_id, create_date, report_date, sender_id, subject_summary) "
+            "VALUES ('C0093', '2026-07-11', NULL, NULL, '保留登錄日期')")
+
+        cur = self.conn.execute(
+            self.meta["crim"]["update"],
+            ("2026-07-20", "P002", "C0093"))
+        row = self.conn.execute(
+            "SELECT create_date, report_date, sender_id "
+            "FROM Document_Criminal WHERE doc_id='C0093'").fetchone()
+
+        self.assertEqual(cur.rowcount, 1)
+        self.assertEqual(tuple(row), ("2026-07-11", "2026-07-20", "P002"))
 
 
 class TestModeResidueWarning(unittest.TestCase):

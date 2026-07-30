@@ -4,6 +4,7 @@ docs/*
 !docs/img/
 release_note_*.md
 fix_views.py
+/fix_*.py
 reset_password.py
 seed_test_data.py
 tmp/

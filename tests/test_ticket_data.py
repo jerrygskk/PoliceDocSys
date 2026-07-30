@@ -14,6 +14,7 @@ from lib.ticket_utils import (
     createTicket, deleteTicket, normalizeTicketNo, ticketExists,
     updateTicket, updateTicketFromBrowse,
 )
+from ui_utils.settle_dialog import load_unissued
 
 
 class TicketDbTestCase(unittest.TestCase):
@@ -37,6 +38,65 @@ class TicketDbTestCase(unittest.TestCase):
             "(staff_id,staff_name,is_active,sort_order) VALUES(?,?,1,?)",
             (staff_id, staff_name, sort_order))
         self.conn.commit()
+
+
+class TestTicketNaturalSort(TicketDbTestCase):
+    def test_natural_key_sorts_numeric_segments_case_insensitively(self):
+        natural_key = getattr(ticket_utils, "ticketNoNaturalKey", None)
+        self.assertIsNotNone(natural_key, "ticket_utils 應提供罰單自然排序單一來源")
+
+        ticket_nos = [
+            "A10B10", "a2", "A01", "a1", "A10B2", "A10", "b1",
+        ]
+        self.assertEqual(
+            sorted(ticket_nos, key=natural_key),
+            ["a1", "A01", "a2", "A10", "A10B2", "A10B10", "b1"],
+        )
+
+    def test_natural_key_handles_real_ticket_number_format(self):
+        natural_key = getattr(ticket_utils, "ticketNoNaturalKey", None)
+        self.assertIsNotNone(natural_key, "ticket_utils 應提供罰單自然排序單一來源")
+
+        ticket_nos = ["D5RJ84426", "D4RD12450", "D5RJ84425"]
+        self.assertEqual(
+            sorted(ticket_nos, key=natural_key),
+            ["D4RD12450", "D5RJ84425", "D5RJ84426"],
+        )
+
+    def test_settlement_ticket_rows_use_natural_order_after_query(self):
+        self._insert_person("P001", "王小明", sort_order=1)
+        for doc_id, ticket_no in enumerate(
+                ("A10B10", "A2", "A01", "A1", "A10B2"), start=1):
+            self.conn.execute(
+                "INSERT INTO Document_Ticket"
+                "(doc_id,create_date,register_date,sender_id,issuer_id,ticket_no) "
+                "VALUES(?, '2026-07-29', '', NULL, 'P001', ?)",
+                (str(doc_id), ticket_no),
+            )
+        self.conn.commit()
+
+        rows = load_unissued(self.db_path)["ticket"]
+        self.assertEqual(
+            [row["subject"] for row in rows],
+            ["A1", "A01", "A2", "A10B2", "A10B10"],
+        )
+
+    def test_settlement_sort_accepts_legacy_missing_issuer_names(self):
+        self.conn.execute("PRAGMA foreign_keys=OFF")
+        self.conn.execute("PRAGMA ignore_check_constraints=ON")
+        self.conn.execute(
+            "INSERT INTO Document_Ticket"
+            "(doc_id,create_date,register_date,issuer_id,ticket_no) "
+            "VALUES('1','2026-07-29','',NULL,'A10')")
+        self.conn.execute(
+            "INSERT INTO Document_Ticket"
+            "(doc_id,create_date,register_date,issuer_id,ticket_no) "
+            "VALUES('2','2026-07-29','','P404','A2')")
+        self.conn.execute("PRAGMA ignore_check_constraints=OFF")
+        self.conn.commit()
+
+        rows = load_unissued(self.db_path)["ticket"]
+        self.assertEqual([row["subject"] for row in rows], ["A10", "A2"])
 
 
 class TestTicketSchema(TicketDbTestCase):

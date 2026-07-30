@@ -19,8 +19,10 @@ def _make_db():
     # 最小三主表（只取本測試用得到的欄）
     conn.executescript("""
         CREATE TABLE Document_Criminal (
-            doc_id TEXT PRIMARY KEY, report_date TEXT, sender_id TEXT,
-            subject_summary TEXT, processor_id TEXT,
+            doc_id TEXT PRIMARY KEY, create_date TEXT, report_date TEXT, sender_id TEXT,
+            case_type TEXT, case_status TEXT, subject_summary TEXT,
+            occurrence_date TEXT, reporter_name TEXT, receiver_id TEXT,
+            processor_id TEXT,
             is_reported INTEGER DEFAULT 0, is_electronic TEXT DEFAULT '',
             last_modified TEXT);
         CREATE TABLE Document_Task (doc_id TEXT PRIMARY KEY, subject TEXT);
@@ -41,7 +43,7 @@ def _make_db():
 
 # 模擬瀏覽頁刑案清空式刪除
 _CLEAR_CRIM = (
-    "UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL, "
+    "UPDATE Document_Criminal SET create_date=NULL, report_date=NULL, sender_id=NULL, "
     "subject_summary=NULL, processor_id=NULL, is_reported=0, "
     "is_electronic='' WHERE doc_id=?")
 
@@ -50,9 +52,9 @@ class TestTrash(unittest.TestCase):
     def setUp(self):
         self.conn = _make_db()
         self.conn.execute(
-            "INSERT INTO Document_Criminal(doc_id, report_date, sender_id, "
+            "INSERT INTO Document_Criminal(doc_id, create_date, report_date, sender_id, "
             "subject_summary, processor_id, is_reported, is_electronic) "
-            "VALUES('C001','2026-06-01','S01','竊盜案','P02',1,'C001-竊盜.pdf')")
+            "VALUES('C001','2026-05-30','2026-06-01','S01','竊盜案','P02',1,'C001-竊盜.pdf')")
         self.conn.commit()
 
     def tearDown(self):
@@ -61,6 +63,7 @@ class TestTrash(unittest.TestCase):
     def test_snapshot_returns_all_columns(self):
         snap = db_utils.snapshotRow(self.conn, "Document_Criminal", "C001")
         self.assertEqual(snap["subject_summary"], "竊盜案")
+        self.assertEqual(snap["create_date"], "2026-05-30")
         self.assertEqual(snap["is_reported"], 1)
         self.assertEqual(snap["is_electronic"], "C001-竊盜.pdf")
 
@@ -108,6 +111,24 @@ class TestTrash(unittest.TestCase):
         self.assertEqual(
             self.conn.execute(
                 "SELECT COUNT(*) FROM Trash_Documents").fetchone()[0], 0)
+
+    def test_soft_delete_then_restore_round_trip_preserves_create_date(self):
+        db_utils.softDeleteDoc(
+            self.conn, table="Document_Criminal", doc_id="C001",
+            role="admin", is_admin=True)
+        self.conn.commit()
+        self.assertIsNone(self.conn.execute(
+            "SELECT create_date FROM Document_Criminal WHERE doc_id='C001'"
+        ).fetchone()[0])
+
+        trash_id = self.conn.execute(
+            "SELECT trash_id FROM Trash_Documents").fetchone()[0]
+        db_utils.restoreFromTrash(self.conn, trash_id)
+        self.conn.commit()
+
+        self.assertEqual(self.conn.execute(
+            "SELECT create_date FROM Document_Criminal WHERE doc_id='C001'"
+        ).fetchone()[0], "2026-05-30")
 
     def test_restore_bumps_last_modified(self):
         # 還原須讓 trigger 把 last_modified 蓋成當下（否則瀏覽/歸檔頁指紋偵測不到）。

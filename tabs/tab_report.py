@@ -18,8 +18,8 @@ from ui_utils import (
     attachComboHint,
 )
 
-CRIM_HEADERS = ["", "編號", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "日期", "報案人"]
-GEN_HEADERS  = ["", "編號", "業務單位", "陳報主旨", "承辦人", "分類"]
+CRIM_HEADERS = ["", "編號", "登錄日期", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "日期", "報案人"]
+GEN_HEADERS  = ["", "編號", "登錄日期", "業務單位", "陳報主旨", "承辦人", "分類"]
 
 # Radio 圓點縮小，選中用較細 border 呈現
 RADIO_STYLE = """
@@ -241,11 +241,11 @@ class TabReport(BaseTab, InputLockMixin):
         # ── 預覽表格初始化 ────────────────────────────────
         if self.crim_table:
             setupPreviewTable(self.crim_table, CRIM_HEADERS, cap_mode=True,
-                              stretch_col=8, fixed_overrides={"陳報主旨": 184})
+                              stretch_col=9, fixed_overrides={"陳報主旨": 184})
             attachStickyScroll(self.crim_table)
         if self.gen_table:
             setupPreviewTable(self.gen_table, GEN_HEADERS, cap_mode=True,
-                              stretch_col=5, fixed_overrides={"陳報主旨": 184})
+                              stretch_col=6, fixed_overrides={"陳報主旨": 184})
             attachStickyScroll(self.gen_table)
 
         # ── 信號綁定 ──────────────────────────────────────
@@ -393,11 +393,11 @@ class TabReport(BaseTab, InputLockMixin):
                     continue
                 ct_name, proc_name, recv_name = row
                 if ct_name is not None:
-                    self.crim_table.item(r, 3).setText(ct_name)
+                    self.crim_table.item(r, 4).setText(ct_name)
                 if proc_name is not None:
-                    self.crim_table.item(r, 5).setText(self._trimName(proc_name))
+                    self.crim_table.item(r, 6).setText(self._trimName(proc_name))
                 if recv_name is not None:
-                    self.crim_table.item(r, 6).setText(self._trimName(recv_name))
+                    self.crim_table.item(r, 7).setText(self._trimName(recv_name))
         except Exception as e:
             msgCritical("DB錯誤", f"刷新刑案預覽列失敗: {e}")
         finally:
@@ -427,9 +427,9 @@ class TabReport(BaseTab, InputLockMixin):
                     continue
                 dept_name, proc_name = row
                 if dept_name is not None:
-                    self.gen_table.item(r, 2).setText(dept_name)
+                    self.gen_table.item(r, 3).setText(dept_name)
                 if proc_name is not None:
-                    self.gen_table.item(r, 4).setText(self._trimName(proc_name))
+                    self.gen_table.item(r, 5).setText(self._trimName(proc_name))
         except Exception as e:
             msgCritical("DB錯誤", f"刷新一般陳報預覽列失敗: {e}")
         finally:
@@ -571,19 +571,20 @@ class TabReport(BaseTab, InputLockMixin):
         try:
             conn       = self._getConn()
             new_doc_id = nextDocId(conn, 'Document_Criminal')
+            create_date = QDate.currentDate().toString("yyyy-MM-dd")
             conn.execute("""
                 INSERT INTO Document_Criminal
-                    (doc_id, report_date, sender_id, case_type, case_status,
+                    (doc_id, create_date, report_date, sender_id, case_type, case_status,
                      processor_id, subject_summary, occurrence_date,
                      reporter_name, receiver_id, is_reported, is_electronic)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '')
-            """, (new_doc_id, report_date, sender_id, casetype_id, status_id,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '')
+            """, (new_doc_id, create_date, report_date, sender_id, casetype_id, status_id,
                   processor_id, subject, occ_date or None,
                   reporter or None, receiver_id))
             conn.commit()
 
             self._insertCrimRow(
-                new_doc_id, status_name,
+                new_doc_id, create_date, status_name,
                 self.crim_casetype.currentText(),
                 subject,
                 self.crim_processor.currentText(),
@@ -628,17 +629,18 @@ class TabReport(BaseTab, InputLockMixin):
         try:
             conn       = self._getConn()
             new_doc_id = nextDocId(conn, 'Document_General')
+            create_date = QDate.currentDate().toString("yyyy-MM-dd")
             conn.execute("""
                 INSERT INTO Document_General
-                    (doc_id, report_date, sender_id, dept_id, gen_cat_id,
+                    (doc_id, create_date, report_date, sender_id, dept_id, gen_cat_id,
                      subject, processor_id, is_reported, is_electronic)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, '')
-            """, (new_doc_id, report_date, sender_id, dept_id, cat_id,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '')
+            """, (new_doc_id, create_date, report_date, sender_id, dept_id, cat_id,
                   subject, processor_id))
             conn.commit()
 
             self._insertGenRow(
-                new_doc_id,
+                new_doc_id, create_date,
                 self.gen_dept.currentText(),
                 subject,
                 self.gen_processor.currentText(),
@@ -654,7 +656,7 @@ class TabReport(BaseTab, InputLockMixin):
                 conn.close()
 
     # ── 插入預覽列 ───────────────────────────────────────────
-    def _insertCrimRow(self, doc_id, status, casetype, subject,
+    def _insertCrimRow(self, doc_id, create_date, status, casetype, subject,
                        processor, receiver, reporter, occ_date):
         if not self.crim_table:
             return
@@ -669,7 +671,7 @@ class TabReport(BaseTab, InputLockMixin):
         setDocIdLinkCell(self.crim_table, pos, 1, doc_id, self._onEditCrimRow, clickable=True)
 
         for col, val in enumerate([
-            status, casetype, subject,
+            self._fmtDate(create_date), status, casetype, subject,
             self._trimName(processor), self._trimName(receiver),
             self._fmtDate(occ_date), self._trimName(reporter),
         ], start=2):
@@ -678,7 +680,7 @@ class TabReport(BaseTab, InputLockMixin):
             self.crim_table.setItem(pos, col, item)
         autoResizeTable(self.crim_table)
 
-    def _insertGenRow(self, doc_id, dept, subject, processor, cat):
+    def _insertGenRow(self, doc_id, create_date, dept, subject, processor, cat):
         if not self.gen_table:
             return
         pos = self.gen_table.rowCount()
@@ -691,7 +693,10 @@ class TabReport(BaseTab, InputLockMixin):
         # 編號欄（col 1）：超連結
         setDocIdLinkCell(self.gen_table, pos, 1, doc_id, self._onEditGenRow, clickable=True)
 
-        for col, val in enumerate([dept, subject, self._trimName(processor), cat], start=2):
+        for col, val in enumerate([
+            self._fmtDate(create_date), dept, subject,
+            self._trimName(processor), cat,
+        ], start=2):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.gen_table.setItem(pos, col, item)
@@ -706,11 +711,11 @@ class TabReport(BaseTab, InputLockMixin):
                 return
             updated = dlg.get_updated()
             if updated:
-                # updated = (送文編號, 發文分類, 案類, 嫌疑人_案由, 主承辦人, 受理人, 受理日期, 報案人)
-                _, status, casetype, subject, processor, receiver, occ_date, reporter = updated
+                # updated = (送文編號, 登錄日期, 發文分類, 案類, 嫌疑人_案由, 主承辦人, 受理人, 受理日期, 報案人)
+                _, create_date, status, casetype, subject, processor, receiver, occ_date, reporter = updated
                 # 發文分類顯示名已正規化為兩字（參照表 status_name 即「現行/到案/未到」），直接用
                 for col, val in enumerate([
-                    status, casetype, subject,
+                    self._fmtDate(create_date), status, casetype, subject,
                     self._trimName(processor), self._trimName(receiver),
                     self._fmtDate(occ_date), self._trimName(reporter),
                 ], start=2):
@@ -727,10 +732,13 @@ class TabReport(BaseTab, InputLockMixin):
                 return
             updated = dlg.get_updated()
             if updated:
-                # updated = (送文編號, 業務單位, 陳報主旨, 陳報人, 分類)
-                _, dept, subject, processor, cat = updated
+                # updated = (送文編號, 登錄日期, 業務單位, 陳報主旨, 陳報人, 分類)
+                _, create_date, dept, subject, processor, cat = updated
                 # 一般分類顯示名已正規化為兩字（參照表 gen_cat_name 即「業務/其他/相驗」），直接用
-                for col, val in enumerate([dept, subject, self._trimName(processor), cat], start=2):
+                for col, val in enumerate([
+                    self._fmtDate(create_date), dept, subject,
+                    self._trimName(processor), cat,
+                ], start=2):
                     item = QTableWidgetItem(str(val) if val else "")
                     item.setTextAlignment(Qt.AlignCenter)
                     self.gen_table.setItem(row, col, item)

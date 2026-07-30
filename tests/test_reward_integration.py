@@ -222,6 +222,7 @@ class RewardIntegrationTests(unittest.TestCase):
         reward_help = render_review_text(3)
         issue_help = render_review_text(4)
         ticket_help = render_review_text(5)
+        report_help = render_review_text(2)
         print_help = render_review_text(6)
         browse_help = render_review_text(7)
         settings_help = render_review_text(9)
@@ -255,7 +256,10 @@ class RewardIntegrationTests(unittest.TestCase):
         ticket_quickstart = "\n".join(QUICKSTART[5][1] + QUICKSTART[5][2])
         self.assertIn("文號（doc_id）作廢不可再用，原罰單編號仍可重新登錄", ticket_quickstart)
         self.assertIn("本頁不設身分限制", ticket_help)
+        self.assertIn("登錄日期＝取得文號日", report_help)
+        self.assertIn("陳報日期＝實際發文日", report_help)
         self.assertIn("未發文的刑案／一般／罰單案件", print_help)
+        self.assertIn("結算發文只補上發文日期，不會變更登錄日期", print_help)
         self.assertNotIn("未發文的刑案／一般／敘獎案件", print_help)
         self.assertIn("三項皆為送文者輸入模式但仍有未發文殘留資料時", print_help)
         self.assertIn("三項皆為送文者輸入模式但仍有未發文殘留資料時",

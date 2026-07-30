@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
 )
 from PySide6.QtGui import QColor, QIcon, QDesktopServices
+import unicodedata
 
 from lib.base_tab import BaseTab
 from lib.db_utils import (
@@ -46,6 +47,23 @@ class _WatermarkFitter(QObject):
 # 切 tab 自動差異更新時，變動列數達此值才跳「更新中」提示（少量重建無感、不閃提示）
 _BUSY_ROW_THRESHOLD = 100
 
+# 案由／主旨依是否顯示 PDF 圖示採固定字數刪節，避免欄位邊界切字。
+_SUBJECT_LIMIT_WITH_ICON = 12
+_SUBJECT_LIMIT_WITHOUT_ICON = 14
+
+
+def _truncateSubject(text, limit):
+    """全形算 1 字、半形算 0.5 字；超過上限時加上 ...。"""
+    used = 0
+    end = 0
+    for char in text:
+        char_width = 0.5 if unicodedata.east_asian_width(char) in ("H", "Na") else 1
+        if used + char_width > limit:
+            return text[:end] + "..."
+        used += char_width
+        end += 1
+    return text
+
 # 三張表的欄位定義
 #   header  : 表頭顯示文字
 #   view_col: View 中的欄位名（用於 SELECT / 搜尋）
@@ -75,12 +93,13 @@ TASK_COLS = [
 CRIM_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號",        "view_col": "送文編號",    "slim": True,  "link": True,  "search": True, "w": 64},
+    {"header": "輸入日期",    "view_col": "登錄日期",    "slim": True,  "search": True, "w": 135},
     {"header": "主承辦人",    "view_col": "主承辦人",    "slim": True,  "search": True, "w": 80,  "trim_name": True, "ref_col": True},
-    {"header": "案類",        "view_col": "案類",        "slim": True,  "search": True, "w": 220, "ref_col": True},
-    {"header": "嫌疑人/案由", "view_col": "嫌疑人_案由", "slim": True,  "search": True, "stretch": True, "w": 240},
+    {"header": "案類",        "view_col": "案類",        "slim": True,  "search": True, "w": 250, "ref_col": True},
+    {"header": "嫌疑人/案由", "view_col": "嫌疑人_案由", "slim": True,  "search": True, "stretch": True, "w": 290},
     {"header": "發文分類",    "view_col": "發文分類",    "slim": True,  "search": True, "w": 96},
-    {"header": "陳報日期",    "view_col": "陳報日期",    "slim": True,  "search": True, "w": 140},
-    {"header": "受理日期",    "view_col": "受理日期",    "slim": True,  "search": True, "w": 140},
+    {"header": "發文日期",    "view_col": "陳報日期",    "slim": True,  "search": True, "w": 135},
+    {"header": "刑案單陳報/受理日期", "view_col": "受理日期", "slim": True, "search": True, "w": 180},
     {"header": "送文人員",    "view_col": "送文人員",    "slim": False, "search": True, "w": 120, "ref_col": True},
     {"header": "報案人",      "view_col": "報案人",      "slim": False, "search": True, "w": 130},
     {"header": "受理人",      "view_col": "受理人",      "slim": False, "search": True, "w": 120, "trim_name": True, "ref_col": True},
@@ -91,11 +110,12 @@ CRIM_COLS = [
 GEN_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號",     "view_col": "送文編號", "slim": True,  "link": True,  "search": True, "w": 64},
+    {"header": "登錄日期", "view_col": "登錄日期", "slim": True,  "search": True, "w": 135},
     {"header": "陳報人",   "view_col": "陳報人",   "slim": True,  "search": True, "w": 80,  "trim_name": True, "ref_col": True},
-    {"header": "陳報主旨", "view_col": "陳報主旨", "slim": True,  "search": True, "stretch": True, "w": 240},
+    {"header": "陳報主旨", "view_col": "陳報主旨", "slim": True,  "search": True, "stretch": True, "w": 290},
     {"header": "業務單位", "view_col": "業務單位", "slim": True,  "search": True, "w": 96,  "ref_col": True},
     {"header": "分類",     "view_col": "分類",     "slim": True,  "search": True, "w": 96},
-    {"header": "陳報日期", "view_col": "陳報日期", "slim": True,  "search": True, "w": 140},
+    {"header": "陳報日期", "view_col": "陳報日期", "slim": True,  "search": True, "w": 135},
     {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120, "ref_col": True},
     {"header": "紙本",     "view_col": "紙本",     "slim": False, "search": False, "w": 56, "bool_col": True},
     {"header": "電子檔",   "view_col": "電子檔",   "slim": False, "search": False, "w": 64, "bool_col": True},
@@ -918,7 +938,9 @@ class TabDBBrowse(BaseTab):
                     bo.clicked.connect(
                         lambda _=False, k=key, f=afn: self._openArchivedPdf(k, f))
                     hl.addWidget(bo)
-                    lab = QLabel(text)
+                    display_text = _truncateSubject(
+                        text, _SUBJECT_LIMIT_WITH_ICON)
+                    lab = QLabel(display_text)
                     if text:
                         lab.setToolTip(text)
                     if inactive:
@@ -928,7 +950,12 @@ class TabDBBrowse(BaseTab):
                 else:
                     if table.cellWidget(pos, c_idx) is not None:
                         table.removeCellWidget(pos, c_idx)
-                    sit = QTableWidgetItem(text)
+                    display_text = _truncateSubject(
+                        text, _SUBJECT_LIMIT_WITHOUT_ICON)
+                    sit = QTableWidgetItem(display_text)
+                    subject_font = sit.font()
+                    subject_font.setPointSize(14)
+                    sit.setFont(subject_font)
                     sit.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                     if text:
                         sit.setToolTip(text)

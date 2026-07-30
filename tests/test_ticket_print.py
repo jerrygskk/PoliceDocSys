@@ -19,6 +19,9 @@ import sys
 import tempfile
 import unittest
 
+from matplotlib.colors import to_hex
+from matplotlib.patches import FancyBboxPatch, Rectangle
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,13 +30,15 @@ from lib import db_schema, db_seed, db_utils
 from lib.ticket_utils import createTicket
 from ui_utils.settle_dialog import settle_selected
 
-import tabs.tab_print as tab_print_module
 from tabs.tab_print import (
-    TICKET_FINAL_ROWS, TICKET_FULL_ROWS, TICKET_SUB_HEADERS, TICKET_SUMMARY_H,
-    TicketCell, TicketPage, ROW_H, _TICKET_SUB_RATIOS,
+    TICKET_BODY_H, TICKET_ROWS_PER_BAND, TICKET_ROW_H, TICKET_SUB_HEADERS,
+    TICKET_SUMMARY_H, TicketCell, TicketPage, ROW_H, _TICKET_SUB_RATIOS,
     buildTicketGrid, drawTicketPage, paginateTicketRows, queryTicketPrintRows,
     sortTicketRows,
 )
+
+def _paginate_rows(rows):
+    return paginateTicketRows(rows)
 
 
 def _row(issuer_sort_order, issuer_name, ticket_no, issuer_id=None, doc_id=None):
@@ -59,7 +64,7 @@ class TestTicketSortAndPaginate(TicketPrintTestCase):
             {"issuer_sort_order": 1, "issuer_name": "王小明", "ticket_no": "A2"},
             {"issuer_sort_order": 1, "issuer_name": "王小明", "ticket_no": "A1"},
         ]
-        page = paginateTicketRows(rows, full_rows=2, final_rows=1)[0]
+        page = _paginate_rows(rows)[0]
         self.assertEqual(page.items[0].ticket_no, "A1")
         self.assertEqual(page.items[1].ticket_no, "A2")
         self.assertEqual(page.items[2].ticket_no, "B2")
@@ -75,76 +80,45 @@ class TestTicketSortAndPaginate(TicketPrintTestCase):
         cells = sortTicketRows(rows)
         self.assertEqual([c.ticket_no for c in cells], ["a1", "B1"])
 
-    def test_only_final_page_has_summary(self):
-        pages = paginateTicketRows(
-            self._rows("王小明", [f"A{i:02}" for i in range(20)]),
-            full_rows=3, final_rows=2)
-        self.assertTrue(all(not p.show_summary for p in pages[:-1]))
-        self.assertTrue(pages[-1].show_summary)
-        self.assertEqual(pages[-1].total_count, 20)
+    def test_sort_uses_shared_natural_ticket_number_order(self):
+        rows = self._rows(
+            "王小明", ["A10B10", "A2", "A01", "A1", "A10B2", "A10"])
+        cells = sortTicketRows(rows)
+        self.assertEqual(
+            [cell.ticket_no for cell in cells],
+            ["A1", "A01", "A2", "A10", "A10B2", "A10B10"],
+        )
+
+    def test_capacity_boundaries_and_every_page_summary_counts(self):
+        cases = {
+            0: [],
+            1: [1],
+            59: [59],
+            60: [60],
+            61: [60, 1],
+            120: [60, 60],
+            121: [60, 60, 1],
+        }
+        for count, expected_sizes in cases.items():
+            with self.subTest(count=count):
+                rows = self._rows(
+                    "王小明", [f"A{i:03}" for i in range(count)])
+                pages = _paginate_rows(rows)
+                self.assertEqual([len(page.items) for page in pages],
+                                 expected_sizes)
+                self.assertTrue(all(page.show_summary for page in pages))
+                self.assertTrue(all(page.total_count == count for page in pages))
 
     def test_zero_rows_returns_empty_page_list(self):
         # 0 筆：回空清單（比照既有 _build_sections「查無資料不產生 section」
         # 慣例），呼叫端應以 `if ticket_rows:` 才呼叫，不會印出空白簽收頁。
-        self.assertEqual(paginateTicketRows([], full_rows=2, final_rows=1), [])
+        self.assertEqual(_paginate_rows([]), [])
 
     def test_single_row(self):
-        pages = paginateTicketRows(self._rows("王小明", ["A1"]),
-                                    full_rows=2, final_rows=1)
+        pages = _paginate_rows(self._rows("王小明", ["A1"]))
         self.assertEqual(len(pages), 1)
         self.assertTrue(pages[0].show_summary)
         self.assertEqual(pages[0].total_count, 1)
-
-    def test_exactly_final_capacity(self):
-        # 剛好等於末頁容量（final_rows=1 → 3 筆）：單頁即可，全部有 summary。
-        pages = paginateTicketRows(self._rows("王小明", ["A1", "A2", "A3"]),
-                                    full_rows=2, final_rows=1)
-        self.assertEqual(len(pages), 1)
-        self.assertEqual(len(pages[0].items), 3)
-        self.assertTrue(pages[0].show_summary)
-
-    def test_final_capacity_plus_one(self):
-        # 末頁容量 +1（final_rows=1 → 3 筆 +1 = 4 筆）：必須拆成 2 頁，
-        # 且末頁不得為 0 筆（brief 虛擬碼會在此情境把末頁吃成空頁）。
-        pages = paginateTicketRows(self._rows("王小明", [f"A{i}" for i in range(4)]),
-                                    full_rows=3, final_rows=1)
-        self.assertEqual(len(pages), 2)
-        self.assertFalse(pages[0].show_summary)
-        self.assertTrue(pages[1].show_summary)
-        self.assertGreater(len(pages[1].items), 0)
-        self.assertLessEqual(len(pages[1].items), 3)
-        self.assertEqual(sum(len(p.items) for p in pages), 4)
-
-    def test_full_capacity_plus_final_capacity_splits_cleanly(self):
-        # full_capacity(9) + final_capacity(6) = 15：應恰好切成 [9, 6] 兩頁。
-        pages = paginateTicketRows(
-            self._rows("王小明", [f"A{i:02}" for i in range(15)]),
-            full_rows=3, final_rows=2)
-        self.assertEqual([len(p.items) for p in pages], [9, 6])
-        self.assertFalse(pages[0].show_summary)
-        self.assertTrue(pages[1].show_summary)
-
-    def test_non_final_pages_fill_greedily(self):
-        # 貼近真實容量：full_rows=15（capacity 45）、final_rows=13
-        # （capacity 39）。非末頁應盡量填滿（每頁 45 筆），不得像舊公式
-        # 「只取剛好留給末頁的量」導致非末頁大量留白（例如舊版 total=100
-        # 會產生 [45, 16, 39]，第 2 頁只用 16/45）。
-        pages = paginateTicketRows(
-            self._rows("王小明", [f"A{i:03}" for i in range(100)]),
-            full_rows=15, final_rows=13)
-        sizes = [len(p.items) for p in pages]
-        self.assertEqual(sizes, [45, 45, 10])
-        self.assertEqual(sum(sizes), 100)
-        self.assertTrue(all(not p.show_summary for p in pages[:-1]))
-        self.assertTrue(pages[-1].show_summary)
-
-    def test_invalid_capacity_raises_instead_of_hanging(self):
-        # full_rows/final_rows 非正整數：必須明確拋例外，不得造成
-        # `full_rows*3==0` 時的無窮迴圈。
-        with self.assertRaises(ValueError):
-            paginateTicketRows(self._rows("王小明", ["A1"]), full_rows=0, final_rows=1)
-        with self.assertRaises(ValueError):
-            paginateTicketRows(self._rows("王小明", ["A1"]), full_rows=1, final_rows=0)
 
 
 # ── buildTicketGrid（群組限於「欄內」，跨欄／跨頁必重建）──────
@@ -193,14 +167,49 @@ class TestTicketGridRowspan(TicketPrintTestCase):
     def test_cross_page_does_not_merge(self):
         # 跨頁：同一人剛好卡在分頁邊界，兩頁各自呼叫 buildTicketGrid，
         # 群組互不相通（不會有「上一頁最後一列」影響「下一頁第一列」）。
-        pages = paginateTicketRows(self._rows("王小明", [f"A{i}" for i in range(4)]),
-                                    full_rows=1, final_rows=1)
+        pages = _paginate_rows(
+            self._rows("王小明", [f"A{i}" for i in range(61)]))
         self.assertEqual(len(pages), 2)
-        grid1 = buildTicketGrid(pages[0].items, body_rows=1)
-        grid2 = buildTicketGrid(pages[1].items, body_rows=1)
-        self.assertEqual(grid1[0][0].issuer_rowspan, 1)
+        grid1 = buildTicketGrid(
+            pages[0].items, body_rows=TICKET_ROWS_PER_BAND)
+        grid2 = buildTicketGrid(
+            pages[1].items, body_rows=TICKET_ROWS_PER_BAND)
+        self.assertEqual(grid1[0][0].issuer_rowspan, TICKET_ROWS_PER_BAND)
         self.assertEqual(grid2[0][0].issuer_rowspan, 1)
         self.assertEqual(grid2[0][0].issuer_name, "王小明")
+
+    def test_irregular_groups_split_at_band_boundary_and_repeat_name(self):
+        counts = [5, 10, 13, 3, 1, 8, 2, 7, 6, 5]
+        rows = []
+        for person_index, count in enumerate(counts, start=1):
+            rows.extend(self._rows(
+                f"人員{person_index:02}", [
+                    f"T{person_index:02}-{ticket_index:02}"
+                    for ticket_index in range(1, count + 1)
+                ],
+                sort_order=person_index,
+                issuer_id=f"P{person_index:02}",
+            ))
+
+        page = _paginate_rows(rows)[0]
+        grid = buildTicketGrid(
+            page.items, body_rows=TICKET_ROWS_PER_BAND)
+
+        self.assertEqual([len(band) for band in grid], [20, 20, 20])
+        self.assertEqual(
+            [cell.ticket_no for cell in grid[0][-5:]],
+            [f"T03-{i:02}" for i in range(1, 6)])
+        self.assertEqual(
+            [cell.ticket_no for cell in grid[1][:8]],
+            [f"T03-{i:02}" for i in range(6, 14)])
+        self.assertEqual(grid[0][-5].issuer_name, "人員03")
+        self.assertEqual(grid[0][-5].issuer_rowspan, 5)
+        self.assertEqual(grid[1][0].issuer_name, "人員03")
+        self.assertEqual(grid[1][0].issuer_rowspan, 8)
+        one_row_group = next(
+            cell for band in grid for cell in band
+            if cell.issuer_name == "人員05")
+        self.assertEqual(one_row_group.issuer_rowspan, 1)
 
     def test_zero_rows_grid_is_three_empty_bands(self):
         grid = buildTicketGrid([], body_rows=2)
@@ -256,45 +265,63 @@ class TestDrawTicketPage(TicketPrintTestCase):
         self.assertLess(issuer_ratio, number_ratio)
         self.assertAlmostEqual(issuer_ratio + number_ratio, 1.0)
 
-    def test_summary_area_is_at_least_two_row_heights(self):
-        # I3／mutation guard：末頁簽收人區高度至少為一般明細列的兩倍。
-        self.assertGreaterEqual(TICKET_SUMMARY_H, 2 * ROW_H)
+    def test_ticket_geometry_has_twenty_rows_and_one_standard_summary_row(self):
+        from tabs.tab_print import BOT, DATE_H, HDR_H, TITLE_H, TOP
+
+        self.assertEqual(TICKET_ROWS_PER_BAND, 20)
+        self.assertEqual(TICKET_SUMMARY_H, ROW_H)
+        self.assertAlmostEqual(
+            TICKET_BODY_H,
+            TOP - DATE_H - TITLE_H - HDR_H - BOT - TICKET_SUMMARY_H)
+        self.assertAlmostEqual(
+            TICKET_ROW_H, TICKET_BODY_H / TICKET_ROWS_PER_BAND)
 
     def test_capacity_constants_are_fixed_renderer_constants(self):
-        # M1：容量固定為 renderer 常數，不依電腦環境變動；並防呆不衝出版面
-        # （既有 ROW_H=0.052、可用高約 0.802 → 上限約 15 列）。
-        from tabs.tab_print import (
-            BOT, DATE_H, HDR_H, TITLE_H, TOP, TICKET_SUMMARY_H as _SUM_H,
-        )
-        self.assertIsInstance(TICKET_FULL_ROWS, int)
-        self.assertIsInstance(TICKET_FINAL_ROWS, int)
-        self.assertGreaterEqual(TICKET_FULL_ROWS, 1)
-        self.assertLessEqual(TICKET_FULL_ROWS, 15)
-        self.assertGreater(TICKET_FULL_ROWS, TICKET_FINAL_ROWS)
+        from tabs.tab_print import BOT, DATE_H, HDR_H, TITLE_H, TOP
 
-        # 推導式本身：可用高度＝TOP-DATE_H-TITLE_H-HDR_H-BOT，末頁再扣一次
-        # TICKET_SUMMARY_H；容量＝可用高度整除 ROW_H（無條件捨去）。
-        avail = TOP - DATE_H - TITLE_H - HDR_H - BOT
-        self.assertEqual(TICKET_FULL_ROWS, min(15, int(avail / ROW_H)))
-        self.assertEqual(TICKET_FINAL_ROWS,
-                          min(15, int((avail - _SUM_H) / ROW_H)))
+        bottom = (TOP - DATE_H - TITLE_H - HDR_H
+                  - TICKET_ROW_H * TICKET_ROWS_PER_BAND
+                  - TICKET_SUMMARY_H)
+        self.assertAlmostEqual(bottom, BOT)
 
-        # 表格底部不得低於 BOT（非末頁明細填滿 TICKET_FULL_ROWS 列時）。
-        table_bottom = TOP - DATE_H - TITLE_H - HDR_H - ROW_H * TICKET_FULL_ROWS
-        self.assertGreaterEqual(table_bottom, BOT)
-        # 末頁：明細 + summary 區底部同樣不得低於 BOT。
-        final_bottom = (TOP - DATE_H - TITLE_H - HDR_H
-                         - ROW_H * TICKET_FINAL_ROWS - _SUM_H)
-        self.assertGreaterEqual(final_bottom, BOT)
+    def test_summary_shows_page_count_daily_total_and_no_signature_underline(self):
+        import matplotlib.pyplot as plt
+        from tabs.tab_print import BOT
 
-    def test_header_and_title_are_inside_outer_box(self):
-        # F1 regression：外框須涵蓋標題帶與欄名列，直欄線須穿過欄名列
-        # （穿到 header_top），不能像舊版只從欄名列下緣（table_top）開始，
-        # 否則標題帶／欄名列會被畫在外框之外、六個欄名之間沒有分隔線。
-        from tabs.tab_print import DATE_H, TITLE_H, TOP
+        rows = self._rows("王小明", ["A1"])
+        grid = buildTicketGrid(rows, body_rows=TICKET_ROWS_PER_BAND)
+        fig = drawTicketPage(
+            grid, table_title="○○分局罰單簽收表",
+            print_date="2026/07/25", disp_date="2026/07/25",
+            body_rows=TICKET_ROWS_PER_BAND, page_num=2, total_pages=2,
+            show_summary=True, total_count=61)
+        try:
+            ax = fig.axes[0]
+            texts = [text.get_text() for text in ax.texts]
+            self.assertIn("本頁共 1 筆，本日總計 61 筆", texts)
+            self.assertIn("簽收人：", texts)
+
+            summary_bottom = BOT
+            summary_top = BOT + TICKET_SUMMARY_H
+            right_half_horizontal_lines = [
+                line for line in ax.lines
+                if len(line.get_xdata()) == 2
+                and len(set(round(y, 6) for y in line.get_ydata())) == 1
+                and summary_bottom < line.get_ydata()[0] < summary_top
+                and min(line.get_xdata()) >= 0.5
+            ]
+            self.assertEqual(right_half_horizontal_lines, [])
+        finally:
+            plt.close(fig)
+
+    def test_outer_box_starts_at_header_and_leaves_title_outside(self):
+        # Task 6：唯一粗外框只包「欄名列頂端～簽收格底端」；
+        # 標題與日期都在框外，頁面四周也不得另加 frame。
+        from tabs.tab_print import DATE_H, HDR_H, TITLE_H, TOP
 
         title_top = TOP - DATE_H
         header_top = title_top - TITLE_H
+        table_top = header_top - HDR_H
 
         rows = self._rows("王小明", ["A1", "A2"], issuer_id="P1")
         grid = buildTicketGrid(rows, body_rows=2)
@@ -310,14 +337,17 @@ class TestDrawTicketPage(TicketPrintTestCase):
             outer_boxes = [
                 p for p in ax.patches
                 if getattr(p, 'get_linewidth', None)
-                and abs(p.get_linewidth() - 1.2) < 1e-6
+                and p.get_linewidth() >= 1.0
+                and to_hex(p.get_edgecolor(), keep_alpha=False) != "#ffffff"
             ]
-            self.assertEqual(len(outer_boxes), 1, "應恰有一個外框")
+            self.assertEqual(len(outer_boxes), 1, "應恰有一個粗單線表格外框")
             box = outer_boxes[0]
             box_top_y = box.get_y() + box.get_height()
             self.assertAlmostEqual(
-                box_top_y, title_top, places=3,
-                msg="外框上緣須涵蓋標題帶，不能只從欄名列下緣（table_top）開始")
+                box_top_y, header_top, places=3,
+                msg="外框上緣只能到欄名列頂端，標題必須留在框外")
+            self.assertGreater(box_top_y, table_top)
+            self.assertLess(box_top_y, title_top)
 
             # 5 條內部直線（2 條組間分隔線＋3 條組內子欄分隔線）須穿過欄名列，
             # 上緣須到達 header_top（標題帶不分欄，欄名列須分欄）。
@@ -333,6 +363,127 @@ class TestDrawTicketPage(TicketPrintTestCase):
             self.assertEqual(
                 len(touching_header), 5,
                 "欄名列高度範圍內應有 5 條內部直線（六個欄名各自有邊界）")
+        finally:
+            plt.close(fig)
+
+    def test_ticket_palette_and_flat_single_line_artists(self):
+        # 色碼改回既有四表藍色、明細恢復斑馬紋，或 renderer 再使用
+        # FancyBboxPatch 模擬立體框，本測試都必須失敗。
+        import matplotlib.pyplot as plt
+        import tabs.tab_print as tab_print
+        from tabs.tab_print import DATE_H, HDR_H, TABLE_L, TABLE_W, TITLE_H, TOP
+
+        expected_palette = {
+            "TICKET_HEADER_BG": "#B9858E",
+            "TICKET_HEADER_TEXT": "#FFFFFF",
+            "TICKET_OUTER_BORDER": "#743A46",
+            "TICKET_GROUP_BORDER": "#A56B76",
+            "TICKET_GRID_BORDER": "#D7C4C8",
+            "TICKET_SUMMARY_BG": "#F5EAEC",
+        }
+        self.assertEqual(
+            {name: getattr(tab_print, name, None) for name in expected_palette},
+            expected_palette)
+
+        rows = (self._rows("王小明", ["A1", "A2", "A3"], issuer_id="P1")
+                + self._rows("李大華", ["B1"], issuer_id="P2"))
+        grid = buildTicketGrid(rows, body_rows=4)
+        fig = drawTicketPage(
+            grid, table_title="○○分局罰單簽收表",
+            print_date="2026/07/25", disp_date="2026/07/25",
+            body_rows=4, page_num=1, total_pages=1,
+            show_summary=True, total_count=4)
+        try:
+            ax = fig.axes[0]
+            self.assertFalse(
+                any(isinstance(p, FancyBboxPatch) for p in ax.patches),
+                "罰單 renderer 只能使用平面 Rectangle，不得有 FancyBbox 外觀")
+            rectangles = [p for p in ax.patches if isinstance(p, Rectangle)]
+            fills = [to_hex(p.get_facecolor(), keep_alpha=False) for p in rectangles
+                     if p.get_facecolor()[-1] > 0]
+            self.assertIn("#b9858e", fills, "欄名列必須是酒紅底")
+            self.assertIn("#f5eaec", fills, "簽收格必須是淡酒紅底")
+            self.assertNotIn("#eaf0f7", fills, "不得沿用舊藍色斑馬底")
+
+            body_top = TOP - DATE_H - TITLE_H - HDR_H
+            body_bottom = body_top - TICKET_ROW_H * 4
+            body_fills = [
+                to_hex(p.get_facecolor(), keep_alpha=False)
+                for p in rectangles
+                if p.get_facecolor()[-1] > 0
+                and p.get_y() < body_top
+                and p.get_y() + p.get_height() > body_bottom
+            ]
+            self.assertEqual(set(body_fills), {"#ffffff"},
+                             "罰單明細必須全部純白，不得斑馬紋")
+
+            header_texts = [
+                t for t in ax.texts if t.get_text() in TICKET_SUB_HEADERS
+            ]
+            self.assertEqual(len(header_texts), 6)
+            self.assertTrue(all(
+                to_hex(t.get_color(), keep_alpha=False) == "#ffffff"
+                for t in header_texts))
+
+            outer = [
+                p for p in rectangles
+                if to_hex(p.get_edgecolor(), keep_alpha=False) == "#743a46"
+                and p.get_linewidth() >= 1.0
+            ]
+            self.assertEqual(len(outer), 1, "只能有一個酒紅粗單線表格外框")
+            self.assertAlmostEqual(outer[0].get_x(), TABLE_L)
+            self.assertAlmostEqual(outer[0].get_width(), TABLE_W)
+        finally:
+            plt.close(fig)
+
+    def test_group_boundaries_are_single_medium_lines(self):
+        # 王小明 rowspan=3：r1/r2 的人員合併格內不得有橫線；r3 群組結束
+        # 應以一條 GROUP 色／中線寬跨完整直欄，不能同時疊一條 GRID 細線。
+        import matplotlib.pyplot as plt
+        from tabs.tab_print import DATE_H, HDR_H, TABLE_L, TABLE_W, TITLE_H, TOP
+
+        rows = (self._rows("王小明", ["A1", "A2", "A3"], issuer_id="P1")
+                + self._rows("李大華", ["B1", "B2"], issuer_id="P2"))
+        grid = buildTicketGrid(rows, body_rows=5)
+        fig = drawTicketPage(
+            grid, table_title="○○分局罰單簽收表",
+            print_date="2026/07/25", disp_date="2026/07/25",
+            body_rows=5, show_summary=True, total_count=5)
+        try:
+            ax = fig.axes[0]
+            band_w = TABLE_W / 3
+            table_top = TOP - DATE_H - TITLE_H - HDR_H
+            issuer_end = TABLE_L + band_w * _TICKET_SUB_RATIOS[0]
+
+            def lines_at(y):
+                return [
+                    line for line in ax.lines
+                    if len(line.get_xdata()) == 2
+                    and len(set(round(v, 8) for v in line.get_ydata())) == 1
+                    and abs(line.get_ydata()[0] - y) < 1e-8
+                ]
+
+            for ridx in (1, 2):
+                y = table_top - TICKET_ROW_H * ridx
+                issuer_lines = [
+                    line for line in lines_at(y)
+                    if min(line.get_xdata()) < issuer_end - 1e-8
+                ]
+                self.assertEqual(
+                    issuer_lines, [],
+                    f"r{ridx} 是合併格內部，不得畫開立人員橫線")
+
+            group_y = table_top - TICKET_ROW_H * 3
+            full_band_lines = [
+                line for line in lines_at(group_y)
+                if abs(min(line.get_xdata()) - TABLE_L) < 1e-8
+                and abs(max(line.get_xdata()) - (TABLE_L + band_w)) < 1e-8
+            ]
+            self.assertEqual(len(full_band_lines), 1, "群組共享邊界只能畫一次")
+            self.assertEqual(
+                to_hex(full_band_lines[0].get_color(), keep_alpha=False),
+                "#a56b76")
+            self.assertGreater(full_band_lines[0].get_linewidth(), 0.4)
         finally:
             plt.close(fig)
 
@@ -400,7 +551,7 @@ class TestDrawTicketPage(TicketPrintTestCase):
             table_top = TOP - DATE_H - TITLE_H - HDR_H
 
             def _boundary_y(ridx):
-                return table_top - ROW_H * ridx
+                return table_top - TICKET_ROW_H * ridx
 
             def _has_line(x0, x1, y):
                 for l in ax.lines:
@@ -425,18 +576,34 @@ class TestDrawTicketPage(TicketPrintTestCase):
                     _has_line(issuer_x0, issuer_x1, ry),
                     f"r{ridx}（合併群組內部）不應保留 issuer 水平線")
 
-            # r3（A/B 交界）、r5（B/C 交界）：群組起點，應有 issuer 線。
+            def _covering_lines(x0, x1, y):
+                return [
+                    line for line in ax.lines
+                    if len(line.get_xdata()) == 2
+                    and len(set(line.get_ydata())) == 1
+                    and abs(line.get_ydata()[0] - y) < 1e-6
+                    and min(line.get_xdata()) <= x0 + 1e-6
+                    and max(line.get_xdata()) >= x1 - 1e-6
+                ]
+
+            # r3（A/B 交界）、r5（B/C 交界）：共享邊界應各用一條中階線
+            # 跨完整直欄；不得再拆 issuer／number 兩段或疊畫細線。
             for ridx in (3, 5):
                 ry = _boundary_y(ridx)
-                self.assertTrue(
-                    _has_line(issuer_x0, issuer_x1, ry),
-                    f"r{ridx}（群組交界）應保留 issuer 水平線")
+                group_lines = _covering_lines(band0_left, band0_left + band_w, ry)
+                self.assertEqual(
+                    len(group_lines), 1,
+                    f"r{ridx}（群組交界）只能有一條跨完整直欄的共享邊界")
+                self.assertEqual(
+                    to_hex(group_lines[0].get_color(), keep_alpha=False),
+                    "#a56b76")
 
-            # number 子欄水平線：每張罰單編號各占一格，r1-r5 全部都要在。
+            # number 子欄水平線：每張罰單編號各占一格；群組內是細線，
+            # 群組交界則由跨完整直欄的中階共享邊界涵蓋。
             for ridx in range(1, 6):
                 ry = _boundary_y(ridx)
                 self.assertTrue(
-                    _has_line(number_x0, number_x1, ry),
+                    bool(_covering_lines(number_x0, number_x1, ry)),
                     f"r{ridx} number 子欄水平線必須保留")
         finally:
             plt.close(fig)
@@ -531,6 +698,47 @@ class TestQueryTicketPrintRows(unittest.TestCase):
         ticket_nos = [row["ticket_no"] for row in rows]
         self.assertNotIn("UNISSUED001", ticket_nos)
         self.assertEqual(ticket_nos, ["A1234567", "D4RD15263"])
+
+    def test_query_results_are_naturally_sorted_after_sql_filtering(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            for doc_id, ticket_no in enumerate(
+                    ("A10B10", "A2", "A01", "A1", "A10B2"), start=9100):
+                conn.execute(
+                    "INSERT INTO Document_Ticket"
+                    "(doc_id,create_date,register_date,sender_id,issuer_id,ticket_no) "
+                    "VALUES(?, '2026-07-24', '2026-07-24', 'P1', 'P1', ?)",
+                    (str(doc_id), ticket_no),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        rows = queryTicketPrintRows(self.db_path, "2026-07-24")
+        self.assertEqual(
+            [row["ticket_no"] for row in rows],
+            ["A1", "A01", "A2", "A10B2", "A10B10"],
+        )
+
+    def test_query_sort_accepts_legacy_missing_issuer_names(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("PRAGMA ignore_check_constraints=ON")
+            conn.execute(
+                "INSERT INTO Document_Ticket"
+                "(doc_id,create_date,register_date,issuer_id,ticket_no) "
+                "VALUES('9201','2026-07-25','2026-07-25',NULL,'A10')")
+            conn.execute(
+                "INSERT INTO Document_Ticket"
+                "(doc_id,create_date,register_date,issuer_id,ticket_no) "
+                "VALUES('9202','2026-07-25','2026-07-25','P404','A2')")
+            conn.execute("PRAGMA ignore_check_constraints=OFF")
+            conn.commit()
+        finally:
+            conn.close()
+
+        rows = queryTicketPrintRows(self.db_path, "2026-07-25")
+        self.assertEqual([row["ticket_no"] for row in rows], ["A10", "A2"])
 
     def test_no_data_returns_empty_list(self):
         self._set_self_service(True)

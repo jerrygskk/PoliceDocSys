@@ -31,6 +31,17 @@ TICKET_RECEIPT_DATE_COL = "register_date"
 _AUDIT_CATEGORY = "罰單"
 
 
+def ticketNoNaturalKey(ticket_no: str) -> tuple:
+    """回傳罰單編號的大小寫無關自然排序 key。"""
+    normalized = ticket_no.upper()
+    parts = re.findall(r"[A-Z]+|\d+", normalized)
+    segmented = tuple(
+        (1, int(part), len(part)) if part.isdigit() else (0, part)
+        for part in parts
+    )
+    return segmented, normalized
+
+
 class TicketValidationError(ValueError):
     """罰單欄位驗證失敗（編號格式、必填、參照人員不存在等）。"""
     pass

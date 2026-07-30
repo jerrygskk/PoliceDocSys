@@ -63,10 +63,17 @@ class _BrowseBase(unittest.TestCase):
         # 刑案：兩筆
         conn.executemany(
             "INSERT INTO Document_Criminal"
-            "(doc_id,report_date,sender_id,case_type,case_status,processor_id,"
-            " subject_summary,is_reported,is_electronic) VALUES(?,?,?,?,?,?,?,?,?)",
-            [("1", "2026-07-01", "P02", "CT01", "CS01", "P01", "甲嫌竊盜案", 0, ""),
-             ("2", "2026-07-02", "P02", "CT01", "CS01", "P02", "乙嫌竊盜案", 0, "")])
+            "(doc_id,create_date,report_date,sender_id,case_type,case_status,processor_id,"
+            " subject_summary,is_reported,is_electronic) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            [("1", "2026-06-29", "2026-07-01", "P02", "CT01", "CS01", "P01", "甲嫌竊盜案", 0, ""),
+             ("2", "2026-06-30", "2026-07-02", "P02", "CT01", "CS01", "P02", "乙嫌竊盜案", 0, "")])
+        conn.execute(
+            "INSERT INTO Document_General"
+            "(doc_id,create_date,report_date,sender_id,dept_id,gen_cat_id,"
+            " subject,processor_id,is_reported,is_electronic) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            ("1", "2026-06-28", None, None, "D01", "GC01",
+             "一般測試主旨", "P01", 0, ""))
         # 罰單：兩筆
         conn.executemany(
             "INSERT INTO Document_Ticket"
@@ -124,6 +131,62 @@ class TestReloadAlignment(_BrowseBase):
     def test_ticket_reload_three_structures_aligned(self):
         self.tab.buildInitial("ticket")
         self._assert_aligned("ticket", ["1", "2"])
+
+    def test_report_browse_create_date_is_after_id_and_searchable(self):
+        for key in ("crim", "gen"):
+            with self.subTest(key=key):
+                cols = TABLE_META[key]["cols"]
+                expected_header = "輸入日期" if key == "crim" else "登錄日期"
+                self.assertEqual(cols[2]["header"], expected_header)
+                self.assertEqual(cols[2]["view_col"], "登錄日期")
+                self.assertTrue(cols[2]["search"])
+                self.assertEqual(TABLE_META[key]["pending_date_col"], "陳報日期")
+
+    def test_criminal_browse_uses_requested_date_headers(self):
+        headers_by_view_col = {
+            col.get("view_col"): col["header"]
+            for col in TABLE_META["crim"]["cols"]
+        }
+        self.assertEqual(headers_by_view_col["登錄日期"], "輸入日期")
+        self.assertEqual(headers_by_view_col["受理日期"], "刑案單陳報/受理日期")
+        self.assertEqual(headers_by_view_col["陳報日期"], "發文日期")
+
+    def test_report_browse_uses_requested_default_column_widths(self):
+        crim_by_view_col = {
+            col.get("view_col"): col
+            for col in TABLE_META["crim"]["cols"]
+        }
+        self.assertEqual(crim_by_view_col["登錄日期"]["w"], 135)
+        self.assertEqual(crim_by_view_col["案類"]["w"], 250)
+        self.assertEqual(crim_by_view_col["嫌疑人_案由"]["w"], 290)
+        self.assertTrue(crim_by_view_col["嫌疑人_案由"]["stretch"])
+        self.assertEqual(crim_by_view_col["陳報日期"]["w"], 135)
+
+        gen_by_view_col = {
+            col.get("view_col"): col
+            for col in TABLE_META["gen"]["cols"]
+        }
+        self.assertEqual(gen_by_view_col["登錄日期"]["w"], 135)
+        self.assertEqual(gen_by_view_col["陳報主旨"]["w"], 290)
+        self.assertTrue(gen_by_view_col["陳報主旨"]["stretch"])
+        self.assertEqual(gen_by_view_col["陳報日期"]["w"], 135)
+
+    def test_report_browse_scoped_create_date_search(self):
+        for key, query, expected_id in (
+                ("crim", "2026-06-30", "2"),
+                ("gen", "2026-06-28", "1")):
+            with self.subTest(key=key):
+                self.tab.buildInitial(key)
+                scope = self.tab._ui[key]["scope"]
+                scope.setCurrentIndex(scope.findText("登錄日期"))
+                self.tab._ui[key]["kw"].setText(query)
+                self.tab._applyFilter(key)
+                visible = [
+                    self.tab._docorder[key][row]
+                    for row in range(self.tab._ui[key]["table"].rowCount())
+                    if not self.tab._ui[key]["table"].isRowHidden(row)
+                ]
+                self.assertEqual(visible, [expected_id])
 
 
 class TestDiffUpdateAlignment(_BrowseBase):

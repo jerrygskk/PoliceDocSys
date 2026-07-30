@@ -248,8 +248,10 @@ class TestListVerifyRestore(unittest.TestCase):
         db_schema.applySchema(conn)
         conn.execute("INSERT INTO Document_Task(doc_id, receive_date) "
                      "VALUES('T1','2026-01-01')")
-        conn.execute("INSERT INTO Document_Criminal(doc_id, report_date) "
-                     "VALUES('C1','2026-01-01')")
+        conn.execute(
+            "INSERT INTO Document_Criminal"
+            "(doc_id, create_date, report_date, subject_summary) "
+            "VALUES('C1','2026-01-01','2026-01-01','既有刑案')")
         conn.execute("INSERT INTO Ref_Personnel"
                      "(staff_id,staff_name,alias,is_active,sort_order) "
                      "VALUES('P01','甲員','',1,1)")
@@ -311,6 +313,50 @@ class TestListVerifyRestore(unittest.TestCase):
         counts = db_backup.backup_doc_counts(self.db)
         self.assertEqual(counts["ticket"], 1)
         self.assertIn("罰單 1 筆", db_backup.formatDocCounts(counts))
+
+    def test_unissued_registered_reports_are_counted_for_backup_and_reset(self):
+        c = sqlite3.connect(self.db)
+        c.execute(
+            "INSERT INTO Document_Criminal"
+            "(doc_id,create_date,report_date,subject_summary) "
+            "VALUES('C2','2026-01-02',NULL,'未發文刑案')")
+        c.execute(
+            "INSERT INTO Document_General"
+            "(doc_id,create_date,report_date,subject) "
+            "VALUES('G1','2026-01-03',NULL,'未發文一般案')")
+        c.commit()
+
+        counts = db_backup.backup_doc_counts(self.db)
+        self.assertEqual(counts["crim"], 2)
+        self.assertEqual(counts["gen"], 1)
+
+        from tabs.tab_settings import _resetDocCounts
+        reset_counts = _resetDocCounts(c)
+        self.assertEqual(reset_counts["crim"], 2)
+        self.assertEqual(reset_counts["gen"], 1)
+        c.close()
+
+    def test_legacy_pending_reports_with_null_create_date_are_still_counted(self):
+        c = sqlite3.connect(self.db)
+        c.execute(
+            "INSERT INTO Document_Criminal"
+            "(doc_id,create_date,report_date,subject_summary) "
+            "VALUES('C3',NULL,NULL,'舊庫未發文刑案')")
+        c.execute(
+            "INSERT INTO Document_General"
+            "(doc_id,create_date,report_date,subject) "
+            "VALUES('G2',NULL,NULL,'舊庫未發文一般案')")
+        c.commit()
+
+        counts = db_backup.backup_doc_counts(self.db)
+        self.assertEqual(counts["crim"], 2)
+        self.assertEqual(counts["gen"], 1)
+
+        from tabs.tab_settings import _resetDocCounts
+        reset_counts = _resetDocCounts(c)
+        self.assertEqual(reset_counts["crim"], 2)
+        self.assertEqual(reset_counts["gen"], 1)
+        c.close()
 
     def test_deleted_ticket_shell_not_counted(self):
         c = sqlite3.connect(self.db)
