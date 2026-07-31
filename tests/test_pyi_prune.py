@@ -51,9 +51,50 @@ class TestDropRules(unittest.TestCase):
         self.assertEqual(got, "git-openssl")
 
     def test_keeps_python_own_openssl(self):
+        """預設不砍：完整版的 _ssl.pyd／libssl-3.dll 也吃這份 libcrypto。"""
         got = pyi_prune._drop(
             "libcrypto-3.dll", r"C:\Python312\DLLs\libcrypto-3.dll")
         self.assertIsNone(got)
+
+    def test_drops_openssl_only_when_opted_in(self):
+        """獨立版限定：唯一使用者 _hashlib 已由 spec excludes 排掉（見 prune docstring）。"""
+        for name in ("libcrypto-3.dll", "libssl-3.dll"):
+            self.assertEqual(
+                pyi_prune._drop(name, r"C:\Python312\DLLs" + "\\" + name,
+                                drop_openssl=True),
+                "openssl", name)
+
+    def test_drops_pdf_and_network_cluster(self):
+        """qpdf→Qt6Pdf→Qt6Network 整串沒人用；缺砍一支就會留下沒被回收的相依。"""
+        for name in ("Qt6Pdf.dll", "Qt6Network.dll"):
+            self.assertEqual(pyi_prune._drop(rf"PySide6\{name}", "x"), "unused-qt", name)
+        self.assertEqual(
+            pyi_prune._drop(r"PySide6\plugins\imageformats\qpdf.dll", "x"), "unused-qt")
+        for folder in ("tls", "networkinformation", "generic"):
+            self.assertEqual(
+                pyi_prune._drop(rf"PySide6\plugins\{folder}\whatever.dll", "x"),
+                "unused-qt", folder)
+
+    def test_drops_spare_platform_plugins(self):
+        for name in ("qdirect2d.dll", "qoffscreen.dll", "qminimal.dll"):
+            self.assertEqual(
+                pyi_prune._drop(rf"PySide6\plugins\platforms\{name}", "x"),
+                "unused-qt", name)
+
+    def test_keeps_plugins_the_app_actually_needs(self):
+        """qwindows＝唯一實際使用的平台外掛；svg 是本專案 icon 的命脈；
+        qjpeg 為既定安全網；qico 供視窗圖示。"""
+        keep = (
+            r"PySide6\plugins\platforms\qwindows.dll",
+            r"PySide6\plugins\styles\qmodernwindowsstyle.dll",
+            r"PySide6\plugins\imageformats\qsvg.dll",
+            r"PySide6\plugins\iconengines\qsvgicon.dll",
+            r"PySide6\plugins\imageformats\qjpeg.dll",
+            r"PySide6\plugins\imageformats\qico.dll",
+            r"PySide6\Qt6Svg.dll",
+        )
+        for dest in keep:
+            self.assertIsNone(pyi_prune._drop(dest, "x"), dest)
 
     def test_locale_filter_keeps_only_zh_tw(self):
         self.assertIsNone(pyi_prune._drop(r"PySide6\translations\qtbase_zh_TW.qm", "x"))
@@ -110,6 +151,16 @@ class TestSpecFiles(unittest.TestCase):
     def test_entry_spec_excludes_rescue_dialog(self):
         """規格禁止獨立版做資料庫還原，這是 profile 之外的第二層保險。"""
         self.assertIn("ui_utils.rescue_dialog", self._excludes("Police-Entry-Manager.spec"))
+
+    def test_both_specs_exclude_qtnetwork_binding(self):
+        """Qt6Network.dll 由 prune 砍掉，綁定層必須同時排除，否則留下缺相依的 pyd。"""
+        for spec in _SPECS:
+            self.assertIn("PySide6.QtNetwork", self._excludes(spec), spec)
+
+    def test_hashlib_excluded_in_entry_spec_only(self):
+        """完整版另有 _ssl 吃 libcrypto，排掉 _hashlib 省不到東西又多一份風險。"""
+        self.assertIn("_hashlib", self._excludes("Police-Entry-Manager.spec"))
+        self.assertNotIn("_hashlib", self._excludes("Police-Document-Manager.spec"))
 
     def test_no_spec_excludes_uitools_opengl_bindings_dlls(self):
         for spec in _SPECS:

@@ -64,40 +64,32 @@ class LoadWorker(QThread):
             self.failed.emit(type(exc), exc)
 
     def _run(self):
-        import time
-        # ⚠️ DEBUG 用：每個步驟至少停 2 秒，方便觀察進度條
-        # 正式上線前把 DEBUG_DELAY 改為 0
-        DEBUG_DELAY = 0.05
-
+        # ⚠️ 這裡不得加任何人工延遲：早期為了觀察進度條每步 sleep 0.05 秒，
+        # 開機平白多花約 0.3~0.45 秒（步驟數依 profile 而定），2026-07 已移除。
         results = {}
 
         # 步驟 1：偵測 _MEIPASS 暫存區就緒
         if getattr(sys, 'frozen', False):
             _ = os.path.exists(sys._MEIPASS)
         self.step_done.emit(*LOAD_STEPS[0])
-        time.sleep(DEBUG_DELAY)
 
         # 步驟 2：載入 Qt Resource
         from res import resources_rc  # noqa
         self.step_done.emit(*LOAD_STEPS[1])
-        time.sleep(DEBUG_DELAY)
 
         # 步驟 3：套用樣式（回主執行緒才能真正套，這裡先 import）
         from lib.theme import APPLE_STYLE
         results['style'] = APPLE_STYLE
         self.step_done.emit(*LOAD_STEPS[2])
-        time.sleep(DEBUG_DELAY)
 
         # 步驟 4：載入主選單 UI
         results['menu_ui_path'] = getResourcePath("layouts/main_menu.ui")
         self.step_done.emit(*LOAD_STEPS[3])
-        time.sleep(DEBUG_DELAY)
 
         # 步驟 5：連線 DB
         import sqlite3
         conn = sqlite3.connect(self.db_path)
         self.step_done.emit(*LOAD_STEPS[4])
-        time.sleep(DEBUG_DELAY)
 
         # 步驟 6：載入人員對照表
         results['personnel'] = conn.execute(
@@ -105,7 +97,6 @@ class LoadWorker(QThread):
             "WHERE is_active=1 ORDER BY staff_id"
         ).fetchall()
         self.step_done.emit(*LOAD_STEPS[5])
-        time.sleep(DEBUG_DELAY)
 
         # 步驟 7：載入部門、案類（conn 先不關，下面要查三表）
         results['depts'] = conn.execute(
@@ -115,7 +106,6 @@ class LoadWorker(QThread):
             "SELECT case_type_id, case_type_name FROM Ref_CaseTypes ORDER BY case_type_id"
         ).fetchall()
         self.step_done.emit(*LOAD_STEPS[6])
-        time.sleep(DEBUG_DELAY)
 
         # 步驟 8~10：背景預讀瀏覽表的完整資料（純 SQL，不碰 Qt）。
         # 主執行緒之後用這份資料直接建表，免再查 DB。keys 由 browse_preload_keys
@@ -129,7 +119,6 @@ class LoadWorker(QThread):
                 browse[key] = None   # 預讀失敗 → 主執行緒 fallback 就地查
             if 7 + i < len(LOAD_STEPS):
                 self.step_done.emit(*LOAD_STEPS[7 + i])
-                time.sleep(DEBUG_DELAY)
         results['browse'] = browse
         conn.close()
 
@@ -148,7 +137,6 @@ class LoadWorker(QThread):
         results['tabs'] = tuple(preheated)
         results['layout1_path'] = getResourcePath("layouts/Layout1.ui")
         self.step_done.emit(*LOAD_STEPS[10])
-        time.sleep(DEBUG_DELAY)
 
         # 背景階段完成 → 交主執行緒分段建表（65~100% 由 DocumentManager 驅動）
         self.finished.emit(results)

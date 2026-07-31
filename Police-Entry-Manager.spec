@@ -27,11 +27,18 @@ a = Analysis(
     excludes=['matplotlib', 'numpy', 'PIL', 'contourpy', 'fontTools', 'kiwisolver', 'cycler', 'dateutil', 'pyparsing', 'tkinter', 'ui_utils.rescue_dialog',
                  # 純 QWidget 程式，從未 import QtQuick／QML／OpenGL
                  'PySide6.QtQuick', 'PySide6.QtQuickWidgets', 'PySide6.QtQml',
-                 'PySide6.QtOpenGL', 'PySide6.QtOpenGLWidgets'],
+                 'PySide6.QtOpenGL', 'PySide6.QtOpenGLWidgets',
+                 # 純本機 SQLite 程式，原始碼零網路使用（見完整版 spec 同段說明）
+                 'PySide6.QtNetwork',
+                 # OpenSSL 綁定：本程式只用 hashlib.sha256 做密碼雜湊，缺 _hashlib
+                 # 時 Python 自動退回內建 _sha2，結果相同。排掉它 libcrypto-3.dll
+                 # （5.2MB）才會沒有使用者，再由 prune(drop_openssl=True) 收尾。
+                 # ⚠️ 完整版另有 _ssl 也吃 libcrypto，故此項獨立版限定。
+                 '_hashlib'],
     noarchive=False,
     optimize=0,
 )
-prune(a)
+prune(a, drop_openssl=True)
 pyz = PYZ(a.pure)
 
 exe = EXE(
