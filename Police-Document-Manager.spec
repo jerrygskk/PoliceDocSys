@@ -21,6 +21,9 @@ a = Analysis(
              # 純 QWidget 程式，從未 import QtQuick／QML／OpenGL
              'PySide6.QtQuick', 'PySide6.QtQuickWidgets', 'PySide6.QtQml',
              'PySide6.QtOpenGL', 'PySide6.QtOpenGLWidgets',
+             # 純本機 SQLite 程式，原始碼零網路使用；QtNetwork 綁定層（1.0MB）沒人
+             # import，Qt6Network.dll 及其 tls／networkinformation 外掛由 pyi_prune 砍
+             'PySide6.QtNetwork',
              # AVIF 影像格式支援（_avif.pyd 未壓縮 7.5MB，比 PIL 核心的 _imaging 還大）。
              # 本專案影像只有 PNG／SVG，用不到；PIL 的外掛載入本來就允許缺席——
              # AvifImagePlugin 自己 try/except 後設 SUPPORTED=False，Image.init() 也
