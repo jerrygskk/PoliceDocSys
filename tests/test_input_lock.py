@@ -28,13 +28,11 @@ class TestInputLock(unittest.TestCase):
     def test_keys_present(self):
         self.assertEqual(set(INPUT_LOCK_KEYS),
                          {"dispatch", "task", "crim", "gen", "ticket",
-                          "reward", "reward_issue"})
+                          "reward"})
 
     def test_ticket_and_reward_lock_keys_present(self):
         self.assertEqual(INPUT_LOCK_KEYS["ticket"], "input_lock_ticket")
         self.assertEqual(INPUT_LOCK_KEYS["reward"], "input_lock_reward")
-        self.assertEqual(
-            INPUT_LOCK_KEYS["reward_issue"], "input_lock_reward_issue")
 
     def test_ticket_and_reward_round_trip(self):
         # 走正式設定 API（無 setInputLocked helper，設定面板本身以 setSetting 寫入）。
@@ -47,15 +45,12 @@ class TestInputLock(unittest.TestCase):
         self.assertFalse(isInputLocked(self.db, "ticket"))
         self.assertTrue(isInputLocked(self.db, "reward"))
 
-    def test_reward_registration_and_issue_locks_are_independent(self):
-        setSetting(self.db, INPUT_LOCK_KEYS["reward_issue"], "1")
-        self.assertTrue(isInputLocked(self.db, "reward_issue"))
-        self.assertFalse(isInputLocked(self.db, "reward"))
-
-        setSetting(self.db, INPUT_LOCK_KEYS["reward"], "1")
-        setSetting(self.db, INPUT_LOCK_KEYS["reward_issue"], "")
-        self.assertTrue(isInputLocked(self.db, "reward"))
+    def test_removed_reward_issue_kind_is_unknown(self):
+        """敘獎發文頁已移除：舊 key 殘留在資料庫也不得再被視為一把鎖。"""
+        self.assertNotIn("reward_issue", INPUT_LOCK_KEYS)
+        setSetting(self.db, "input_lock_reward_issue", "1")
         self.assertFalse(isInputLocked(self.db, "reward_issue"))
+        self.assertFalse(isInputLocked(self.db, "reward"))
 
     def test_ticket_and_reward_zero_and_junk_are_unlocked(self):
         for kind in ("ticket", "reward"):

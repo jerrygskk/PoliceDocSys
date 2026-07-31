@@ -706,8 +706,7 @@ INPUT_LOCK_KEYS = {
     "crim":     "input_lock_crim",
     "gen":      "input_lock_gen",
     "ticket":   "input_lock_ticket",     # 罰單登錄
-    "reward":   "input_lock_reward",     # 敘獎登錄
-    "reward_issue": "input_lock_reward_issue",  # 敘獎發文（Tab4 確認發文）
+    "reward":   "input_lock_reward",     # 敘獎登錄（自助模式下亦即發文源頭）
 }
 
 
@@ -732,14 +731,21 @@ REPORT_MODE_KEYS = {
     "crim": "report_mode_crim",
     "gen": "report_mode_gen",
     "ticket": "report_mode_ticket",
+    "reward": "report_mode_reward",
 }
+
+# 僅這三種流程在新 key 不存在時回退讀舊的全域 report_input_mode（歷史相容）。
+# reward 是後來才掛回陳報模式的流程，**不得**吃這個回退：舊資料庫可能殘留
+# report_input_mode='1'，若回退會讓敘獎在未經設定的情況下莫名變成自助取號。
+LEGACY_MODE_FALLBACK_KINDS = ("crim", "gen", "ticket")
 
 
 def isSelfServiceMode(db_path, kind) -> bool:
-    """判斷 crim、gen、ticket 是否為自助取號模式。
+    """判斷 crim、gen、ticket、reward 是否為自助取號模式。
 
-    未知 kind 回傳 False；僅新 key 不存在時才回退讀取舊 key。新 key 即使為
-    空值、0 或壞值也不回退；資料庫讀取失敗回傳 False。kind 為必填參數，漏傳
+    未知 kind 回傳 False；僅 LEGACY_MODE_FALLBACK_KINDS 在新 key 不存在時
+    才回退讀取舊 key（reward 不回退，key 不存在一律送文者模式）。新 key 即使
+    為空值、0 或壞值也不回退；資料庫讀取失敗回傳 False。kind 為必填參數，漏傳
     時由 Python 自行拋出 TypeError。
     """
     key = REPORT_MODE_KEYS.get(kind)
@@ -747,7 +753,7 @@ def isSelfServiceMode(db_path, kind) -> bool:
         return False
     try:
         value = getSetting(db_path, key, None)
-        if value is None:
+        if value is None and kind in LEGACY_MODE_FALLBACK_KINDS:
             value = getSetting(db_path, REPORT_INPUT_MODE_KEY, "")
         return (value or "").strip() == "1"
     except Exception:
@@ -755,7 +761,7 @@ def isSelfServiceMode(db_path, kind) -> bool:
 
 
 def anySelfServiceMode(db_path) -> bool:
-    """判斷 crim、gen、ticket 任一類別是否啟用自助取號模式。"""
+    """判斷任一類別是否啟用自助取號模式。"""
     return any(isSelfServiceMode(db_path, kind) for kind in REPORT_MODE_KEYS)
 
 

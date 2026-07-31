@@ -106,7 +106,7 @@ class LazyTabLoadingSubprocessTests(unittest.TestCase):
             import tabs
             names = [
                 "TabDispatch", "TabReceive", "TabReport", "TabReward",
-                "TabRewardIssue", "TabTicket", "TabPrint",
+                "TabTicket", "TabPrint",
                 "TabDBBrowse", "TabArchive", "TabSettings", "TabAudit",
             ]
             for name in names:

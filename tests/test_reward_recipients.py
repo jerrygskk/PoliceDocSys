@@ -10,7 +10,6 @@ from ui_utils import (
     RecipientLineEditController,
     format_recipient_names,
     parse_recipient_names,
-    sort_reward_personnel,
 )
 
 
@@ -28,26 +27,6 @@ class RecipientNameTests(unittest.TestCase):
             format_recipient_names(names, trailing=True), "王小明, 李小華, "
         )
         self.assertEqual(parse_recipient_names("王小明, 李小華, "), names)
-
-    def test_sort_counts_complete_tokens_and_uses_stable_fallbacks(self):
-        personnel = [
-            (4, "林大同", None),
-            (2, "王小明", 10),
-            (3, "王小", 10),
-            (1, "李小華", 5),
-            (5, "陳新進", None),
-        ]
-        history = ["王小明, 李小華", "王小明、王小", "林大同，王小明"]
-        self.assertEqual(
-            sort_reward_personnel(personnel, history),
-            [
-                (2, "王小明", 10),
-                (1, "李小華", 5),
-                (3, "王小", 10),
-                (4, "林大同", None),
-                (5, "陳新進", None),
-            ],
-        )
 
 
 class RecipientControllerTests(unittest.TestCase):

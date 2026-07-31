@@ -705,8 +705,153 @@ class TestConvertDialog(_DialogBase):
 class TestReportPreviewCreateDate(_DialogBase):
     def test_preview_headers_put_create_date_after_doc_id(self):
         from tabs.tab_report import CRIM_HEADERS, GEN_HEADERS
-        self.assertEqual(CRIM_HEADERS[1:3], ["編號", "登錄日期"])
-        self.assertEqual(GEN_HEADERS[1:3], ["編號", "登錄日期"])
+        # 標題用兩字「登錄」，欄寬才壓得到 5 半形（見 _fmtDateShort）
+        self.assertEqual(CRIM_HEADERS[1:3], ["編號", "登錄"])
+        self.assertEqual(GEN_HEADERS[1:3], ["編號", "登錄"])
+        self.assertEqual(CRIM_HEADERS[8], "陳報")
+
+    def test_subject_is_the_stretch_column(self):
+        """伸縮欄＝陳報主旨：其餘欄固定寬，剩餘寬度全部給主旨。
+
+        原本是「末端空標題欄吃掉剩餘寬度、主旨固定 184」，導致固定欄總和
+        超出可用寬而冒水平捲軸；改由主旨吸收剩餘後，主旨不需要固定數字。
+        """
+        import ast
+        import pathlib
+        from tabs.tab_report import CRIM_HEADERS, GEN_HEADERS
+        for headers, name in ((CRIM_HEADERS, "刑案"), (GEN_HEADERS, "一般")):
+            self.assertNotIn("", headers[1:], f"{name}不應再有末端空標題欄")
+        src = pathlib.Path("tabs/tab_report.py").read_text(encoding="utf-8")
+        calls = [n for n in ast.walk(ast.parse(src))
+                 if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", "") == "setupPreviewTable"]
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            kw = {k.arg: k.value for k in call.keywords}
+            # stretch_col=<HEADERS>.index("陳報主旨")
+            self.assertEqual(kw["stretch_col"].args[0].value, "陳報主旨")
+
+    def test_autoresize_never_overflows_when_sections_have_large_minimum(self):
+        """欄寬總和不得超過 viewport，否則一開啟就冒水平捲軸（實機踩過）。
+
+        Qt 會把每一欄夾到 header 的 `minimumSectionSize`（隨字型／DPI 而變，
+        實機 125%＋14pt 時比刪除欄的 32 大），實際總寬因此比算出來的多幾 px。
+        ⚠️ offscreen 的 minimumSectionSize 只有 23、夾不到，所以這裡**刻意調大**
+        來重現實機條件；不要因為「本機測不出來」就把 autoResizeTable 末尾的
+        校正拿掉。
+        """
+        from ui_utils.table import setupPreviewTable, autoResizeTable
+        table = QTableWidget()
+        setupPreviewTable(table, ["", "編號", "登錄", "陳報主旨", "承辦人"],
+                          stretch_col=3, cap_mode=False,
+                          fixed_overrides={"陳報主旨": 92})
+        table.horizontalHeader().setMinimumSectionSize(46)   # 模擬實機夾寬
+        table.show()
+        table.resize(600, 300)
+        QApplication.processEvents()
+        autoResizeTable(table)
+        total = sum(table.columnWidth(c) for c in range(table.columnCount()))
+        self.assertLessEqual(total, table.viewport().width(),
+                             "欄寬總和超出 viewport，會冒水平捲軸")
+        table.deleteLater()
+
+    def test_preview_layout_splits_three_to_two(self):
+        """previewLayout 3:2＝兩塊扣掉主旨後的固定欄比值，兩邊主旨才等寬。"""
+        import pathlib
+        ui = pathlib.Path("layouts/Layout3.ui").read_text(encoding="utf-8")
+        block = ui.split('name="previewLayout"', 1)[1][:800]
+        self.assertIn('<string notr="true">3,2</string>', block)
+
+    def test_report_preview_column_widths_match_agreed_baseline(self):
+        """陳報預覽欄寬＝維護者定的字數基準（全形 17px、半形 8px、PAD 24）。
+
+        改這些數字前先回頭看 DEVELOPER §5「陳報預覽欄寬基準」，那裡記了
+        字數、換算式與預算上限；只改數字不改基準會再次跑掉。
+        """
+        from ui_utils.table import FIXED_COL_WIDTHS as W
+        full = lambda n: n * 17 + 24      # noqa: E731
+        half = lambda n: n * 8 + 24       # noqa: E731
+        self.assertEqual(W["編號"], half(4))
+        self.assertEqual(W["狀態"], full(2))
+        self.assertEqual(W["承辦人"], full(4))
+        self.assertEqual(W["受理人"], full(4))
+        self.assertEqual(W["報案人"], full(4))
+        self.assertEqual(W["業務單位"], full(4))
+        self.assertEqual(W["分類"], full(2))
+        # 兩個日期欄固定 5 半形＝只顯示 MM-DD；標題取兩字才不會被切
+        for key in ("登錄", "陳報"):
+            self.assertEqual(W[key], half(5))
+            self.assertGreaterEqual(W[key], full(2), f"標題「{key}」會被切")
+
+    def test_preview_dates_show_month_day_only_with_full_date_tooltip(self):
+        """預覽日期欄只顯示 MM-DD，完整日期掛 tooltip。"""
+        from tabs.tab_report import _fmtDateShort
+        self.assertEqual(_fmtDateShort("2026-07-31"), "07-31")
+        self.assertEqual(_fmtDateShort(""), "")
+        self.assertEqual(_fmtDateShort(None), "")
+        self.assertEqual(_fmtDateShort("非日期"), "非日期")
+
+    def test_short_date_does_not_touch_shared_fmtDate(self):
+        """⚠️ 不可改 BaseTab._fmtDate：交辦單／罰單／敘獎預覽共用它。"""
+        from lib.base_tab import BaseTab
+        self.assertEqual(BaseTab._fmtDate("2026-07-31"), "07-31-2026")
+
+    def test_report_previews_disable_ellipsis_except_subject(self):
+        """除「陳報主旨」外不顯示省略號：切斷就切斷。
+
+        省略號會再吃掉一個字元寬，欄寬是照字數算好的（日期欄踩過：64px
+        本該剛好顯示 07-16，加省略號變成 07-1…）。
+        """
+        from PySide6.QtCore import Qt
+        from ui_utils import applyNoElide
+        from ui_utils.table import _ElideRightDelegate
+        from tabs.tab_report import CRIM_HEADERS, GEN_HEADERS
+
+        for headers in (CRIM_HEADERS, GEN_HEADERS):
+            subject = headers.index("陳報主旨")
+            table = QTableWidget(0, len(headers))
+            applyNoElide(table, elide_cols=(subject,))
+            self.assertEqual(table.textElideMode(), Qt.ElideNone)
+            self.assertIsInstance(table.itemDelegateForColumn(subject),
+                                  _ElideRightDelegate)
+            other = 1 if subject != 1 else 2
+            self.assertNotIsInstance(table.itemDelegateForColumn(other),
+                                     _ElideRightDelegate)
+            table.deleteLater()
+
+    def test_report_previews_wire_no_elide_for_subject_column_only(self):
+        """陳報頁確實有呼叫 applyNoElide，且只把主旨欄列為例外。"""
+        import ast
+        import pathlib
+        src = pathlib.Path("tabs/tab_report.py").read_text(encoding="utf-8")
+        calls = [n for n in ast.walk(ast.parse(src))
+                 if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", "") == "applyNoElide"]
+        self.assertEqual(len(calls), 2, "兩張預覽表都要關省略號")
+        for call in calls:
+            kw = {k.arg: k.value for k in call.keywords}
+            self.assertIn("elide_cols", kw)
+            self.assertEqual(len(kw["elide_cols"].elts), 1,
+                             "只有主旨欄可保留省略號")
+
+    def test_report_previews_use_fixed_widths_not_caps(self):
+        """陳報兩張預覽表一律固定寬：內容再長不加寬、內容短也不縮。
+
+        `cap_mode=False` 才是「固定值」；True 會變成上限（短內容縮、長內容
+        撐到上限），維護者要求除主旨外都不自動變寬。
+        """
+        import ast
+        import pathlib
+        src = pathlib.Path("tabs/tab_report.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        calls = [n for n in ast.walk(tree)
+                 if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", "") == "setupPreviewTable"]
+        self.assertEqual(len(calls), 2, "陳報頁應只建立兩張預覽表")
+        for call in calls:
+            kw = {k.arg: k.value for k in call.keywords}
+            self.assertIn("cap_mode", kw)
+            self.assertIs(kw["cap_mode"].value, False)
 
     def test_preview_rows_show_create_date_without_shifting_existing_values(self):
         from tabs.tab_report import CRIM_HEADERS, GEN_HEADERS, TabReport
@@ -719,14 +864,18 @@ class TestReportPreviewCreateDate(_DialogBase):
             "陳志豪", "", "", "2026-06-01")
         self.assertEqual(
             [tab.crim_table.item(0, col).text() for col in range(2, 10)],
-            ["07-16-2026", "現行", "竊盜案", "刑案主旨",
-             "陳志豪", "", "06-01-2026", ""])
+            ["07-16", "現行", "竊盜案", "刑案主旨",
+             "陳志豪", "", "06-01", ""])
+        # 完整日期仍掛在 tooltip
+        self.assertEqual(tab.crim_table.item(0, 2).toolTip(), "2026-07-16")
+        self.assertEqual(tab.crim_table.item(0, 8).toolTip(), "2026-06-01")
 
         tab._insertGenRow(
             "3", "2026-07-16", "偵查隊", "一般主旨", "陳志豪", "業務")
         self.assertEqual(
             [tab.gen_table.item(0, col).text() for col in range(2, 7)],
-            ["07-16-2026", "偵查隊", "一般主旨", "陳志豪", "業務"])
+            ["07-16", "偵查隊", "一般主旨", "陳志豪", "業務"])
+        self.assertEqual(tab.gen_table.item(0, 2).toolTip(), "2026-07-16")
         tab.crim_table.deleteLater()
         tab.gen_table.deleteLater()
 

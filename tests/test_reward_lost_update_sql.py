@@ -133,29 +133,6 @@ class TestRewardLostUpdateSql(unittest.TestCase):
             ("2026-07-29", "P01", "新事由", "新人員"),
         )
 
-    def test_batch_compare_allows_known_reissue_but_rejects_post_confirm_change(self):
-        sql = _literal_assignment(
-            ROOT / "tabs" / "tab_reward_issue.py", "_REWARD_ISSUE_UPDATE_SQL")
-        self.conn.execute(
-            "UPDATE Document_Reward SET register_date='2026-07-01' WHERE doc_id='1'")
-
-        reissued = self.conn.execute(
-            sql, ("2026-07-29", "P01", "1", "2026-07-01"))
-        self.assertEqual(reissued.rowcount, 1)
-
-        self.conn.execute(
-            "UPDATE Document_Reward SET register_date='2026-07-30',"
-            "sender_id='P02' WHERE doc_id='1'")
-        blocked = self.conn.execute(
-            sql, ("2026-07-31", "P01", "1", "2026-07-29"))
-        self.assertEqual(blocked.rowcount, 0)
-        self.assertEqual(
-            self.conn.execute(
-                "SELECT register_date,sender_id FROM Document_Reward "
-                "WHERE doc_id='1'").fetchone(),
-            ("2026-07-30", "P02"),
-        )
-
     def test_edit_miss_releases_writer_before_fresh_classification_read(self):
         classify = _function_from_source(
             ROOT / "ui_utils" / "reward_dialog.py",
@@ -192,26 +169,6 @@ class TestRewardLostUpdateSql(unittest.TestCase):
             finally:
                 second_writer.close()
                 writer.close()
-
-    def test_batch_partial_result_is_one_combined_prompt(self):
-        result = _function_from_source(
-            ROOT / "tabs" / "tab_reward_issue.py",
-            "_reward_issue_result",
-        )
-        self.assertEqual(
-            result(2, "2026-07-29", 1, 3),
-            (
-                True,
-                "部分未更新",
-                "已成功更新 2 筆發文日期（2026-07-29）\n"
-                "有 1 筆已被刪除，本次未變動\n"
-                "有 3 筆已被他人發文，本次未變動",
-            ),
-        )
-        self.assertEqual(
-            result(4, "2026-07-29", 0, 0),
-            (False, "完成", "已成功更新 4 筆發文日期（2026-07-29）"),
-        )
 
 
 if __name__ == "__main__":

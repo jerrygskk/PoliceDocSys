@@ -23,7 +23,7 @@ main.py
 
 - `DocumentManager.TAB_CLASSES`＝`{key: (模組路徑, 類別名)}`，新增 Tab 在此登記
 - 每個 Tab 繼承 `BaseTab`，必須實作 `setup(tab_index)`；可 override `get_tables()`／`get_focus_widget()`／`on_activated()`
-- **11 個大 Tab（index 0–10）**：交辦發文／交辦收文／公文陳報／敘獎登錄／敘獎發文／罰單登錄／簽收單列印／資料庫瀏覽／檔案歸檔／資料庫設定／操作紀錄；類別見 `tabs/`，各對應一個 `layouts/LayoutN.ui`
+- **10 個大 Tab（index 0–9）**：交辦發文／交辦收文／公文陳報／敘獎登錄／罰單登錄／簽收單列印／資料庫瀏覽／檔案歸檔／資料庫設定／操作紀錄；類別見 `tabs/`，各對應一個 `layouts/LayoutN.ui`（`Layout10.ui` 為敘獎發文頁移除後的**空號**，其餘檔名不重編號）
 - **主選單**（`main_menu.ui`）為 4 欄 × 3 列圖示磚格（11 顆）（QToolButton），圖示 `res/buttons/menu_*.svg`（qrc 別名 `:/menu/`）於 `main.py` 以 `QIcon` 套用（避開 QUiLoader 解析 .qrc 的問題）
 - ⚠️ **主選單拉到最前**：打包版偶因 Windows 前景鎖，`MainMenu` 的 `exec()` dialog 被壓到別視窗後。修法 `QTimer.singleShot(0, …)` 在 exec 進事件迴圈後 `raise_()`＋`activateWindow()`＋清最小化（`main.py` `_on_data_ready`）
 - ⚠️ **LOADING 畫面不掛 `WindowStaysOnTopHint`**：splash 若置頂，會把載入/建表階段冒出的 modal 錯誤視窗（excepthook 或各 Tab setup 的 DB 錯誤）壓在後面、使用者看不到也點不到。故 `LoadingScreen` 只用 `FramelessWindowHint`，開機前景改由 `main.py` `loading.show()` 後 `raise_()`＋`activateWindow()` 保證（與上一條主選單同招）。全專案不再有 always-on-top 視窗。**勿再加回置頂旗標。**
@@ -83,12 +83,12 @@ graph LR
 |------|----------|----------------|
 | **歸檔資料夾設定**（`archive_root`／子夾） | `ArchiveRootPanel`（settings_panels）；歸檔頁 `_updateArchWarn` 警示＋資料夾定位；瀏覽頁 `_refreshArchWarn` 警示＋PDF 連結；設定頁登入彈窗 `_maybeWarnArchiveRoot`；Reset 會清空（`performYearEndReset`）；`clearPdfIndexCache` | §5「系統設定子頁」＋「歸檔根目錄未設定警示」；HELP 歸檔/設定頁；QUICKSTART；README 部署段＋`07-archive-folder` 截圖 |
 | **簽收表標題**（`print_title_*` 六 key） | `PrintTitlePanel`；`printTitle`/`printTitlesUnset`（db_utils）；列印頁警示 `_refresh_title_warn`＋過期指紋 `_titles_sig`；Reset 不清 | §5「簽收表標題自訂」；HELP 列印/設定頁；QUICKSTART；`tests/test_print_titles` |
-| **敘獎登錄／發文**（`Document_Reward`／`print_title_reward`，v1.1.11） | `tabs/tab_reward.py`（Tab3 登錄頁，三身分皆可登錄／改／刪本次登錄清單；INSERT 自動帶 `create_date=今天`、`register_date=''`、`sender_id=NULL`，不受 `report_input_mode` 影響）；`tabs/tab_reward_issue.py`（Tab4 敘獎發文頁，三身分皆可輸入編號建立清單並批次覆寫發文日期／人員，UPDATE 以 `register_date IS NOT NULL` 防並行軟刪除，並以預查發文日期做原值比對，見 §10「多機無聲覆蓋防護」）；瀏覽頁 reward 子頁（`TABLE_META` raw/active_where＋登錄日期／發文日期兩欄＋發文人員欄 JOIN `Ref_Personnel`；**編輯僅 admin**——`tab_dbbrowse._canEditKey('reward')=is_admin()`，歸檔管理者不可改；刪除 `is_admin()`）；`tab_print` `REWARD_COLUMNS`＋`_build_sections`（簽收表敘獎 section）；`softDeleteDoc`/`_DELETE_META`（軟刪除清 `create_date`/`register_date`/`sender_id`/`reason`/`recipients`）；`trash_panel`（回收筒可還原）；`backup_doc_counts`（備份筆數統計）；`performYearEndReset`（跨年度重置） | §10「權限」權限矩陣＋§6＋§5「簽收表標題自訂」；HELP 3/4/6 頁；QUICKSTART；`tests/test_reward_*` |
-| **罰單登錄**（`Document_Ticket`／`print_title_ticket`） | `tabs/tab_ticket.py`（Tab5；所有 CRUD 寫入唯一走 `lib/ticket_utils.py`；結算發文由 `SETTLE_META` 在共用 transaction 更新）；`Document_Ticket_Full` 供預覽／瀏覽／結算／列印共用；`settle_dialog.SETTLE_META` 的 ticket `strict=True`；`tab_print` Ticket renderer；瀏覽頁 ticket 子頁 `admin_only_edit`；`performYearEndReset`／`backup_doc_counts` 均含 ticket；**不進回收筒** | §10「權限」權限矩陣＋§6＋§5「簽收表標題自訂」；HELP 5/6/7 頁；QUICKSTART；`tests/test_ticket_*` |
+| **敘獎登錄／發文**（`Document_Reward`／`print_title_reward`，v1.1.11） | `tabs/tab_reward.py`（Tab3 登錄頁，三身分皆可登錄／改／刪本次登錄清單；INSERT 一律帶 `create_date=今天`，送文者模式帶所填 `register_date`＋`sender_id`（發文人員必填），自助取號模式帶 `register_date=''`、`sender_id=NULL` 待結算補值，依 `isSelfServiceMode(db, 'reward')`）；右側候選人員名條依 `Ref_Personnel.sort_order` 排，**不依使用次數**（與罰單登錄同規則，見 §5）；發文改由列印頁「結算發文」處理（`SETTLE_META` 的 reward entry，見 §5 陳報模式）；瀏覽頁 reward 子頁（`TABLE_META` raw/active_where＋登錄日期／發文日期兩欄＋發文人員欄 JOIN `Ref_Personnel`；**編輯僅 admin**——`tab_dbbrowse._canEditKey('reward')=is_admin()`，歸檔管理者不可改；刪除 `is_admin()`）；`tab_print` `REWARD_COLUMNS`＋`_build_sections`（簽收表敘獎 section）；`softDeleteDoc`/`_DELETE_META`（軟刪除清 `create_date`/`register_date`/`sender_id`/`reason`/`recipients`）；`trash_panel`（回收筒可還原）；`backup_doc_counts`（備份筆數統計）；`performYearEndReset`（跨年度重置） | §10「權限」權限矩陣＋§6＋§5「簽收表標題自訂」；HELP 3/5 頁；QUICKSTART；`tests/test_reward_*` |
+| **罰單登錄**（`Document_Ticket`／`print_title_ticket`） | `tabs/tab_ticket.py`（Tab4；所有 CRUD 寫入唯一走 `lib/ticket_utils.py`；結算發文由 `SETTLE_META` 在共用 transaction 更新）；`Document_Ticket_Full` 供預覽／瀏覽／結算／列印共用；`settle_dialog.SETTLE_META` 的 ticket `strict=True`；`tab_print` Ticket renderer；瀏覽頁 ticket 子頁 `admin_only_edit`；`performYearEndReset`／`backup_doc_counts` 均含 ticket；**不進回收筒** | §10「權限」權限矩陣＋§6＋§5「簽收表標題自訂」；HELP 4/5/6 頁；QUICKSTART；`tests/test_ticket_*` |
 | **閒置逾時**（`idle_logout_min`/`idle_close_min`） | `IdleTimeoutPanel`；`getIdleTimeoutsMs`/`parseIdleMinutes`；main.py 兩計時器 `>0` guard；main.py `_onIdleTimeout`/`_onIdleClose` 訊息帶實際分鐘數（`{mins:g}`，勿寫死）；「低於鎖螢幕時間」約束（維護者默契、不放 UI）；Reset 不清 | §10「閒置處理與多人使用（main.py）」；HELP/QUICKSTART 內寫死的分鐘數字；`tests/test_idle_timeouts` |
-| **唯讀設定**（`input_lock_*` 七 key） | `InputLockPanel`；`isInputLocked`/`INPUT_LOCK_KEYS`；七種流程的硬 gate（`handleDispatch`/`tab_receive._submit`/`_submitCriminal`/`_submitGeneral`/`tab_reward._submit`/`tab_reward_issue.handleIssue`/`tab_ticket._submit`）；六頁 `_applyInputLock` 反灰＋橫幅＋`_onShown`＋`_onRoleClearList`；tab_report `_currentLockKind`/`_switchFormType` 重套。敘獎登錄 `reward` 與敘獎發文 `reward_issue` 是獨立開關 | §10「七種輸入流程唯讀鎖」＋權限矩陣＋§5 面板表；HELP/QUICKSTART；`tests/test_input_lock`／`tests/test_reward_issue` |
+| **唯讀設定**（`input_lock_*` 六 key） | `InputLockPanel`；`isInputLocked`/`INPUT_LOCK_KEYS`；六種流程的硬 gate（`handleDispatch`/`tab_receive._submit`/`_submitCriminal`/`_submitGeneral`/`tab_reward._submit`/`tab_ticket._submit`）；五頁 `_applyInputLock` 反灰＋橫幅＋`_onShown`＋`_onRoleClearList`；tab_report `_currentLockKind`/`_switchFormType` 重套。敘獎自助模式下鎖 `reward` 即擋住發文源頭（不另設發文鎖） | §10「六種輸入流程唯讀鎖」＋權限矩陣＋§5 面板表；HELP/QUICKSTART；`tests/test_input_lock` |
 | **自動備份／備份還原**（`backup_second_dir`／異地／quick_check／還原子頁） | `run_auto_backup(extra_dirs=)`＋`_run_gfs`＋`quick_check`／`list_backups`／`verify_backup`／`restore_backup`（db_backup）；`main.py` 啟動 quick_check→備份；`BackupPanel`（settings_panels）；`BackupRestorePanel`（backup_restore_panel）；tab_settings nav 第 6 子頁四處掛載（`_nav_btns`／兩份 loaders／`_applyRolePermissions`）；Reset 不清 `backup_second_dir` | §10「平時自動備份（`lib/db_backup.py`）」＋§5 面板表＋「備份還原子頁」＋§6 App_Settings 列；HELP 設定頁；QUICKSTART；README FAQ 資料安全段；`tests/test_db_backup` |
-| **陳報模式**（`report_input_mode`／自助取號） | `isSelfServiceMode`（db_utils）；`InputModePanel`（settings_panels）；陳報頁與罰單頁 `_applyInputLock`→`_applySelfServiceMode`，提交帶 NULL 與放行發文人員；**刑案／一般編輯彈窗 `_BaseEditDialog._lockReportFieldsIfSelfService()`**（自助模式且非管理身分才反灰陳報日期／發文人員，涵蓋陳報／瀏覽／歸檔三處開啟點）；列印頁 `_settle_group`／`_refresh_settle_group`／`_on_settle`＋`SettleDialog`／`count_unissued`（settle_dialog 的 `SETTLE_META` 含刑案／一般／罰單，罰單衝突 strict rollback）；歸檔 `_queryUnarchived`／`_tableSignature` 排除未發文列；瀏覽頁未發文欄位橘字提示；Reset 不清。敘獎登錄／發文流程不受此設定影響 | §5「自助取號模式」＋§5 面板表＋§6 App_Settings 列；HELP 陳報/列印/設定頁；QUICKSTART；README 功能段＋陳報模式 TIP；`tests/test_report_input_mode` |
+| **陳報模式**（`report_input_mode`／自助取號） | `isSelfServiceMode`（db_utils）；`InputModePanel`（settings_panels）；陳報頁、敘獎登錄頁與罰單頁 `_applyInputLock`→`_applySelfServiceMode`，提交帶 NULL 與放行發文人員（敘獎／罰單以可見 QLabel 提示條 `*_sender_hint` 說明免填，不用 tooltip，見 PITFALLS QSS-7）；**刑案／一般編輯彈窗 `_BaseEditDialog._lockReportFieldsIfSelfService()`**（自助模式且非管理身分才反灰陳報日期／發文人員，涵蓋陳報／瀏覽／歸檔三處開啟點）；列印頁 `_settle_group`／`_refresh_settle_group`／`_on_settle`＋`SettleDialog`／`count_unissued`（settle_dialog 的 `SETTLE_META` 含刑案／一般／敘獎／罰單，罰單衝突 strict rollback）；歸檔 `_queryUnarchived`／`_tableSignature` 排除未發文列；瀏覽頁未發文欄位橘字提示；Reset 不清。⚠️ `reward` **不吃**舊 `report_input_mode` 全域 fallback（見 `LEGACY_MODE_FALLBACK_KINDS`） | §5「自助取號模式」＋§5 面板表＋§6 App_Settings 列；HELP 陳報/列印/設定頁；QUICKSTART；README 功能段＋陳報模式 TIP；`tests/test_report_input_mode` |
 | **權限／角色**（新增任何「受限身分不可做」） | **每條觸發路徑 guard**（按鈕/雙擊/行內編輯/Enter/右鍵/拖拉，見 CLAUDE.md 協作偏好 B）；`role_changed`→`_onRolePerm`/`_applyRolePermissions`；遮罩頁（歸檔/稽核）；閒置登出後的行為 | **§10「權限」權限矩陣必更新**；HELP 各頁的權限描述；QUICKSTART 權限段；上機以受限身分逐路徑驗證 |
 | **角色 TAB 顯隱**（user／archive／admin） | `visibleTabKeys` 權限矩陣；`DocumentManager` 執行期顯隱與登出 fallback；`MainMenu` 全入口 `requestTab`；設定頁登入與待前往目標 | §10「權限」9／10／11 TAB 清單；HELP 固定 Profile index 映射；QUICKSTART 權限段；README 登入說明；角色切換、主選單導向、登出／閒置登出與 HELP mapping 測試 |
 | **新增 App_Settings key**（通用步驟） | db_utils 常數＋讀取 helper（含 fallback 預設）；`db_seed` 要不要播種；Reset 清不清（`performYearEndReset`）；生效時機（即時讀 vs 重啟） | §6 App_Settings 那一列；對應 tests |
@@ -220,7 +220,7 @@ graph LR
 6. ⚠️ **兩份 spec（§7）的 `hiddenimports` 都要補 `tabs.tab_xxx`**：分頁類別是動態載入，PyInstaller 靜態掃描掃不到，漏補的症狀是**打包版點到該分頁才炸、啟動與原始碼跑都正常**（見 PITFALLS PKG 組）；獨立版**只在該分頁屬於 `ENTRY_PROFILE.tab_keys` 時**才補這行
 7. 若該分頁要進啟動預熱，`preheat_keys`（`AppProfile`）必須是自己 profile 的子集——寫進不屬於自己 profile 的模組，打包版會在載入畫面階段 `ImportError`、進不了主選單（見 PITFALLS PKG 組）
 8. 若有人員/部門/案類下拉，override `on_activated()` 刷新（`refreshFilterCombo` 保留當前選值、值已不存在則清空）；觸發為從設定 Tab 切出＋`_ref_dirty=True`
-9. **對照 §2「跨功能影響對照表」左欄逐列掃一遍**：只有陳報類輸入頁才依需求接 `report_input_mode`；敘獎登錄／發文是明確例外，與陳報模式完全脫鉤。有「受限身分不可做」要接權限 gate、有輸入表單要評估唯讀鎖……每列都問「這個新 Tab 沾不沾」
+9. **對照 §2「跨功能影響對照表」左欄逐列掃一遍**：會發文的輸入頁才依需求接陳報模式（`REPORT_MODE_KEYS` 逐流程一把，判定一律走 `isSelfServiceMode(db, kind)`）；交辦單是明確例外，與陳報模式完全脫鉤。有「受限身分不可做」要接權限 gate、有輸入表單要評估唯讀鎖……每列都問「這個新 Tab 沾不沾」
 10. **新元件必套樣式**：所有程式建立的 QDialog/QWidget 明確設背景＋文字色（見「新增 UI 元件注意」的 setStyleSheet 樣板），別依賴預設——曾多次忘記套、上機才發現黑底黑字
 
 > ⚠️ **預覽表名稱不會自動跟 rename 更新**：預覽表存「當下抓的字串」，rename 後顯示舊名。新 Tab 若預覽表有參照字串欄，須仿 `tab_dispatch._refreshPreviewNames()` 寫刷新方法並在 `on_activated()` 末尾呼叫
@@ -368,11 +368,65 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 | `ArchiveRootPanel` | 年度層 UNC 路徑＋刑案/一般子夾（兩欄並排固定寬） | admin／archive 皆可改 |
 | `PrintTitlePanel` | 簽收表五格（含罰單標題）＋恢復預設 | 僅 admin，archive 整塊反灰 |
 | `IdleTimeoutPanel` | 閒置自動登出／強制關閉（NoButtons spinbox，0＝停用） | 僅 admin，archive 整塊反灰 |
-| `InputLockPanel` | 唯讀設定：七個勾選框停用一般使用者對交辦單發文／交辦單收文／刑案陳報／一般陳報／敘獎登錄／敘獎發文／罰單登錄的新增或發文操作（交辦發文與敘獎發文為 UPDATE、其餘為 INSERT；存 `App_Settings`，即時生效） | 僅 admin，archive 整塊反灰 |
+| `InputLockPanel` | 唯讀設定：六個勾選框停用一般使用者對交辦單發文／交辦單收文／刑案陳報／一般陳報／敘獎登錄／罰單登錄的新增或發文操作（交辦發文為 UPDATE、其餘為 INSERT；存 `App_Settings`，即時生效） | 僅 admin，archive 整塊反灰 |
 | `BackupPanel` | 自動備份：第二備份位置（異地副本）路徑＋選資料夾＋最近副本時間（逾 7 天紅字）。存 `backup_second_dir`，下次開啟程式生效（v1.1.7） | 僅 admin，archive 整塊反灰 |
-| `InputModePanel` | 陳報模式：送文者輸入／自助取號二選一（QRadioButton＋段落說明）。存 `report_input_mode`（空／`0`／`1`），即時生效（v1.1.9） | 僅 admin，archive 整塊反灰 |
+| `InputModePanel` | 陳報模式：刑案陳報／一般陳報／敘獎登錄／罰單登錄各自送文者輸入／自助取號二選一（QRadioButton＋段落說明）。存 `REPORT_MODE_KEYS` 四 key（空／`0`／`1`），即時生效（v1.1.9） | 僅 admin，archive 整塊反灰 |
 
 > `tab_settings` 掛載處（建立、`_applyRolePermissions` 反灰、`_loadSystem` reload、`_dirtyPanels` dirty）四份清單都要含新面板；面板由 `ui_utils/__init__.py` 匯出。
+
+### 陳報預覽欄寬基準（刑案／一般兩張預覽表）
+
+欄寬單一來源是 `ui_utils/table.FIXED_COL_WIDTHS`＋各表的 `fixed_overrides`。
+兩張陳報預覽表用 **`cap_mode=False`＝固定寬**（與交辦單／罰單一致）：內容再長
+也不加寬（超出截斷）、內容短也不縮，只有使用者手動拉欄（`user_resized`）才會變。
+⚠️ 不可改回 `cap_mode=True`（那會變成「上限」語意，短內容縮、長內容撐到上限，
+切換資料時欄位寬度會跳動）。唯一未定的是「陳報主旨」。
+
+- **換算式（實機 125% 截圖反推，`docs/1.png`／`docs/2.png`）**：
+  全形 **17px**、半形 **8px**、`_PAD` **24**。
+  常用值：4 半形＝56／5 半形＝64／2 全形＝58／4 全形＝92
+- **維護者定的字數基準**：編號 4 半形／狀態 2 全形／承辦人・受理人・報案人 4 全形／
+  業務單位 4 全形／分類 2 全形／案類 152（沿用舊值）。主旨不設固定值（見下方伸縮欄）
+- **除「陳報主旨」外一律不顯示省略號**（`applyNoElide`，`ui_utils/table.py`）：
+  放不下就直接切斷。省略號會再吃掉一個字元寬，而欄寬是照字數算好的
+  （日期欄踩過：64px 本該剛好顯示 `07-16`，加省略號變成 `07-1…`）。
+  主旨欄以 `_ElideRightDelegate` 個別還原，否則長主旨會在句中硬切、看不出有後文
+- **兩個日期欄刻意只顯示 `MM-DD` 段**（維護者決定，年份被切可接受），
+  但**標題不可被切**，故寬度由標題決定：登錄日期＝4 全形＝**92**、
+  日期＝**64**（標題 2 全形＝58，內容 5 半形剛好放下 `07-16`）。
+  ⚠️ 顯示格式仍是 `BaseTab._fmtDate` 的 `MM-DD-YYYY`（各頁預覽共用，未改），
+  這裡是靠欄寬把後段切掉；要真的只輸出 `MM-DD` 必須在陳報頁另包一層，
+  不可直接改 `_fmtDate`（會動到交辦單／罰單／敘獎所有預覽）
+- ⚠️ **伸縮欄＝「陳報主旨」**，不是末端空標題欄。其餘欄位全部固定寬，剩餘寬度
+  由主旨吸收，所以**主旨不需要一個決定好的數字**，視窗放大時也只有它變寬。
+  `stretch_col=HEADERS.index("陳報主旨")`
+  - 主旨仍要留在 `fixed_overrides`（`SUBJECT_MIN_W = 92`，4 全形），對伸縮欄
+    而言那是「空間不足時的下限」。⚠️ **不可把主旨從 overrides 拿掉**：那樣它的
+    量測寬會變成「最長主旨的完整寬度」（可到 449），`autoResizeTable` 會誤判
+    空間不足、整張表冒水平捲軸
+  - 這是對 PITFALLS LAY-7「伸縮欄必須是空標題欄」的**刻意例外**：LAY-7 的情境
+    是「表格旁有固定寬側邊面板」，資料欄當伸縮欄會把面板擠爛；陳報頁兩張表左右
+    對等、沒有側邊面板，不踩同一個坑
+- **`previewLayout` 分配 3:2**（`Layout3.ui`）＝兩塊「扣掉主旨後的固定欄小計」
+  比值（刑案 730／一般 422）。不設比例的話空間吃緊時兩塊等比縮，欄位多的刑案
+  會先餓死（主旨被壓到最小寬）。以最大化 1920（兩塊可用約 1490）估算，
+  扣掉固定欄 1160 後剩 330 給兩個主旨欄，3:2 下各約 165（8 全形）。
+  ⚠️ 任一張表增減欄位都要回頭重算這個比值
+- 回歸測試：`tests/test_dialog_smoke.py` 的
+  `test_report_preview_column_widths_match_agreed_baseline`／
+  `test_preview_last_column_is_empty_stretch_column`
+
+### 候選人員名條的排序規則
+
+敘獎登錄（`reward_personnel_list`）與罰單登錄（`ticket_candidates_list`）右側的候選人員，
+**一律照 `loadActivePersonnel()` 回傳的順序**（`Ref_Personnel` 的 `sort_order, staff_id`），
+與登錄次數無關。維護者要求：名條位置要跟設定頁的人員排序一致、且登錄／刪除時不得跳位。
+
+- 兩頁都只在 `setup()` 與 `_ref_changed`（設定頁改過參照表）時重建名條，送出／刪除**不重建**
+- 舊版依使用次數重排的機制已整組移除（`sort_personnel_by_counts`／`sort_personnel_by_id_counts`／
+  `sort_reward_personnel`／`count_recipient_names`、敘獎的 `_name_counts`、罰單的 `_candidateCounts`），
+  連帶省掉每次重建時的全表統計查詢。要復原去 git 歷史找，別重寫一份
+- ⚠️ 「檔案歸檔」頁的候選清單是 **PDF 檔案**、依檔名命中字數排序，與本規則無關
 
 ### 自助取號模式（v1.1.9）
 
@@ -383,12 +437,12 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 罰單簽收歸屬日則**唯一依 `Document_Ticket.register_date`**（實際發文／結算日期），與目前採送文者輸入模式或自助取號模式無關；切換模式不得改變歷史罰單的列印歸屬。
 
-**核心設計：自助取號的未發文＝`report_date IS NULL`**（不加新欄位／新表），只適用刑案與一般陳報。敘獎流程與 `report_input_mode` 完全脫鉤：Tab3 登錄時固定寫入 `create_date=今天`、`register_date=''`、`sender_id=NULL`，再由 Tab4「敘獎發文」批次補上／覆蓋發文日期與發文人員；列印頁的「結算發文」不處理敘獎。牽動四處，動這功能逐一檢查：
+**核心設計：自助取號的未發文＝`report_date IS NULL`**（不加新欄位／新表），只適用刑案與一般陳報。敘獎與罰單改以**空字串 `register_date=''`** 為未發文哨兵（`NULL` 是軟刪除哨兵，不可混用，見 §3 三態）。敘獎登錄頁（Tab3）依 `isSelfServiceMode(db, 'reward')` 決定：送文者模式提交即發文（帶所填 `register_date`＋必填 `sender_id`），自助模式帶 `''`／`NULL` 待列印頁「結算發文」補值；`create_date=今天` 兩模式皆帶、與模式無關。牽動四處，動這功能逐一檢查：
 
 1. **陳報頁（`tab_report`）**：覆寫 `_applyInputLock` → 先 `super()`（唯讀鎖）再 `_applySelfServiceMode`（自助模式下 `rpt_date`／`rpt_sender` 反灰＋tooltip）。`_submit` 自助模式帶 `report_date=None`／`sender_id=None`；`_submitCriminal`／`_submitGeneral` 驗證在自助模式**放行「發文人員」空值**（其餘必填不變）。反灰的陳報日期框以 `specialValueText(" ")` 哨兵**顯示空白**（v1.1.11；僅不可互動狀態使用，無鍵盤路徑、不踩可編輯空白欄的雷；切回送文者模式清哨兵並還原今天；`widgets` 的「日期空值補今天」邏輯對哨兵狀態放行）。
    - ⚠️ **編輯彈窗也要擋（曾漏）**：刑案／一般編輯彈窗（`CriminalEditDialog`／`GeneralEditDialog`）進入點不只陳報頁，還有瀏覽頁／歸檔頁。自助模式下**一般使用者**不可手動編輯陳報日期／發文人員（避免繞過結算），故 `_BaseEditDialog._lockReportFieldsIfSelfService()`（載入資料後於兩彈窗 `__init__` 呼叫）在「自助模式 **且** `not is_manager()`」時把 `w_report_date`／`w_sender` `setEnabled(False)`。**管理者／歸檔管理者不擋**（仍可手動補正）。停用欄位仍保留載入值，`_on_save` 讀回原值寫回為 no-op，未發文哨兵不變式維持，儲存邏輯不需改。測試 `tests/test_dialog_smoke.py`（一般使用者反灰／管理者不擋／非自助可編輯／反灰儲存保留原值四情境）。
 2. **列印頁（`tab_print`）**：`_settle_group`（`insertWidget(1)`，僅自助模式 `setVisible`）含「結算發文」鈕＋未發文計數 `lbl_unissued`（`count_unissued` 回 `{key: n}` dict，v1.2.1 起）；`_onShown` 呼叫 `_refresh_settle_group`。按鈕開 `SettleDialog`，`settled()` 為真則以 `settledDate()` 的實際成功日期＋`_on_generate()` 自動產生簽收表（結算→簽收表一條龍）。
-3. **結算彈窗（`ui_utils/settle_dialog.py` 的 `SettleDialog`）**：採**單一表格＋`SETTLE_META` registry**；成員為刑案／一般／罰單，每型態各一筆 meta（label／色／未發文 query／結算 UPDATE／with_sender）。表格列出未發文案件（類型色標欄、預設全勾、點列切換、類型 chip＋關鍵字過濾疊加、全選 checkbox 三態只作用於顯示中列、底部即時計數）。勾選案件時送文者必選；選取後以**同一 transaction** 批次更新。刑案／一般遇到並行衝突 rowcount=0 時自然跳過、流程照走；其 UPDATE 的 CAS 同時檢查案由仍非空，避免載入後遭軟刪除的空殼被復活；**罰單 meta 帶 `strict=True`，任一衝突即整批 rollback**。**結算不寫稽核 LOG**（發文日期與發文人員本身就寫在資料列上，另記一筆是重複）；CRUD mutation 仍在同一 transaction 寫入 `writeAudit()`。⚠️ **勾選狀態才是結算範圍**，關鍵字過濾（`isRowHidden`）只是找列輔助——隱藏但仍勾選者照結、照計數（「將結算＋排除」必須恆等於總筆數）。⚠️ 表格 mouseover 反白須明寫 `QTableWidget::item:hover { background-color: transparent; }`（見 PITFALLS QSS 組）。
+3. **結算彈窗（`ui_utils/settle_dialog.py` 的 `SettleDialog`）**：採**單一表格＋`SETTLE_META` registry**；成員為刑案／一般／敘獎／罰單，每型態各一筆 meta（label／色／未發文 query／`count_query`／結算 UPDATE／with_sender）。表格列出未發文案件（類型色標欄、預設全勾、點列切換、類型 chip＋關鍵字過濾疊加、全選 checkbox 三態只作用於顯示中列、底部即時計數）。勾選案件時送文者必選；選取後以**同一 transaction** 批次更新。刑案／一般遇到並行衝突 rowcount=0 時自然跳過、流程照走；其 UPDATE 的 CAS 同時檢查案由仍非空，避免載入後遭軟刪除的空殼被復活；**罰單 meta 帶 `strict=True`，任一衝突即整批 rollback**。**結算不寫稽核 LOG**（發文日期與發文人員本身就寫在資料列上，另記一筆是重複）；CRUD mutation 仍在同一 transaction 寫入 `writeAudit()`。⚠️ **勾選狀態才是結算範圍**，關鍵字過濾（`isRowHidden`）只是找列輔助——隱藏但仍勾選者照結、照計數（「將結算＋排除」必須恆等於總筆數）。⚠️ 表格 mouseover 反白須明寫 `QTableWidget::item:hover { background-color: transparent; }`（見 PITFALLS QSS 組）。
 4. **歸檔頁（`tab_archive`）＋瀏覽頁（`tab_dbbrowse`）**：待歸清單／指紋查詢（`_queryUnarchived`／`_tableSignature`）加 `report_date IS NOT NULL AND != ''`＝**未發文不進歸檔**（未發文的公文流程尚未走完）。瀏覽頁陳報日期欄 NULL 顯示橘字「未發文」（`#e67e22`）；敘獎子頁則由 `register_date=''` 表示尚未發文。歸檔本就不含敘獎（無 PDF），免改。
 
 > ⚠️ 切換模式**不回溯**既有資料：切成自助後既有已發文公文仍是已發文；切回送文者後已存在的未發文（NULL）公文仍需靠結算或手動補日期才會離開「未發文」狀態。這是刻意行為（模式是作業型態、非資料遷移）。
@@ -462,7 +516,7 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 | 資料表 | 說明 |
 |--------|------|
-| App_Settings | key / value。權限 key：`admin_password_hash`（預設 `admin`）／`archive_password_hash`（預設 `0000`，空殼內建）；另 `archive_root`／`archive_subdir_crim`／`archive_subdir_gen`（Reset 清空）、簽收表六 key（見 §5，含 `print_title_ticket`，Reset 不清）、閒置逾時 `idle_logout_min`／`idle_close_min`（分為單位、0＝停用、Reset 不清）、第二備份位置 `backup_second_dir`（空＝停用異地備份、Reset 不清、下次開啟生效）、陳報輸入模式 `report_input_mode`（空／`0`＝送文者輸入、`1`＝自助取號、即時生效、Reset 不清）、唯讀設定 `input_lock_dispatch`／`input_lock_task`／`input_lock_crim`／`input_lock_gen`／`input_lock_reward`／`input_lock_reward_issue`／`input_lock_ticket`（即時生效、Reset 不清；兩個敘獎 key 分別鎖登錄與發文） |
+| App_Settings | key / value。權限 key：`admin_password_hash`（預設 `admin`）／`archive_password_hash`（預設 `0000`，空殼內建）；另 `archive_root`／`archive_subdir_crim`／`archive_subdir_gen`（Reset 清空）、簽收表六 key（見 §5，含 `print_title_ticket`，Reset 不清）、閒置逾時 `idle_logout_min`／`idle_close_min`（分為單位、0＝停用、Reset 不清）、第二備份位置 `backup_second_dir`（空＝停用異地備份、Reset 不清、下次開啟生效）、陳報輸入模式 `report_mode_crim`／`report_mode_gen`／`report_mode_reward`／`report_mode_ticket`（空／`0`＝送文者輸入、`1`＝自助取號、即時生效、Reset 不清；舊全域 key `report_input_mode` 僅供 crim／gen／ticket 在新 key 不存在時回退，reward 不回退）、唯讀設定 `input_lock_dispatch`／`input_lock_task`／`input_lock_crim`／`input_lock_gen`／`input_lock_reward`／`input_lock_ticket`（即時生效、Reset 不清）。現場舊庫殘留的 `input_lock_reward_issue` 值允許留存（程式不再讀取即無害，不寫清除腳本） |
 | Audit_Log | log_id(PK AUTOINCREMENT) / ts / role / action / target_table / target_id / operator / detail。由 `ensureSchema` 建立，詳見 §10「稽核 log（操作紀錄）」 |
 | Trash_Documents | trash_id(PK AUTOINCREMENT) / table_name / doc_id / payload(整列 JSON) / subject / doc_person / deleted_ts / deleted_role。由 `ensureSchema` 建立，詳見 §10「誤刪還原（資源回收筒）」 |
 
@@ -536,7 +590,7 @@ python tools/check_bundle_deps.py
 | 進入點 | `main.py` | `standalone_main.py` |
 | 版本資訊 | `version_info.txt` | `version_info_entry.txt` |
 | 橫幅圖 | `banner.png` | `reward_ticket_banner.png` |
-| 分頁 | 11 個 | 敘獎／罰單／瀏覽／設定 4 個 |
+| 分頁 | 10 個 | 敘獎／罰單／瀏覽／設定 4 個 |
 | matplotlib／numpy／PIL | 收（列印頁要用） | **整包排除**，體積減半的關鍵 |
 | `ui_utils.rescue_dialog` | 收 | **排除**（規格禁止獨立版做資料庫還原，這是 `profile.allows_db_rescue` 之外的第二層保險）|
 
@@ -664,14 +718,14 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 - **便捷判斷**（勿在各處寫字串比較）：`is_admin()`／`is_archive()`／`is_manager()`（admin or archive，給「歸檔管理也能做」用）／`actor_name()`（稽核 operator 用）
 - **變更密碼**：`change_password()` 依當前登入身分改對應那組（admin→admin、archive→archive）；user 不得改。高風險，**Enter 不送出**（防誤按）、只能滑鼠點。**變更成功後即 `logout()` 降回一般使用者**（`tab_settings._changePassword`），要求以新密碼重新登入（避免舊 session 沿用、確認新密碼可用）
 
-**角色 TAB 顯隱**（完整 Profile 固定 index 0–10，執行期只改可見性）：
+**角色 TAB 顯隱**（完整 Profile 固定 index 0–9，執行期只改可見性）：
 
-- `user` 顯示 **9 個**：Tab0–7、Tab9；隱藏 Tab8「檔案歸檔」與 Tab10「操作紀錄」
-- `archive` 顯示 **10 個**：Tab0–9；隱藏 Tab10「操作紀錄」
-- `admin` 顯示 **11 個**：Tab0–10
-- Tab9「資料庫設定」三角色都保持顯示，因為它同時是一般使用者與歸檔管理者的登入入口；user 進入後只能使用登入介面，登入後再依既有權限開放設定內容
-- 主選單 11 個入口都保留。選到目前角色隱藏的功能時，統一導向 Tab9 並開啟登入畫面，不直接改寫角色或繞過密碼；停留在登入頁時若登入失敗，保留待前往目標供再次輸入密碼重試。登入成功且目標對新角色可見才前往原目標；登入成功但新角色仍無權查看目標，或使用者離開／放棄登入導向時，清除該次待前往目標並視情況留在設定頁，避免之後以 admin 登入時誤啟用過期目標
-- 登出、變更密碼後自動登出或閒置登出若發生在即將隱藏的頁籤，先回 Tab9 再套用顯隱；若目前業務頁對 user 仍可見，則留在原頁
+- `user` 顯示 **8 個**：Tab0–6、Tab8；隱藏 Tab7「檔案歸檔」與 Tab9「操作紀錄」
+- `archive` 顯示 **9 個**：Tab0–8；隱藏 Tab9「操作紀錄」
+- `admin` 顯示 **10 個**：Tab0–9
+- Tab8「資料庫設定」三角色都保持顯示，因為它同時是一般使用者與歸檔管理者的登入入口；user 進入後只能使用登入介面，登入後再依既有權限開放設定內容
+- 主選單 10 個入口都保留。選到目前角色隱藏的功能時，統一導向 Tab8 並開啟登入畫面，不直接改寫角色或繞過密碼；停留在登入頁時若登入失敗，保留待前往目標供再次輸入密碼重試。登入成功且目標對新角色可見才前往原目標；登入成功但新角色仍無權查看目標，或使用者離開／放棄登入導向時，清除該次待前往目標並視情況留在設定頁，避免之後以 admin 登入時誤啟用過期目標
+- 登出、變更密碼後自動登出或閒置登出若發生在即將隱藏的頁籤，先回 Tab8 再套用顯隱；若目前業務頁對 user 仍可見，則留在原頁
 
 **權限矩陣**（歸檔管理＝一般使用者＋下列加項；空白＝同一般使用者）：
 
@@ -681,31 +735,30 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 | 交辦收文 Tab1 | 全可改 | 同一般 | 開放更正、開放刪除 |
 | 公文陳報 Tab2 | 全可改 | 同一般 | 開放更正、開放刪除 |
 | 敘獎登錄 Tab3 | 全可改（本次登錄清單可改可刪） | 同一般（本次登錄清單可改可刪） | 可登錄、本次登錄清單可改可刪 |
-| 敘獎發文 Tab4 | 可輸入編號建立待發清單、批次發文或覆蓋既有發文資料 | 同左 | 同左 |
-| 罰單登錄 Tab5 | 全可改（本次登錄清單可改可刪） | 同一般（本次登錄清單可改可刪） | 可登錄、本次登錄清單可改可刪 |
-| 簽收單列印 Tab6 | 可用 | 可用 | 可用 |
-| 資料庫瀏覽 Tab7 | 全可改（含刪除） | 刑案／一般可修改；**交辦／敘獎／罰單不可改**；一律無刪除（刪除鈕僅 admin） | 不開放編輯 |
-| 檔案歸檔 Tab8 | 可用 | 可用 | **TAB 隱藏**；主選單入口導向設定登入 |
-| 設定 Tab9 | 全可用 | 可視：變更密碼／登出／系統設定子頁（僅歸檔資料夾面板可改，簽收表標題／閒置逾時面板整塊反灰）；參照維護＋跨年度重置 disable 灰掉 | **TAB 保持顯示作登入入口**；未登入時不開放設定內容 |
-| 操作紀錄 Tab10 | 可檢視（唯讀／篩選／匯出 CSV） | **TAB 隱藏**；主選單入口導向設定登入 | **TAB 隱藏**；主選單入口導向設定登入 |
+| 罰單登錄 Tab4 | 全可改（本次登錄清單可改可刪） | 同一般（本次登錄清單可改可刪） | 可登錄、本次登錄清單可改可刪 |
+| 簽收單列印 Tab5 | 可用 | 可用 | 可用 |
+| 資料庫瀏覽 Tab6 | 全可改（含刪除） | 刑案／一般可修改；**交辦／敘獎／罰單不可改**；一律無刪除（刪除鈕僅 admin） | 不開放編輯 |
+| 檔案歸檔 Tab7 | 可用 | 可用 | **TAB 隱藏**；主選單入口導向設定登入 |
+| 設定 Tab8 | 全可用 | 可視：變更密碼／登出／系統設定子頁（僅歸檔資料夾面板可改，簽收表標題／閒置逾時面板整塊反灰）；參照維護＋跨年度重置 disable 灰掉 | **TAB 保持顯示作登入入口**；未登入時不開放設定內容 |
+| 操作紀錄 Tab9 | 可檢視（唯讀／篩選／匯出 CSV） | **TAB 隱藏**；主選單入口導向設定登入 | **TAB 隱藏**；主選單入口導向設定登入 |
 
-> 敘獎登錄、敘獎發文與罰單登錄本身不設角色 gate（三身分皆可登錄／改／刪本次登錄清單；敘獎可輸入編號批次發文）。**瀏覽頁編輯改為逐子頁判定**（`tab_dbbrowse._canEditKey(key)`）：**交辦（task）／敘獎（reward）／罰單（ticket）僅 admin 可改**；**刑案（crim）／一般（gen）** 維持 `is_manager()`（歸檔管理者可改）。刪除一律 `is_admin()`。編輯 gate 涵蓋四條進入點：`_onRolePerm`、`_fillRow`、`_onLinkCell`、`_onEdit`；各 browse 對話框儲存另有 admin 內層防線。測試 `tests/test_reward_browse.py`／`tests/test_ticket_browse.py`。
+> 敘獎登錄與罰單登錄本身不設角色 gate（三身分皆可登錄／改／刪本次登錄清單）。**瀏覽頁編輯改為逐子頁判定**（`tab_dbbrowse._canEditKey(key)`）：**交辦（task）／敘獎（reward）／罰單（ticket）僅 admin 可改**；**刑案（crim）／一般（gen）** 維持 `is_manager()`（歸檔管理者可改）。刪除一律 `is_admin()`。編輯 gate 涵蓋四條進入點：`_onRolePerm`、`_fillRow`、`_onLinkCell`、`_onEdit`；各 browse 對話框儲存另有 admin 內層防線。測試 `tests/test_reward_browse.py`／`tests/test_ticket_browse.py`。
 
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；身分變更時 `_onRolePerm` 重刷編號連結與刪除鈕。瀏覽頁已改純 item，`_onRolePerm` 只切編號欄 `setForeground`（藍＝可點）、`refreshDeleteBtns` 切 ✕ 字色，點擊走 `cellClicked`；收/發/陳報頁仍由 `setDocIdLinkCell(clickable=…)`（cellWidget）控制。
-> 「歸檔管理也能做」用 `is_manager()`；「僅 admin」（Tab7 刪除、Tab7 交辦／敘獎／罰單編輯、Tab0 發文）維持 `is_admin()`。設定頁參照維護按鈕對 archive `setEnabled(False)`（需配 `:disabled` 樣式，見 PITFALLS QSS 組）；雙擊參照列會繞過按鈕 enabled，故 `_add*/_edit*`（現已收斂為 `_addRef`／`_editRef`）皆有 `_refEditable()`（僅 admin）guard。⚠️ **排序的替代路徑也要 gate**：拖拉在 `_applyRolePermissions` 以 `NoDragDrop` 關閉；**序號欄雙擊行內編輯**曾漏 gate（archive 可雙擊改序號→ `_moveRow` 把已反灰的「儲存排序」鈕重新點亮→ 存回 DB＝權限繞過），已於 `_onCellDoubleClicked` 開頭與 `_onSeqItemChanged` 補 `_refEditable()` guard。凡新增「受限身分不可做」的功能，務必檢查**每一條**觸發路徑（按鈕／雙擊／行內編輯／Enter／拖拉），見 CLAUDE.md 協作偏好 B。
+> 「歸檔管理也能做」用 `is_manager()`；「僅 admin」（Tab6 刪除、Tab6 交辦／敘獎／罰單編輯、Tab0 發文）維持 `is_admin()`。設定頁參照維護按鈕對 archive `setEnabled(False)`（需配 `:disabled` 樣式，見 PITFALLS QSS 組）；雙擊參照列會繞過按鈕 enabled，故 `_add*/_edit*`（現已收斂為 `_addRef`／`_editRef`）皆有 `_refEditable()`（僅 admin）guard。⚠️ **排序的替代路徑也要 gate**：拖拉在 `_applyRolePermissions` 以 `NoDragDrop` 關閉；**序號欄雙擊行內編輯**曾漏 gate（archive 可雙擊改序號→ `_moveRow` 把已反灰的「儲存排序」鈕重新點亮→ 存回 DB＝權限繞過），已於 `_onCellDoubleClicked` 開頭與 `_onSeqItemChanged` 補 `_refEditable()` guard。凡新增「受限身分不可做」的功能，務必檢查**每一條**觸發路徑（按鈕／雙擊／行內編輯／Enter／拖拉），見 CLAUDE.md 協作偏好 B。
 
-#### 七種輸入流程唯讀鎖（唯讀設定）
+#### 六種輸入流程唯讀鎖（唯讀設定）
 
-單位級「跨年度後唯讀」開關：管理者於「系統設定 → 唯讀設定」（`InputLockPanel`）逐一停用七種輸入流程的**新增或發文**，被停用者一般使用者只能瀏覽。`reward`（敘獎登錄）與 `reward_issue`（敘獎發文）完全獨立，可只封存其中一頁。
+單位級「跨年度後唯讀」開關：管理者於「系統設定 → 唯讀設定」（`InputLockPanel`）逐一停用六種輸入流程的**新增或發文**，被停用者一般使用者只能瀏覽。敘獎只有 `reward`（登錄）一把鎖：自助取號模式下發文源頭就是登錄，鎖住登錄即擋住整條流程。
 
-- **儲存**：`App_Settings` 七 key `input_lock_dispatch`（交辦發文）／`input_lock_task`（收文）／`input_lock_crim`／`input_lock_gen`／`input_lock_reward`（敘獎登錄）／`input_lock_reward_issue`（敘獎發文）／`input_lock_ticket`（`"1"`＝鎖）；讀取端 fallback，預設不鎖。常數 `INPUT_LOCK_KEYS`＋便捷 `isInputLocked(db_path, kind)`（kind ∈ dispatch/task/crim/gen/reward/reward_issue/ticket）皆在 `lib/db_utils.py`。純邏輯測試 `tests/test_input_lock.py`。同一資料表的交辦發文／收文、敘獎登錄／發文皆為不同分頁、獨立開關。
-- **只擋新增或發文、只擋一般使用者**：不擋既有資料依原權限修改／刪除；admin／archive（`is_manager()`）不受限。跨年度重置不動這七 key（`performYearEndReset` 不清 `App_Settings`），重置後保留現值。
-- **硬 gate（真正防線）**：`if not is_manager() and isInputLocked(...): return`——`tab_dispatch.handleDispatch`(dispatch／發文 UPDATE)／`tab_receive._submit`(task／收文 INSERT)／`tab_report._submitCriminal`(crim)／`_submitGeneral`(gen)／`tab_reward._submit`(reward)／`tab_reward_issue.handleIssue`(reward_issue／UPDATE)／`tab_ticket._submit`(ticket)。涵蓋送出鈕與 Enter。七種流程各自獨立開關。
-- **唯讀 UI（輔助提示）**：一般使用者進到被鎖分頁 → 該表單所有可填欄位＋送出/清除鈕 `setEnabled(False)`、頂端顯示紅色橫幅「唯讀模式：本功能目前無法使用，僅供瀏覽」；預覽表維持可讀。收文／交辦發文／陳報／敘獎登錄／敘獎發文／罰單頁各有 `_applyInputLock()`。`tab_report` 依當前刑案/一般模式（`_currentLockKind()`）只鎖對應那種，`type_tabbar` 不反灰（可切到未鎖模式），`_switchFormType` 末尾亦重套。
+- **儲存**：`App_Settings` 六 key `input_lock_dispatch`（交辦發文）／`input_lock_task`（收文）／`input_lock_crim`／`input_lock_gen`／`input_lock_reward`（敘獎登錄）／`input_lock_ticket`（`"1"`＝鎖）；讀取端 fallback，預設不鎖。常數 `INPUT_LOCK_KEYS`＋便捷 `isInputLocked(db_path, kind)`（kind ∈ dispatch/task/crim/gen/reward/ticket）皆在 `lib/db_utils.py`。純邏輯測試 `tests/test_input_lock.py`。同一資料表的交辦發文／收文為不同分頁、獨立開關。
+- **只擋新增或發文、只擋一般使用者**：不擋既有資料依原權限修改／刪除；admin／archive（`is_manager()`）不受限。跨年度重置不動這六 key（`performYearEndReset` 不清 `App_Settings`），重置後保留現值。
+- **硬 gate（真正防線）**：`if not is_manager() and isInputLocked(...): return`——`tab_dispatch.handleDispatch`(dispatch／發文 UPDATE)／`tab_receive._submit`(task／收文 INSERT)／`tab_report._submitCriminal`(crim)／`_submitGeneral`(gen)／`tab_reward._submit`(reward)／`tab_ticket._submit`(ticket)。涵蓋送出鈕與 Enter。六種流程各自獨立開關。
+- **唯讀 UI（輔助提示）**：一般使用者進到被鎖分頁 → 該表單所有可填欄位＋送出/清除鈕 `setEnabled(False)`、頂端顯示紅色橫幅「唯讀模式：本功能目前無法使用，僅供瀏覽」；預覽表維持可讀。收文／交辦發文／陳報／敘獎登錄／罰單頁各有 `_applyInputLock()`。`tab_report` 依當前刑案/一般模式（`_currentLockKind()`）只鎖對應那種，`type_tabbar` 不反灰（可切到未鎖模式），`_switchFormType` 末尾亦重套。
 - ⚠️ **刷新時機（易踩）**：`main._onTabChanged` **只對設定頁與瀏覽頁**呼叫 `on_activated`，切入輸入頁不會觸發。故各輸入頁在 `setup()` 內自掛 `self.tab_widget.currentChanged.connect(self._onShown)`（比照 `tab_print`）來重套 `_applyInputLock`（切入分頁時反灰＋橫幅），不能只靠 `on_activated`。
 - **登出處理**：各輸入頁另掛 `AuthManager.role_changed → _onRoleClearList`，登出降回一般使用者時**清空該頁預覽/發文清單**（`setRowCount(0)`），刻意**不**在原頁做即時反灰（維持最小處理，反灰於下次切入分頁時由 `_onShown` 補上）。
 - ⚠️ 即時生效（送出當下讀設定），不需重啟。
-- **共用 `InputLockMixin`（`lib/base_tab.py`）**：上述橫幅／反灰／`_onShown`／`_onRoleClearList`／切入分頁與登出掛鉤已收斂成 mixin。輸入頁 `class Tab*(BaseTab, InputLockMixin)`，於 `setup()` 內 `_makeReadonlyBanner()` 後呼叫 `_setupInputLock(tab_index, lock_kind=..., lock_widgets=..., clear_tables=...)`。`lock_kind` 傳字串（收文 `task`／交辦發文 `dispatch`／敘獎登錄 `reward`／敘獎發文 `reward_issue`／罰單 `ticket`）或 callable（陳報頁 `self._currentLockKind`，依模式動態決定）；`lock_widgets` 傳 list 或 `{kind: list}` dict（陳報頁）。純邏輯測試 `tests/test_input_lock.py`（讀取層 isInputLocked＋mixin 行為：鎖種類解析／list 與 dict 反灰／僅鎖當前模式／登出清單）。
+- **共用 `InputLockMixin`（`lib/base_tab.py`）**：上述橫幅／反灰／`_onShown`／`_onRoleClearList`／切入分頁與登出掛鉤已收斂成 mixin。輸入頁 `class Tab*(BaseTab, InputLockMixin)`，於 `setup()` 內 `_makeReadonlyBanner()` 後呼叫 `_setupInputLock(tab_index, lock_kind=..., lock_widgets=..., clear_tables=...)`。`lock_kind` 傳字串（收文 `task`／交辦發文 `dispatch`／敘獎登錄 `reward`／罰單 `ticket`）或 callable（陳報頁 `self._currentLockKind`，依模式動態決定）；`lock_widgets` 傳 list 或 `{kind: list}` dict（陳報頁）。純邏輯測試 `tests/test_input_lock.py`（讀取層 isInputLocked＋mixin 行為：鎖種類解析／list 與 dict 反灰／僅鎖當前模式／登出清單）。
 
 ### 閒置處理與多人使用（main.py）
 
@@ -728,7 +781,7 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 
 - **編輯視窗（`ui_utils/reward_dialog.py`）**：載入當下記住 `register_date`／`sender_id`／`reason`／`recipients` 四個原值，儲存時併入 UPDATE 的 WHERE；⚠️ **可為 NULL 的欄位要用 `IS` 比對**，`= NULL` 恆為 false 會讓每次儲存都判成衝突
 - **改不到列時先 `rollback` 再查**：rowcount=0 就地續查會**在同一 transaction 內握著寫入鎖**、拖住其他機器；正確順序是先 rollback 釋放鎖，再以新連線分辨「已被刪除」（`rewardState()` 判 `NULL` 哨兵）與「被他人修改」，兩者訊息不同，衝突一律提示後直接重新載入最新值，不讓使用者在舊值上二次送出
-- **批次發文（`tabs/tab_reward_issue.py`）**：以**預查到的發文日期**為 WHERE 條件——確認框上已告知過的舊值仍允許覆蓋（退件重發是正常業務），只跳過「確認框停留期間被別台改掉」的那幾筆。結果收斂成單一簡短提示，分列已刪除與已被他人發文的筆數；關閉後重載清單，只保留原本就在清單中、且目前仍未發文的編號
+- **結算發文（`ui_utils/settle_dialog.py` 的 reward entry）**：UPDATE 帶 `WHERE register_date=''` 本身即並行防護——他機已刪（`NULL`）或已發文（有值）時 rowcount=0 自然跳過，不必另做 CAS
 - SQL round-trip 測試在 `tests/test_reward_lost_update_sql.py`
 
 > 其餘四張主表沿用既有的並行保護（結算 UPDATE 的「仍未發文」條件、敘獎 `register_date IS NOT NULL` 軟刪除哨兵），未改為全欄 CAS。
@@ -825,7 +878,7 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 第二支入口 `standalone_main.py`／`ENTRY_PROFILE`（見 §1「兩個進入點與 AppProfile」），與完整版共用同一份 `dbfile.db` 與全部業務邏輯，只是開放的分頁與設定面板不同，不是另一套程式。
 
 - **只開放四項**：敘獎登錄、罰單登錄、資料庫瀏覽（限敘獎與罰單子頁，`browse_keys`）、系統設定（僅人員與精簡版「系統設定」子頁，`settings_pages`）
-- **明確不提供**：發文（交辦／敘獎發文）、簽收單列印、結算、簽收單列印頁的「結算發文」、歸檔、資源回收筒還原、備份還原、跨年度重置、部門／案類管理、簽收表標題自訂。這些能力對應的 `tab_keys`／`settings_pages`／`system_panels`／`browse_keys` 皆未列入 `ENTRY_PROFILE`，不是程式內另外攔
+- **明確不提供**：交辦發文、簽收單列印、結算（敘獎／罰單若設為自助取號，結算需回完整版做）、簽收單列印頁的「結算發文」、歸檔、資源回收筒還原、備份還原、跨年度重置、部門／案類管理、簽收表標題自訂。這些能力對應的 `tab_keys`／`settings_pages`／`system_panels`／`browse_keys` 皆未列入 `ENTRY_PROFILE`，不是程式內另外攔
 - **權限完全比照大程式**：三角色與 §10「權限（AuthManager，單例）」權限矩陣同一套，獨立版沒有另一份權限邏輯，只是少了幾個 Tab 可套用
 - **設定頁 .ui 固定六頁不刪頁**（`tab_settings._PAGE_KEY_ORDER`，見 §5「系統設定子頁」）：未核准的頁（`trash`／`backup` 等）**不建物件、不接 signal**，`_page_loaders` 只登記 `profile.settings_pages` 核准的頁。⚠️ **`_applyRolePermissions` 必須先檢查 profile 再決定 nav 按鈕可見性**：資源回收筒／備份還原兩顆 nav 鈕在該 profile 未核准時要持續 `setVisible(False)`，若只憑角色判斷（如「is_admin 就顯示」）會把已核准隱藏的按鈕在角色切換時重新 `setVisible(True)`，繞過 profile 白名單
 - **DB 損毀時的處置分岔**（`main.handleCorruptDb`）：完整版走既有開機救援（`ui_utils.rescue_dialog.runStartupRescue`）；**獨立版只提示「請改用完整的公文收發管理系統進行備份還原」，不開任何還原視窗**（`profile.allows_db_rescue=False`）。第二層保險在獨立版 spec（`excludes` 含 `ui_utils.rescue_dialog`，見 §7）：獨立版連救援視窗的程式碼都不收，即使程式改壞也開不出還原畫面

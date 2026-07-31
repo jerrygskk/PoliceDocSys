@@ -33,7 +33,8 @@ class TestUiLoad(unittest.TestCase):
 
     def test_glob_finds_files(self):
         # 防呆：glob 到空清單會讓整組測試虛假通過
-        self.assertGreaterEqual(len(self._ui_files()), 12)  # Layout1~11 + main_menu
+        # Layout1~9、11 ＋ main_menu（Layout10＝敘獎發文頁移除後的空號）
+        self.assertGreaterEqual(len(self._ui_files()), 11)
 
     def test_all_ui_files_load(self):
         for path in self._ui_files():
@@ -61,6 +62,9 @@ class TestUiLoad(unittest.TestCase):
         w = loadUi(path)
         self.assertIsNotNone(w)
         required = (
+            (QDateEdit, "reward_date"),
+            (QComboBox, "reward_sender"),
+            (QLabel, "reward_sender_hint"),
             (QLineEdit, "reward_reason"),
             (RecipientCombo, "reward_recipients"),   # 敘獎人員改為可編輯下拉
             (QPushButton, "btn_reward_submit"),
@@ -73,8 +77,21 @@ class TestUiLoad(unittest.TestCase):
                 self.assertIsNotNone(w.findChild(cls, name))
         table = w.findChild(QTableWidget, "reward_tableWidget")
         self.assertEqual(table.columnCount(), 5)
-        self.assertIsNone(w.findChild(QDateEdit, "reward_date"))
-        self.assertIsNone(w.findChild(QComboBox, "reward_sender"))
+        # 發文日期／發文人員兩欄固定寬（比照陳報頁），送文者模式填、自助模式反灰。
+        for cls, name in ((QDateEdit, "reward_date"),
+                          (QComboBox, "reward_sender")):
+            field = w.findChild(cls, name)
+            self.assertEqual(field.minimumWidth(), 220)
+            self.assertEqual(field.maximumWidth(), 220)
+            self.assertEqual(field.minimumHeight(), 36)
+            self.assertEqual(field.maximumHeight(), 36)
+        self.assertTrue(w.findChild(QComboBox, "reward_sender").isEditable())
+        # 標籤欄固定 90×36（與 Layout11 罰單登錄同骨架，欄位起始 x 才會對齊）
+        for name in ("label_date", "label_sender", "label_reason",
+                     "label_recipients"):
+            lbl = w.findChild(QLabel, name)
+            self.assertEqual(lbl.minimumWidth(), 90, name)
+            self.assertEqual(lbl.maximumWidth(), 90, name)
         # 事由（QLineEdit）／人員（RecipientCombo）欄保留可延展輸入寬度。
         for cls, name in ((QLineEdit, "reward_reason"),
                           (RecipientCombo, "reward_recipients")):
@@ -92,41 +109,6 @@ class TestUiLoad(unittest.TestCase):
         self.assertIn("#ffffff", root_css)
         self.assertIn("color", root_css)
         self.assertIn("#000000", root_css)
-        w.deleteLater()
-
-    def test_reward_issue_layout_has_required_controls_and_no_inline_style(self):
-        path = os.path.join(_LAYOUT_DIR, "Layout10.ui")
-        w = loadUi(path)
-        self.assertIsNotNone(w)
-        required = (
-            (QLineEdit, "lineEdit_reward_num"),
-            (QPushButton, "btn_reward_input"),
-            (QDateEdit, "reward_issue_date"),
-            (QComboBox, "reward_issue_sender"),
-            (QPushButton, "btn_reward_issue"),
-            (QPushButton, "btn_reward_issue_clear"),
-            (QTableWidget, "reward_issue_table"),
-        )
-        for cls, name in required:
-            with self.subTest(control=name):
-                self.assertIsNotNone(w.findChild(cls, name))
-        table = w.findChild(QTableWidget, "reward_issue_table")
-        self.assertEqual(table.columnCount(), 6)
-        self.assertEqual(
-            [table.horizontalHeaderItem(i).text() for i in range(6)],
-            ["", "編號", "登錄日期", "發文日期", "敘獎事由", "敘獎人員"],
-        )
-        for cls, name in (
-                (QDateEdit, "reward_issue_date"),
-                (QComboBox, "reward_issue_sender")):
-            field = w.findChild(cls, name)
-            self.assertEqual(field.minimumWidth(), 220)
-            self.assertEqual(field.maximumWidth(), 220)
-            self.assertEqual(field.minimumHeight(), 36)
-            self.assertEqual(field.maximumHeight(), 36)
-        self.assertTrue(w.findChild(QComboBox, "reward_issue_sender").isEditable())
-        root_css = w.findChild(QWidget, "centralwidget").styleSheet().lower()
-        self.assertEqual(root_css, "")
         w.deleteLater()
 
     def test_ticket_layout_has_required_controls(self):
@@ -155,34 +137,72 @@ class TestUiLoad(unittest.TestCase):
             ["", "編號", "登錄日期", "發文日期", "罰單編號", "開立人員", ""],
         )
         # 兩個人員下拉皆可打字（completer 篩選），高度與其他頁一致（LAY-6）；
-        # 寬度隨視窗拉伸（maximumWidth 不卡死），比照敘獎登錄。
+        # 人員欄固定 220（與敘獎登錄同骨架），長輸入欄才留伸縮。
         for name in ("ticket_sender", "ticket_issuer"):
             combo = w.findChild(QComboBox, name)
             self.assertTrue(combo.isEditable())
             self.assertEqual(combo.minimumWidth(), 220)
-            self.assertEqual(combo.maximumWidth(), 16777215)
+            self.assertEqual(combo.maximumWidth(), 220)
             self.assertEqual(combo.minimumHeight(), 36)
             self.assertEqual(combo.maximumHeight(), 36)
+        for name in ("lbl_ticket_sender", "lbl_ticket_issuer", "lbl_ticket_no"):
+            lbl = w.findChild(QLabel, name)
+            self.assertEqual(lbl.minimumWidth(), 90, name)
+            self.assertEqual(lbl.maximumWidth(), 90, name)
+        # 罰單編號固定 546＝敘獎登錄「發文人員」下拉的右緣（見 Layout11 註解）
         ticket_no = w.findChild(QLineEdit, "ticket_no")
-        self.assertEqual(ticket_no.minimumWidth(), 220)
-        self.assertEqual(ticket_no.maximumWidth(), 16777215)
+        self.assertEqual(ticket_no.minimumWidth(), 546)
+        self.assertEqual(ticket_no.maximumWidth(), 546)
         root_css = w.findChild(QWidget, "centralwidget").styleSheet().lower()
         self.assertIn("background-color", root_css)
         self.assertIn("#ffffff", root_css)
         self.assertIn("#000000", root_css)
         w.deleteLater()
 
-    def test_reward_issue_layout_uses_same_default_outer_margins_as_dispatch(self):
-        dispatch = loadUi(os.path.join(_LAYOUT_DIR, "Layout1.ui"))
-        reward_issue = loadUi(os.path.join(_LAYOUT_DIR, "Layout10.ui"))
-        self.assertIsNotNone(dispatch)
-        self.assertIsNotNone(reward_issue)
-        dispatch_layout = dispatch.findChild(QVBoxLayout, "mainVerticalLayout")
-        reward_layout = reward_issue.findChild(QVBoxLayout, "mainVerticalLayout")
-        self.assertEqual(reward_layout.contentsMargins(),
-                         dispatch_layout.contentsMargins())
-        dispatch.deleteLater()
-        reward_issue.deleteLater()
+    def test_reward_and_ticket_forms_share_column_skeleton(self):
+        """敘獎登錄與罰單登錄的表單骨架必須對齊（實機截圖比對過的回歸）。
+
+        兩頁同寬時：主欄位起始 x 相同、長輸入欄右緣相同、提示條都不撐滿。
+        ⚠️ 必須 show() 後再量，未顯示的 widget 量不到真實寬度（LAY-8）。
+        """
+        reward = loadUi(os.path.join(_LAYOUT_DIR, "Layout9.ui"))
+        ticket = loadUi(os.path.join(_LAYOUT_DIR, "Layout11.ui"))
+        self.assertIsNotNone(reward)
+        self.assertIsNotNone(ticket)
+        try:
+            for w in (reward, ticket):
+                # 寬度須大於兩頁的 layout 最小寬（敘獎 row0 欄位多、最小寬較大），
+                # 否則視窗停在最小寬、量到的是「還沒開始伸縮」的假結果。
+                w.resize(1400, 700)
+                w.show()
+            _app.processEvents()
+
+            r_first = reward.findChild(QDateEdit, "reward_date")
+            t_first = ticket.findChild(QComboBox, "ticket_sender")
+            self.assertEqual(r_first.x(), t_first.x(), "主欄位起始 x 未對齊")
+
+            r_long = reward.findChild(QLineEdit, "reward_reason")
+            t_long = ticket.findChild(QLineEdit, "ticket_no")
+            self.assertEqual(r_long.x(), t_long.x(), "長輸入欄起始 x 未對齊")
+            self.assertEqual(r_long.geometry().right(),
+                             t_long.geometry().right(), "長輸入欄右緣未對齊")
+
+            # 長輸入欄右緣＝敘獎登錄「發文人員」下拉的右緣
+            r_sender = reward.findChild(QComboBox, "reward_sender")
+            self.assertEqual(r_long.geometry().right(),
+                             r_sender.geometry().right(),
+                             "長輸入欄右緣未對齊發文人員下拉")
+
+            # 提示條依文字寬度，不得被拉寬撐滿整列
+            for w, name in ((reward, "reward_sender_hint"),
+                            (ticket, "ticket_sender_hint")):
+                hint = w.findChild(QLabel, name)
+                self.assertLessEqual(hint.width(), hint.sizeHint().width() + 2,
+                                     f"{name} 被撐寬了，應依文字寬度")
+        finally:
+            for w in (reward, ticket):
+                w.close()
+                w.deleteLater()
 
 
 if __name__ == "__main__":

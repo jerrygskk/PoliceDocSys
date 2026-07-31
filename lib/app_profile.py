@@ -65,12 +65,12 @@ FULL_PROFILE = AppProfile(
     banner_path="res/buttons/banner.png",
     tab_keys=(
         "assignment_issue", "assignment_receive", "report", "reward",
-        "reward_issue", "ticket", "print", "browse", "archive",
+        "ticket", "print", "browse", "archive",
         "settings", "audit",
     ),
     menu_keys=(
         "assignment_issue", "assignment_receive", "report", "reward",
-        "reward_issue", "ticket", "print", "browse", "archive",
+        "ticket", "print", "browse", "archive",
         "settings", "audit",
     ),
     menu_labels=_frozen_labels({
@@ -78,7 +78,6 @@ FULL_PROFILE = AppProfile(
         "assignment_receive": "交辦單收文",
         "report": "公文陳報",
         "reward": "敘獎登錄",
-        "reward_issue": "敘獎發文",
         "ticket": "罰單登錄",
         "print": "簽收單列印",
         "browse": "資料庫瀏覽",
@@ -93,9 +92,9 @@ FULL_PROFILE = AppProfile(
         "archive_root", "print_title", "idle", "input_lock", "backup", "input_mode",
     ),
     input_lock_flows=(
-        "dispatch", "task", "crim", "gen", "ticket", "reward", "reward_issue",
+        "dispatch", "task", "crim", "gen", "ticket", "reward",
     ),
-    input_mode_flows=("crim", "gen", "ticket"),
+    input_mode_flows=("crim", "gen", "reward", "ticket"),
     preheat_keys=("assignment_issue", "assignment_receive", "report"),
     allows_db_rescue=True,
 )
@@ -119,7 +118,7 @@ ENTRY_PROFILE = AppProfile(
     settings_pages=("personnel", "system"),
     system_panels=("idle", "input_lock", "input_mode"),
     input_lock_flows=("reward", "ticket"),
-    input_mode_flows=("ticket",),
+    input_mode_flows=("reward", "ticket"),
     preheat_keys=("reward", "ticket"),
     allows_db_rescue=False,
 )

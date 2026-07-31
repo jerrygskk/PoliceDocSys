@@ -424,6 +424,7 @@ class TestEntryPreviewMutateBaseline(_EntryPreviewBase):
         for role in self.ENTRY_PREVIEW_CAN_MUTATE:
             with self.subTest(role=role):
                 tab = self._reward_tab(role)
+                tab.reward_sender.setCurrentIndex(1)   # 送文者模式必填
                 tab.reward_reason.setText("協助查緝")
                 tab.reward_recipients.setCurrentText("測試員甲")
                 tab._submit()
@@ -471,6 +472,8 @@ class TestEntryPreviewInputLockOnlyBlocksNewAdd(_EntryPreviewBase):
 
     def test_reward_lock_blocks_new_but_allows_delete_of_existing(self):
         tab = self._reward_tab("user")
+        # 預設送文者輸入模式：發文人員為必填，未選會先被欄位檢查擋下（modal）
+        tab.reward_sender.setCurrentIndex(1)
         tab.reward_reason.setText("協助查緝")
         tab.reward_recipients.setCurrentText("測試員甲")
         tab._submit()

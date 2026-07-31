@@ -341,6 +341,45 @@ class TestTicketPreviewCells(TicketTabBase):
         self.assertEqual(narrow[stretch_col - 2], narrow[stretch_col - 1],
                          "罰單編號與開立人員應同寬")
 
+    def test_preview_recomputes_on_window_resize_without_explicit_call(self):
+        """放大視窗必須自動重算欄寬（不再需要切頁才更新）。
+
+        實機踩過：最大化後伸縮欄停在舊寬度，表格右側留下一片空白。
+        本測試刻意**不呼叫** autoResizeTable，只放大表格並等 debounce。
+        """
+        from PySide6.QtWidgets import QApplication, QTableWidget
+        from tabs.tab_ticket import TabTicket
+        from ui_utils.table import setupPreviewTable
+        # ⚠️ 用獨立 table，不要拿分頁裡的：分頁內的表格受 layout 管理，
+        # 直接 resize() 會在下一輪事件迴圈被 layout 還原，等 debounce 跑完時
+        # 寬度早就變回去了（本測試踩過）。這裡驗的是監看機制本身。
+        table = QTableWidget()
+        setupPreviewTable(table, TabTicket.PREVIEW_HEADERS,
+                          stretch_col=len(TabTicket.PREVIEW_HEADERS) - 1,
+                          fixed_overrides={"登錄日期": 120})
+        stretch_col = table.property("stretch_col")
+
+        table.show()
+        table.resize(700, 300)
+        QApplication.processEvents()
+        self._settle()
+        before = table.columnWidth(stretch_col)
+
+        table.resize(1300, 300)
+        QApplication.processEvents()
+        self._settle()
+        self.assertGreater(table.columnWidth(stretch_col), before,
+                           "放大視窗後伸縮欄未重算，右側會留白")
+        table.deleteLater()
+
+    @staticmethod
+    def _settle(ms=400):
+        """等 viewport resize 的 80ms debounce 跑完（不 sleep 死等，仍跑事件迴圈）。"""
+        from PySide6.QtCore import QEventLoop, QTimer
+        loop = QEventLoop()
+        QTimer.singleShot(ms, loop.quit)
+        loop.exec()
+
 
 class TestTicketIssuerSelection(TicketTabBase):
     def test_candidate_click_replaces_issuer_using_staff_id(self):
@@ -364,14 +403,10 @@ class TestTicketIssuerSelection(TicketTabBase):
         self.assertEqual(tab.ticket_sender.currentData(), "P002")
         self.assertEqual(tab.ticket_no.text(), "D4RD15263")
 
-    def test_frequent_issuer_sorts_to_top_even_with_suffixed_name(self):
-        # 帶後綴姓名的人員開了最多罰單時，仍必須排到候選清單第一位。
-        # 這是姓名 key vs staff_id key 的雷：View 的 issuer_name 未去後綴，
-        # 若用姓名統計會查不到、排序退化成 sort_order（P003 反而墊底）。
+    def test_candidate_order_follows_personnel_sort_order_not_usage(self):
+        """候選清單一律照 Ref_Personnel 的 sort_order，不受開立次數影響。"""
         conn = sqlite3.connect(self.db)
-        # 給 P003 一個帶後綴的姓名，並塞 3 張它開立的有效已發文罰單
-        conn.execute("UPDATE Ref_Personnel SET staff_name='測試丙-19.06' "
-                     "WHERE staff_id='P003'")
+        # P003 開了最多罰單，但它的 sort_order 在最後 → 仍須排在最後
         for i in range(3):
             conn.execute(
                 "INSERT INTO Document_Ticket(doc_id,create_date,register_date,"
@@ -380,10 +415,15 @@ class TestTicketIssuerSelection(TicketTabBase):
                 (str(100 + i), "2026-07-20", "2026-07-20", "P001", "P003",
                  f"AA{i}"))
         conn.commit()
+        rows = conn.execute(
+            "SELECT staff_id FROM Ref_Personnel WHERE is_active=1 "
+            "ORDER BY sort_order,staff_id").fetchall()
         conn.close()
+        expected = [r[0] for r in rows]
         tab = self._make_tab()
-        first = tab.ticket_candidates_list.item(0)
-        self.assertEqual(tab._candidateStaffId(first), "P003")
+        actual = [tab._candidateStaffId(tab.ticket_candidates_list.item(i))
+                  for i in range(tab.ticket_candidates_list.count())]
+        self.assertEqual(actual, expected)
 
 
 class TestTicketDelete(TicketTabBase):

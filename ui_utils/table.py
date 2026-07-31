@@ -1,7 +1,7 @@
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QObject, QEvent
 from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QPushButton, QWidget, QHBoxLayout
+    QPushButton, QWidget, QHBoxLayout, QStyledItemDelegate
 )
 from PySide6.QtGui import QFontMetrics, QColor
 
@@ -16,17 +16,20 @@ FIXED_COL_WIDTHS = {
     "業務組":        80,
     "所承辦人":     120,
     "收文人員":     120,
-    # 刑案
-    "編號":          56,
-    "狀態":          48,
+    # 刑案／一般陳報預覽（僅這兩張表用到；瀏覽頁與歸檔頁各自傳 fixed_overrides，
+    # 不受本表影響）。⚠️ 單位換算：全形 17px、半形 8px，再加 _PAD 24
+    #   4 半形＝56／5 半形＝64／2 全形＝58／4 全形＝92
+    "編號":          56,   # 4 半形
+    "登錄":          64,   # 5 半形＝MM-DD（標題兩字＝58 不被切）
+    "陳報":          64,   # 5 半形＝MM-DD（同上；即刑案的查獲／受理日期）
+    "狀態":          58,   # 2 全形
     "案類":         152,
-    "承辦人":        72,
-    "受理人":        72,
-    "報案人":        72,
-    "日期":          80,
+    "承辦人":        92,   # 4 全形
+    "受理人":        92,   # 4 全形
+    "報案人":        92,   # 4 全形
     # 一般
-    "業務單位":      88,
-    "分類":          56,
+    "業務單位":      92,   # 4 全形
+    "分類":          58,   # 2 全形
 }
 
 # 動態量欄位的 padding（欄位內容寬度 + PAD）
@@ -115,7 +118,101 @@ def autoResizeTable(table):
         stretch_w = usable - other_total
         for col, w in widths.items():
             table.setColumnWidth(col, stretch_w if col == stretch_col else w)
+
+    # ⚠️ 以「實際欄寬」回頭校正：Qt 會把每一欄夾到 header 的
+    # `minimumSectionSize`（隨字型／DPI 而變，125% 縮放下比 32 大），所以實際
+    # 總寬可能比上面算出來的多幾 px——只要多 1px 就冒水平捲軸。這裡把超出的
+    # 部分從伸縮欄扣回來。實測 offscreen 量不到（該環境 minimumSectionSize 只有
+    # 23），是實機才會踩到的差異，勿因為離線測不出來就拿掉。
+    actual = sum(table.columnWidth(c) for c in range(table.columnCount()))
+    excess = actual - available
+    if excess > 0 and stretch_col is not None:
+        cur = table.columnWidth(stretch_col)
+        table.setColumnWidth(stretch_col, max(60, cur - excess))
     table.setProperty("init_done", True)
+
+
+class _ViewportResizeWatcher(QObject):
+    """視窗寬度改變時重算欄寬（伸縮欄才會跟著長大／縮小）。
+
+    `autoResizeTable` 原本只在切入分頁與資料異動時跑，使用者把視窗**最大化**
+    後不會重算：固定欄維持原寬、伸縮欄也停在舊寬度，表格右側因此留下一片空白
+    （實機截圖抓到，刑案陳報預覽的「報案人」欄右側）。故在 viewport 掛
+    resize 監看，寬度真的變了才重算。
+
+    - 80ms debounce：拖曳視窗邊框會連續發 resize，不可每次都重算
+    - 只在寬度改變時動作：換行造成的高度變化、水平捲軸出現造成的高度變化都跳過，
+      避免 `setColumnWidth` → 捲軸變化 → 再次 resize 的無限迴圈
+    - `table.destroyed` 後一律 no-op：不得解參考已失效的 Qt wrapper
+      （比照 `widgets.LinkCursorFilter`，此雷踩過）
+    - 使用者手動拖過欄寬（`user_resized`）時 `autoResizeTable` 自己會 early-return，
+      本監看不會覆蓋使用者的調整
+    """
+
+    def __init__(self, table):
+        super().__init__(table)
+        self._table = table
+        self._last_width = -1
+        self._timer = QTimer(table)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(80)
+        self._timer.timeout.connect(self._apply)
+        table.destroyed.connect(self._forget)
+
+    def _forget(self, *_):
+        self._table = None
+
+    def _apply(self):
+        table = self._table
+        if table is None:
+            return
+        # ⚠️ `destroyed` 訊號不保證在 timer 之前送達：table 被 deleteLater 之後、
+        # Python wrapper 還在但底層 C++ 物件（含父層 QStackedWidget）已被刪，
+        # 這時碰 viewport() 會拋 RuntimeError（pytest 連跑整檔時實際踩過）。
+        try:
+            width = table.viewport().width()
+            if width <= 0 or width == self._last_width:
+                return
+            self._last_width = width
+            autoResizeTable(table)
+        except RuntimeError:
+            self._table = None
+
+    def eventFilter(self, _obj, event):
+        if self._table is None:
+            return False
+        if event.type() == QEvent.Resize:
+            self._timer.start()
+        elif event.type() == QEvent.Show:
+            # 分頁第一次真的顯示時再算一次：建立分頁當下 viewport 還不是最終寬度
+            # （啟動時各分頁是先建好、之後才顯示），那時算的欄寬套到最終版面上
+            # 會偏寬，實機看到的就是「一開啟就有水平捲軸」。
+            self._last_width = -1
+            self._timer.start()
+        return False
+
+
+class _ElideRightDelegate(QStyledItemDelegate):
+    """單一欄恢復尾端省略號（整張表已設 ElideNone 時用）。"""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        option.textElideMode = Qt.ElideRight
+
+
+def applyNoElide(table, elide_cols=()):
+    """整張表關掉省略號：放不下就直接切斷，不顯示「…」。
+
+    維護者要求陳報預覽除「陳報主旨」外都不要省略號——省略號會再吃掉一個字元
+    的寬度，欄寬是照字數算好的，多那三點就少看到一個字（日期欄實際踩過：
+    64px 本該剛好顯示 `07-16`，加省略號變成 `07-1…`）。
+
+    `elide_cols` 內的欄位以 delegate 個別還原 `ElideRight`（主旨欄需要，
+    否則長主旨會在句中硬切、看不出還有後文）。
+    """
+    table.setTextElideMode(Qt.ElideNone)
+    for col in elide_cols:
+        table.setItemDelegateForColumn(col, _ElideRightDelegate(table))
 
 
 # 編號「超連結」外觀的單一真相來源（藍字）。改色只動這裡。
@@ -233,6 +330,12 @@ def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_ove
             t.setProperty("user_resized", True)
 
     hdr.sectionResized.connect(_onSectionResized)
+
+    # 視窗放大／縮小 → 重算欄寬（否則伸縮欄不會跟著長大，右側留白）
+    watcher = _ViewportResizeWatcher(table)
+    table.viewport().installEventFilter(watcher)   # resize
+    table.installEventFilter(watcher)              # show（第一次顯示才有真實寬度）
+    table._viewport_resize_watcher = watcher
 
     # 延後工作由 table 擁有；table 銷毀時子 timer 一併停止，不會再操作失效 wrapper。
     table._preview_setup_timers = [

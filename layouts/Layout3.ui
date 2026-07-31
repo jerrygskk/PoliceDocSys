@@ -297,6 +297,11 @@
     <item>
      <layout class="QHBoxLayout" name="previewLayout">
       <property name="spacing"><number>8</number></property>
+      <!-- 3:2＝兩塊「扣掉主旨後的固定欄小計」比值（刑案 730／一般 422），
+           讓兩張表的主旨欄拿到相近寬度。不設比例的話空間吃緊時兩塊等比縮，
+           欄位多的刑案會先餓死（主旨被壓到最小寬）。
+           ⚠️ 任一張表增減欄位都要回頭重算這個比值，見 DEVELOPER §5。 -->
+      <property name="stretch"><string notr="true">3,2</string></property>
 
       <item>
        <layout class="QVBoxLayout" name="criminalPreviewLayout">

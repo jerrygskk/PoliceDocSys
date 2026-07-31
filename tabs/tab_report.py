@@ -12,14 +12,38 @@ from lib.db_utils import (getResourcePath, nextDocId, DEBUG_MODE,
 from ui_utils import loadUi, msgWarning, msgCritical, confirmBox, reportError
 from lib.auth_manager import AuthManager
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
+    setupPreviewTable, autoResizeTable, applyNoElide, makeDeleteBtn, setDocIdLinkCell,
     setupFilterCombo, setupDateEditToToday, setupNullableDateEdit, refreshFilterCombo,
     NullableDateEdit, CriminalEditDialog, GeneralEditDialog, attachStickyScroll,
     attachComboHint,
 )
 
-CRIM_HEADERS = ["", "編號", "登錄日期", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "日期", "報案人"]
-GEN_HEADERS  = ["", "編號", "登錄日期", "業務單位", "陳報主旨", "承辦人", "分類"]
+# ⚠️ 伸縮欄＝**陳報主旨**（不是末端空白欄）：其餘欄位一律固定寬、內容再長也不
+# 加寬，剩餘寬度全部給主旨。主旨因此不需要一個「決定好的寬度」，它就是「剩下
+# 多少算多少」，視窗放大時只有它變寬。改欄位配置要連 stretch_col 與
+# previewLayout 的 3:2 分配一起看（見 DEVELOPER §5「陳報預覽欄寬基準」）。
+# 兩個日期欄的標題刻意用兩字「登錄」「陳報」：標題 2 全形＝58 < 欄寬 64，
+# 標題不會被切，欄寬也就能壓到 5 半形（只顯示 MM-DD，見 _fmtDateShort）。
+CRIM_HEADERS = ["", "編號", "登錄", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "陳報", "報案人"]
+GEN_HEADERS  = ["", "編號", "登錄", "業務單位", "陳報主旨", "承辦人", "分類"]
+
+# 主旨欄的**最小寬**（4 全形）。cap_mode=False 下 fixed_overrides 是固定值，
+# 但對伸縮欄而言它只當「空間不足時的下限」：空間夠時主旨拿走剩餘寬度。
+# ⚠️ 不可把主旨留在 FIXED_COL_WIDTHS 之外——那樣它的量測寬會等於「最長主旨
+# 的完整寬度」（可到 449），autoResizeTable 會誤判空間不足、整張表冒捲軸。
+SUBJECT_MIN_W = 92
+
+
+def _fmtDateShort(value):
+    """預覽的兩個日期欄只顯示 `MM-DD`（維護者決定，年份不進畫面）。
+
+    ⚠️ 不改 `BaseTab._fmtDate`：那支是交辦單／罰單／敘獎所有預覽共用的
+    `MM-DD-YYYY`，動它會一次改掉所有頁。完整日期改掛在 tooltip。
+    """
+    text = str(value or "")
+    if len(text) == 10 and text[4] == "-" and text[7] == "-":   # YYYY-MM-DD
+        return f"{text[5:7]}-{text[8:10]}"
+    return text
 
 # Radio 圓點縮小，選中用較細 border 呈現
 RADIO_STYLE = """
@@ -166,8 +190,26 @@ class TabReport(BaseTab, InputLockMixin):
             occ_lbl = inner.findChild(QLabel, 'lbl_crim_occdate')
             if occ_lbl:
                 self._mainGrid.setColumnMinimumWidth(0, occ_lbl.sizeHint().width())
+            # col3（右半部標籤欄）：取兩模式所有右欄標籤中最寬者當固定值。
+            # 兩模式的標籤不同（受理人員／承辦人員 vs 業務單位／陳報主旨），
+            # 不鎖死會各自依當前可見 widget 算寬（LAY-2）。
+            col3_w = 0
+            for row in range(6):
+                item = self._mainGrid.itemAtPosition(row, 3)
+                if item is not None and item.widget() is not None:
+                    col3_w = max(col3_w, item.widget().sizeHint().width())
+            if col3_w:
+                self._mainGrid.setColumnMinimumWidth(3, col3_w)
             self._mainGrid.setColumnMinimumWidth(4, 242)
             self._mainGrid.setColumnMinimumWidth(5, 60)
+            # ⚠️ 伸縮只給最右側空白欄（col9）。一般模式會隱藏「報案人」那組
+            # （col7／col8），空出來的寬度若沒有明確去處，QGridLayout 會分給
+            # 其他可伸縮的欄——實測是被 col3 標籤欄吃掉，整塊右半部相對刑案
+            # 模式往右位移約 145px（切換頁籤時整排跳動）。把 col0–col8 的
+            # stretch 全部歸零、只留 col9 為 1，欄位位置就與模式無關。
+            for col in range(9):
+                self._mainGrid.setColumnStretch(col, 0)
+            self._mainGrid.setColumnStretch(9, 1)
 
         # ── show/hide widget 列表（供 _switchFormType） ───
         self._crim_row_widgets = [
@@ -240,12 +282,22 @@ class TabReport(BaseTab, InputLockMixin):
 
         # ── 預覽表格初始化 ────────────────────────────────
         if self.crim_table:
-            setupPreviewTable(self.crim_table, CRIM_HEADERS, cap_mode=True,
-                              stretch_col=9, fixed_overrides={"陳報主旨": 184})
+            # cap_mode=False＝這些數字是**固定寬**不是上限：內容再長也不加寬
+            # （超出就截斷），內容短也不縮，只有使用者自己拉才會變（比照交辦單／
+            # 罰單三張表）。唯一例外是「陳報主旨」，寬度另議、暫維持 184。
+            setupPreviewTable(self.crim_table, CRIM_HEADERS, cap_mode=False,
+                              stretch_col=CRIM_HEADERS.index("陳報主旨"),
+                              fixed_overrides={"陳報主旨": SUBJECT_MIN_W})
+            # 除主旨外不要省略號：欄寬是照字數算的，「…」會再吃掉一個字
+            applyNoElide(self.crim_table,
+                         elide_cols=(CRIM_HEADERS.index("陳報主旨"),))
             attachStickyScroll(self.crim_table)
         if self.gen_table:
-            setupPreviewTable(self.gen_table, GEN_HEADERS, cap_mode=True,
-                              stretch_col=6, fixed_overrides={"陳報主旨": 184})
+            setupPreviewTable(self.gen_table, GEN_HEADERS, cap_mode=False,
+                              stretch_col=GEN_HEADERS.index("陳報主旨"),
+                              fixed_overrides={"陳報主旨": SUBJECT_MIN_W})
+            applyNoElide(self.gen_table,
+                         elide_cols=(GEN_HEADERS.index("陳報主旨"),))
             attachStickyScroll(self.gen_table)
 
         # ── 信號綁定 ──────────────────────────────────────
@@ -671,14 +723,24 @@ class TabReport(BaseTab, InputLockMixin):
         setDocIdLinkCell(self.crim_table, pos, 1, doc_id, self._onEditCrimRow, clickable=True)
 
         for col, val in enumerate([
-            self._fmtDate(create_date), status, casetype, subject,
+            _fmtDateShort(create_date), status, casetype, subject,
             self._trimName(processor), self._trimName(receiver),
-            self._fmtDate(occ_date), self._trimName(reporter),
+            _fmtDateShort(occ_date), self._trimName(reporter),
         ], start=2):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.crim_table.setItem(pos, col, item)
+        self._setDateTooltips(self.crim_table, pos,
+                              {2: create_date, 8: occ_date})
         autoResizeTable(self.crim_table)
+
+    @staticmethod
+    def _setDateTooltips(table, row, raw_by_col):
+        """日期欄只顯示 MM-DD，完整日期（含年份）掛 tooltip 仍查得到。"""
+        for col, raw in raw_by_col.items():
+            item = table.item(row, col)
+            if item is not None:
+                item.setToolTip(str(raw or ""))
 
     def _insertGenRow(self, doc_id, create_date, dept, subject, processor, cat):
         if not self.gen_table:
@@ -694,12 +756,13 @@ class TabReport(BaseTab, InputLockMixin):
         setDocIdLinkCell(self.gen_table, pos, 1, doc_id, self._onEditGenRow, clickable=True)
 
         for col, val in enumerate([
-            self._fmtDate(create_date), dept, subject,
+            _fmtDateShort(create_date), dept, subject,
             self._trimName(processor), cat,
         ], start=2):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.gen_table.setItem(pos, col, item)
+        self._setDateTooltips(self.gen_table, pos, {2: create_date})
         autoResizeTable(self.gen_table)
 
     # ── 修改回呼 ────────────────────────────────────────────
@@ -715,13 +778,15 @@ class TabReport(BaseTab, InputLockMixin):
                 _, create_date, status, casetype, subject, processor, receiver, occ_date, reporter = updated
                 # 發文分類顯示名已正規化為兩字（參照表 status_name 即「現行/到案/未到」），直接用
                 for col, val in enumerate([
-                    self._fmtDate(create_date), status, casetype, subject,
+                    _fmtDateShort(create_date), status, casetype, subject,
                     self._trimName(processor), self._trimName(receiver),
-                    self._fmtDate(occ_date), self._trimName(reporter),
+                    _fmtDateShort(occ_date), self._trimName(reporter),
                 ], start=2):
                     item = QTableWidgetItem(str(val) if val else "")
                     item.setTextAlignment(Qt.AlignCenter)
                     self.crim_table.setItem(row, col, item)
+                self._setDateTooltips(self.crim_table, row,
+                                      {2: create_date, 8: occ_date})
                 autoResizeTable(self.crim_table)
 
     def _onEditGenRow(self, row, doc_id):
@@ -736,12 +801,13 @@ class TabReport(BaseTab, InputLockMixin):
                 _, create_date, dept, subject, processor, cat = updated
                 # 一般分類顯示名已正規化為兩字（參照表 gen_cat_name 即「業務/其他/相驗」），直接用
                 for col, val in enumerate([
-                    self._fmtDate(create_date), dept, subject,
+                    _fmtDateShort(create_date), dept, subject,
                     self._trimName(processor), cat,
                 ], start=2):
                     item = QTableWidgetItem(str(val) if val else "")
                     item.setTextAlignment(Qt.AlignCenter)
                     self.gen_table.setItem(row, col, item)
+                self._setDateTooltips(self.gen_table, row, {2: create_date})
                 QTimer.singleShot(0, lambda: autoResizeTable(self.gen_table))
 
     def _afterConvertReport(self, key, doc_id):

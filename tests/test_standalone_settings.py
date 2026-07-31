@@ -43,10 +43,22 @@ class _SettingsBase(unittest.TestCase):
         conn.commit()
         conn.close()
         self._extra_tabs = []
+        self._settings_tabs = []
         AuthManager.instance()._role = "user"
 
     def tearDown(self):
         AuthManager.instance()._role = "user"
+        # ⚠️ TabSettings.setup 會把 _onRoleChanged 接到 AuthManager 單例上，
+        # 而單例活過整個 test session：只 deleteLater 容器的話，widget 被銷毀、
+        # 但連線還在，之後別的測試 emit role_changed 就會打到已刪除的
+        # _outer_stack（`RuntimeError: ... QStackedWidget already deleted`）。
+        # 這是跨檔汙染，只有特定執行順序才會炸（實際踩過：pytest 全跑時
+        # test_ticket_tab 的降權測試被牽連）。務必在這裡斷開。
+        for tab in self._settings_tabs:
+            try:
+                AuthManager.instance().role_changed.disconnect(tab._onRoleChanged)
+            except (RuntimeError, TypeError):
+                pass
         for t in self._extra_tabs:
             t.deleteLater()
         try:
@@ -63,6 +75,7 @@ class _SettingsBase(unittest.TestCase):
         else:
             tab = TabSettings(tabs, self.db, profile=profile)
         tab.setup(0)
+        self._settings_tabs.append(tab)
         return tab
 
     def _login_as(self, settings, role):
@@ -123,7 +136,7 @@ class TestEntrySettingsAssembly(_SettingsBase):
     def test_entry_input_panels_only_show_approved_flows(self):
         s = self._make_settings(profile=ENTRY_PROFILE)
         self.assertEqual(s._panel_input_lock.flow_keys, ("reward", "ticket"))
-        self.assertEqual(s._panel_input_mode.flow_keys, ("ticket",))
+        self.assertEqual(s._panel_input_mode.flow_keys, ("reward", "ticket"))
 
 
 class TestEntryHasNoRestoreEntryButSharedMechanismIntact(_SettingsBase):
@@ -220,10 +233,11 @@ class TestFullSettingsUnchanged(_SettingsBase):
                           ("personnel", "dept", "casetype", "system",
                            "trash", "backup"))
 
-    def test_full_input_lock_panel_keeps_all_seven_rows(self):
+    def test_full_input_lock_panel_keeps_all_six_rows(self):
+        # 敘獎發文頁移除後唯讀鎖剩六把；陳報模式加入敘獎後為四列。
         s = self._make_settings()
-        self.assertEqual(len(s._panel_input_lock._checks), 7)
-        self.assertEqual(len(s._panel_input_mode._radios), 3)
+        self.assertEqual(len(s._panel_input_lock._checks), 6)
+        self.assertEqual(len(s._panel_input_mode._radios), 4)
 
     def test_full_admin_can_reach_year_reset(self):
         # ⚠️ 不可讓 click() 真的跑進 _doReset：那會開 modal ResetDialog，

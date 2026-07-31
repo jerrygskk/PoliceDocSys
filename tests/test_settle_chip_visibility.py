@@ -176,6 +176,10 @@ class TestSettleCompletionRefresh(unittest.TestCase):
             _settle_group=Mock(),
             lbl_unissued=QLabel(),
             _on_generate=Mock(),
+            # 結算後的跨頁刷新旗標：本檔只驗入口顯隱與一條龍列印，故給 no-op
+            # （旗標本身由 tests/test_reward_print.py 驗證）。
+            _flagRewardReload=lambda: None,
+            _flagConvertReload=lambda keys: None,
         )
         fake._refresh_unissued = lambda counts=None, unavailable=False: TabPrint._refresh_unissued(
             fake, counts, unavailable)
@@ -218,6 +222,10 @@ class TestSettleCompletionRefresh(unittest.TestCase):
             _settle_group=Mock(),
             lbl_unissued=QLabel(),
             _on_generate=Mock(),
+            # 結算後的跨頁刷新旗標：本檔只驗入口顯隱與一條龍列印，故給 no-op
+            # （旗標本身由 tests/test_reward_print.py 驗證）。
+            _flagRewardReload=lambda: None,
+            _flagConvertReload=lambda keys: None,
         )
         fake._refresh_unissued = lambda counts=None, unavailable=False: TabPrint._refresh_unissued(
             fake, counts, unavailable)
@@ -256,6 +264,10 @@ class TestSettleCompletionRefresh(unittest.TestCase):
             _settle_group=Mock(),
             lbl_unissued=QLabel(),
             _on_generate=Mock(),
+            # 結算後的跨頁刷新旗標：本檔只驗入口顯隱與一條龍列印，故給 no-op
+            # （旗標本身由 tests/test_reward_print.py 驗證）。
+            _flagRewardReload=lambda: None,
+            _flagConvertReload=lambda keys: None,
         )
 
         class NoSuccessfulSettlement:

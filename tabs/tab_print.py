@@ -1079,10 +1079,24 @@ class TabPrint(BaseTab):
         dlg.exec()
         if dlg.settled():
             self._refresh_settle_group()
+            # 結算會補上敘獎的發文日期／人員 → 敘獎登錄頁的本次登錄清單與
+            # 瀏覽頁敘獎子頁都可能過期，標記下次顯示時重載。
+            self._flagRewardReload()
+            self._flagConvertReload(("crim", "gen", "reward", "ticket"))
             # 結算後以對話框實際選定的發文日產生簽收表（一條龍動線）
             if self.date_edit:
                 self.date_edit.setDate(dlg.settledDate())
             self._on_generate()
+
+    def _flagRewardReload(self):
+        """標記敘獎登錄頁：下次切入時依 DB 重建本次登錄清單（發文日期已改變）。"""
+        try:
+            mgr = getattr(self, "_manager", None)
+            for t in getattr(mgr, "tabs", {}).values():
+                if hasattr(t, "reward_data_dirty"):
+                    t.reward_data_dirty = True
+        except Exception:
+            pass
 
     def on_activated(self):
         # 切入列印頁時刷新「標題未設定」提醒（保險：若框架日後改為會呼叫）

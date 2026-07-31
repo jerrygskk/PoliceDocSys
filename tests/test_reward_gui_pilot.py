@@ -19,30 +19,23 @@ from PySide6.QtWidgets import (
 
 from lib.db_schema import applySchema
 from tabs.tab_reward import TabReward
-from tabs.tab_reward_issue import TabRewardIssue
 from ui_utils.reward_dialog import RewardEditDialog
 from ui_utils.table import setupPreviewTable
 from ui_utils.widgets import LinkCursorFilter
 
 
 SELECTORS = {
+    "entry_date": "reward_date",
+    "entry_sender": "reward_sender",
     "entry_reason": "reward_reason",
     "entry_recipients": "reward_recipients",
     "entry_table": "reward_table",
     "entry_table_object": "reward_tableWidget",
     "entry_submit": "btn_submit",
     "entry_submit_object": "btn_reward_submit",
-    "issue_number": "lineEdit",
-    "issue_table": "table",
-    "issue_date": "issue_date",
-    "issue_sender": "issue_sender",
-    "issue_input_button": "btn_reward_input",
-    "issue_button": "btn_reward_issue",
     "edit_reason": "w_reason",
     "edit_recipients": "w_recipients",
     "edit_save": "btn_save",
-    "pending_set": "_pending",
-    "pending_banner": "_pending_banner",
 }
 
 
@@ -73,40 +66,35 @@ def fetch_reward(db_path, doc_id):
         conn.close()
 
 
-def test_reward_lifecycle_pilot(qtbot, reward_db, monkeypatch):
-    monkeypatch.setattr("tabs.tab_reward_issue.confirmBox", lambda *a, **k: True)
-    monkeypatch.setattr("tabs.tab_reward_issue.msgInfo", lambda *a, **k: None)
+def test_reward_lifecycle_pilot(qtbot, reward_db):
+    """登錄頁送文者模式一條龍：登錄即發文 → 編號連結開修改視窗 → 儲存。
 
+    未設定 report_mode_reward 即預設送文者輸入模式（reward 不吃舊
+    report_input_mode 全域 fallback），故本測試不必寫任何設定。
+    """
     tabs = QTabWidget()
     tabs.addTab(QWidget(), "登錄")
-    tabs.addTab(QWidget(), "發文")
     qtbot.addWidget(tabs)
     entry = TabReward(tabs, reward_db)
-    issue = TabRewardIssue(tabs, reward_db)
     entry.setup(0)
-    issue.setup(1)
     tabs.show()
 
+    entry_date = getattr(entry, SELECTORS["entry_date"])
+    entry_sender = getattr(entry, SELECTORS["entry_sender"])
     entry_reason = getattr(entry, SELECTORS["entry_reason"])
     entry_recipients = getattr(entry, SELECTORS["entry_recipients"])
     entry_table = getattr(entry, SELECTORS["entry_table"])
     entry_submit = getattr(entry, SELECTORS["entry_submit"])
-    issue_number = getattr(issue, SELECTORS["issue_number"])
-    issue_table = getattr(issue, SELECTORS["issue_table"])
-    issue_date = getattr(issue, SELECTORS["issue_date"])
-    issue_sender = getattr(issue, SELECTORS["issue_sender"])
-    issue_input = tabs.widget(1).findChild(
-        QPushButton, SELECTORS["issue_input_button"]
-    )
-    issue_button = tabs.widget(1).findChild(
-        QPushButton, SELECTORS["issue_button"]
-    )
     assert entry_table.objectName() == SELECTORS["entry_table_object"], "登錄: 表格 selector"
     assert entry_submit.objectName() == SELECTORS["entry_submit_object"], "登錄: 送出 selector"
-    assert issue_input is not None, "待發: 找不到輸入按鈕"
-    assert issue_button is not None, "發文: 找不到發文按鈕"
+    assert entry_date.isEnabled(), "登錄: 送文者模式發文日期應可填"
+    assert entry_sender.isEnabled(), "登錄: 送文者模式發文人員應可填"
 
-    # 登錄
+    # 登錄即發文
+    entry_date.setDate(QDate(2026, 7, 24))
+    sender_index = entry_sender.findData("P01")
+    assert sender_index >= 0, "登錄: 找不到 P01"
+    entry_sender.setCurrentIndex(sender_index)
     entry_reason.setText("協助查緝")
     entry_recipients.setCurrentText("王小明")
     qtbot.mouseClick(entry_submit, Qt.LeftButton)
@@ -119,10 +107,11 @@ def test_reward_lifecycle_pilot(qtbot, reward_db, monkeypatch):
     doc_id = created_row[0]
     registered = fetch_reward(reward_db, doc_id)
     assert registered[0] == QDate.currentDate().toString("yyyy-MM-dd"), "登錄: create_date"
-    assert registered[1] == "", "登錄: register_date 應為空字串"
-    assert registered[2] is None, "登錄: sender_id 應為 NULL"
+    assert registered[1] == "2026-07-24", "登錄: register_date 應為所填發文日期"
+    assert registered[2] == "P01", "登錄: sender_id 應為所選發文人員"
     assert registered[3:] == ("協助查緝", "王小明"), "登錄: 事由或人員"
     assert entry_table.rowCount() == 1, "登錄: 預覽表應有一列"
+    assert entry_table.item(0, 2).text() == "2026-07-24", "登錄: 預覽發文日期"
 
     # 編輯：由實際 QLabel.linkActivated 開啟實際 dialog，再按實際儲存鈕。
     label = entry_table.cellWidget(0, 1)
@@ -161,38 +150,11 @@ def test_reward_lifecycle_pilot(qtbot, reward_db, monkeypatch):
         edit_watchdog.deleteLater()
     assert not timed_out["value"], "編輯: 對話框未在 5 秒內完成"
     edited = fetch_reward(reward_db, doc_id)
-    assert edited[1] == "", "編輯: register_date 不得改變"
-    assert edited[2] is None, "編輯: sender_id 不得改變"
+    assert edited[1] == "2026-07-24", "編輯: register_date 不得改變"
+    assert edited[2] == "P01", "編輯: sender_id 不得改變"
     assert edited[3:] == ("更新後事由", "王小明,名單外甲"), "編輯: DB 值"
     assert entry_table.item(0, 3).text() == "更新後事由", "編輯: 預覽事由"
     assert entry_table.item(0, 4).text() == "王小明,名單外甲", "編輯: 預覽人員"
-
-    # 待發：加入 UI queue 不得修改 DB。
-    tabs.setCurrentIndex(1)
-    issue_number.setText(str(doc_id))
-    qtbot.mouseClick(issue_input, Qt.LeftButton)
-    pending = fetch_reward(reward_db, doc_id)
-    assert issue_table.rowCount() == 1, "待發: 表格應有一列"
-    pending_set = getattr(issue, SELECTORS["pending_set"])
-    pending_banner = getattr(issue, SELECTORS["pending_banner"])
-    assert pending_set == {str(doc_id)}, "待發: pending set"
-    assert not pending_banner.isHidden(), "待發: banner 應顯示"
-    assert pending[1:3] == ("", None), "待發: DB 不得改變"
-
-    # 發文：reload 後已發文列移除，只保留仍未發文的原 doc_id。
-    issue_date.setDate(QDate(2026, 7, 24))
-    sender_index = issue_sender.findData("P01")
-    assert sender_index >= 0, "發文: 找不到 P01"
-    issue_sender.setCurrentIndex(sender_index)
-    qtbot.mouseClick(issue_button, Qt.LeftButton)
-    issued = fetch_reward(reward_db, doc_id)
-    assert issued == (
-        QDate.currentDate().toString("yyyy-MM-dd"),
-        "2026-07-24", "P01", "更新後事由", "王小明,名單外甲",
-    ), "發文: DB 日期、人員、事由或受獎人不符"
-    assert issue_table.rowCount() == 0, "發文: 已發文列不應保留"
-    assert pending_set == set(), "發文: pending 應清空"
-    assert pending_banner.isHidden(), "發文: banner 應隱藏"
 
 
 def test_link_cursor_filter_ignores_deleted_table(qapp):

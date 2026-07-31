@@ -213,7 +213,8 @@ class TestReportCreateDate(unittest.TestCase):
 class TestSeedDefaults(unittest.TestCase):
     """新建資料庫須以各類型 key 預設送文者模式。"""
 
-    def test_seed_sets_all_three_to_sender_mode(self):
+    def test_seed_sets_migrated_kinds_to_sender_mode(self):
+        """crim／gen／ticket 三把 key 有播種（它們有舊全域 key 要覆蓋）。"""
         from lib.db_schema import applySchema
         from lib.db_seed import seedFreshDb
         from lib.db_utils import REPORT_MODE_KEYS
@@ -221,12 +222,34 @@ class TestSeedDefaults(unittest.TestCase):
         applySchema(conn)
         seedFreshDb(conn)
         conn.commit()
-        for key in REPORT_MODE_KEYS.values():
+        for kind in ("crim", "gen", "ticket"):
+            key = REPORT_MODE_KEYS[kind]
             row = conn.execute(
                 "SELECT value FROM App_Settings WHERE key=?", (key,)).fetchone()
             self.assertIsNotNone(row, f"{key} 未播種")
             self.assertEqual(row[0], "0", f"{key} 預設不是送文者模式")
         conn.close()
+
+    def test_seed_leaves_reward_key_absent_and_defaults_to_sender_mode(self):
+        """reward 不吃舊全域 key，故不需播種；key 不存在即送文者模式。"""
+        import tempfile
+        from lib.db_schema import applySchema
+        from lib.db_seed import seedFreshDb
+        from lib.db_utils import REPORT_MODE_KEYS, isSelfServiceMode
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, "seed.db")
+        conn = sqlite3.connect(path)
+        applySchema(conn)
+        seedFreshDb(conn)
+        conn.commit()
+        row = conn.execute(
+            "SELECT value FROM App_Settings WHERE key=?",
+            (REPORT_MODE_KEYS["reward"],)).fetchone()
+        conn.close()
+        self.assertIsNone(row)
+        self.assertFalse(isSelfServiceMode(path, "reward"))
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
 
     def test_seed_does_not_write_legacy_key(self):
         from lib.db_schema import applySchema
@@ -342,7 +365,31 @@ class TestPerKindMode(unittest.TestCase):
     def test_unknown_kind_is_sender_mode(self):
         from lib.db_utils import isSelfServiceMode
         self.assertFalse(isSelfServiceMode(
-            self._db({"report_input_mode": "1"}), "reward"))
+            self._db({"report_input_mode": "1"}), "assignment"))
+
+    def test_reward_never_uses_legacy_global_fallback(self):
+        """舊庫殘留 report_input_mode=1 不得讓敘獎莫名變自助取號。
+
+        reward 是後來才掛回陳報模式的流程，只認自己的 report_mode_reward。
+        """
+        from lib.db_utils import isSelfServiceMode, LEGACY_MODE_FALLBACK_KINDS
+        self.assertNotIn("reward", LEGACY_MODE_FALLBACK_KINDS)
+        legacy_only = self._db({"report_input_mode": "1"})
+        self.assertFalse(isSelfServiceMode(legacy_only, "reward"))
+        # 其餘三種仍保留歷史相容回退
+        for kind in LEGACY_MODE_FALLBACK_KINDS:
+            self.assertTrue(isSelfServiceMode(legacy_only, kind))
+        # 明寫自己的 key 才生效
+        self.assertTrue(isSelfServiceMode(
+            self._db({"report_mode_reward": "1"}), "reward"))
+        self.assertFalse(isSelfServiceMode(
+            self._db({"report_input_mode": "1", "report_mode_reward": "0"}),
+            "reward"))
+
+    def test_any_self_service_ignores_legacy_key_for_reward_only_db(self):
+        """只有敘獎設自助時 anySelfServiceMode 為真；只有舊 key 時 reward 不算。"""
+        from lib.db_utils import anySelfServiceMode
+        self.assertTrue(anySelfServiceMode(self._db({"report_mode_reward": "1"})))
 
     def test_kind_is_required(self):
         from lib.db_utils import isSelfServiceMode
@@ -475,7 +522,7 @@ class TestArchiveQueryExcludesUnissued(unittest.TestCase):
 
 
 class TestSettleDocumentTypes(unittest.TestCase):
-    """結算發文處理刑案／一般陳報／罰單；敘獎改由獨立發文頁處理。"""
+    """結算發文處理刑案／一般陳報／敘獎／罰單四種型態。"""
 
     def setUp(self):
         import tempfile
@@ -498,12 +545,42 @@ class TestSettleDocumentTypes(unittest.TestCase):
         import shutil
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    def test_settle_registry_and_counts_exclude_reward(self):
+    def test_settle_registry_includes_reward(self):
         from ui_utils.settle_dialog import SETTLE_META, count_unissued
         self.assertEqual(
-            [meta["key"] for meta in SETTLE_META], ["crim", "gen", "ticket"])
+            [meta["key"] for meta in SETTLE_META],
+            ["crim", "gen", "reward", "ticket"])
+        # setUp 塞了一筆未發文敘獎（register_date=''），必須被算進去
         counts = count_unissued(self.path)
-        self.assertEqual(counts, {"crim": 0, "gen": 0, "ticket": 0})
+        self.assertEqual(
+            counts, {"crim": 0, "gen": 0, "reward": 1, "ticket": 0})
+
+    def test_settle_updates_reward_and_skips_already_issued(self):
+        """敘獎結算：未發文補值成功；已發文／已軟刪除的列 rowcount=0 自然跳過。"""
+        from lib.db_utils import getConn
+        from ui_utils.settle_dialog import settle_selected
+        conn = getConn(self.path)
+        try:
+            conn.execute(
+                "INSERT INTO Document_Reward"
+                "(doc_id,create_date,register_date,sender_id,reason,recipients) "
+                "VALUES ('2','2026-07-01','2026-07-02','P001','已發文','王承辦')")
+            conn.execute(
+                "INSERT INTO Document_Reward"
+                "(doc_id,create_date,register_date,sender_id,reason,recipients) "
+                "VALUES ('3',NULL,NULL,NULL,NULL,NULL)")
+            conn.commit()
+            settled = settle_selected(
+                conn, {"reward": ["1", "2", "3"]}, "2026-07-31", "P001")
+            conn.commit()
+            self.assertEqual(settled, 1)
+            rows = dict(conn.execute(
+                "SELECT doc_id, register_date FROM Document_Reward").fetchall())
+        finally:
+            conn.close()
+        self.assertEqual(rows["1"], "2026-07-31")   # 未發文 → 補上
+        self.assertEqual(rows["2"], "2026-07-02")   # 已發文 → 不動
+        self.assertIsNone(rows["3"])                # 軟刪除哨兵 → 不復活
 
 
 class TestUnissuedCountQueries(unittest.TestCase):
@@ -541,6 +618,13 @@ class TestUnissuedCountQueries(unittest.TestCase):
                 ('T-UNISSUED', '2026-07-27', '', 'P001', 'TICKET01'),
                 ('T-ISSUED', '2026-07-27', '2026-07-27', 'P001', 'TICKET02'),
                 ('T-DELETED', NULL, NULL, NULL, NULL);
+
+            INSERT INTO Document_Reward
+                (doc_id, create_date, register_date, sender_id, reason, recipients)
+            VALUES
+                ('R-UNISSUED', '2026-07-27', '', NULL, '待發文', '甲'),
+                ('R-ISSUED', '2026-07-27', '2026-07-27', 'P001', '已發文', '乙'),
+                ('R-DELETED', NULL, NULL, NULL, NULL, NULL);
         """)
         # 實務資料可能因舊資料／外鍵資料清理留下這兩種 issuer；計數不可因
         # 顯示名稱的 JOIN 而遺漏它們。
@@ -569,7 +653,7 @@ class TestUnissuedCountQueries(unittest.TestCase):
         """改回以 load_unissued 取長度或漏掉主表條件時必須失敗。"""
         from ui_utils.settle_dialog import count_unissued, load_unissued
 
-        expected = {"crim": 1, "gen": 1, "ticket": 3}
+        expected = {"crim": 1, "gen": 1, "reward": 1, "ticket": 3}
         with mock.patch("ui_utils.settle_dialog.load_unissued",
                         side_effect=AssertionError("count must use COUNT SQL")):
             self.assertEqual(count_unissued(self.path), expected)
@@ -925,15 +1009,24 @@ class TestInputModePanelSave(unittest.TestCase):
         self._auth._role = self._orig_role
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    def test_save_writes_all_three_keys_explicitly(self):
+    def test_save_writes_all_flow_keys_explicitly(self):
         from lib.db_utils import getSetting, REPORT_MODE_KEYS
         from ui_utils.settings_panels import InputModePanel
         panel = InputModePanel(self._path)
         panel._radios["ticket"][1].setChecked(True)
         self.assertTrue(panel._save())
         self.assertEqual(getSetting(self._path, REPORT_MODE_KEYS["ticket"], None), "1")
-        self.assertEqual(getSetting(self._path, REPORT_MODE_KEYS["crim"], None), "0")
-        self.assertEqual(getSetting(self._path, REPORT_MODE_KEYS["gen"], None), "0")
+        for kind in ("crim", "gen", "reward"):
+            self.assertEqual(
+                getSetting(self._path, REPORT_MODE_KEYS[kind], None), "0")
+
+    def test_panel_offers_reward_row(self):
+        """敘獎重新掛回陳報模式：面板必須有這一列可設定。"""
+        from ui_utils.settings_panels import InputModePanel
+        panel = InputModePanel(self._path)
+        self.assertIn("reward", panel._radios)
+        self.assertEqual([k for k, _ in InputModePanel._ROWS],
+                         ["crim", "gen", "reward", "ticket"])
 
     def test_save_audits_old_and_new_value(self):
         from ui_utils.settings_panels import InputModePanel

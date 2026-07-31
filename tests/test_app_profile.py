@@ -11,7 +11,7 @@ from lib.app_profile import (
 
 FULL_TAB_KEYS = (
     "assignment_issue", "assignment_receive", "report", "reward",
-    "reward_issue", "ticket", "print", "browse", "archive",
+    "ticket", "print", "browse", "archive",
     "settings", "audit",
 )
 
@@ -31,7 +31,7 @@ def test_entry_profile_is_strict_allowlist():
     assert ENTRY_PROFILE.settings_pages == ("personnel", "system")
     assert ENTRY_PROFILE.system_panels == ("idle", "input_lock", "input_mode")
     assert ENTRY_PROFILE.input_lock_flows == ("reward", "ticket")
-    assert ENTRY_PROFILE.input_mode_flows == ("ticket",)
+    assert ENTRY_PROFILE.input_mode_flows == ("reward", "ticket")
 
 
 def test_profiles_are_immutable():
@@ -71,11 +71,11 @@ def test_menu_labels_still_readable_after_hardening():
 def test_full_profile_visible_tabs_follow_role_matrix():
     assert visibleTabKeys("user", FULL_PROFILE) == (
         "assignment_issue", "assignment_receive", "report", "reward",
-        "reward_issue", "ticket", "print", "browse", "settings",
+        "ticket", "print", "browse", "settings",
     )
     assert visibleTabKeys("archive", FULL_PROFILE) == (
         "assignment_issue", "assignment_receive", "report", "reward",
-        "reward_issue", "ticket", "print", "browse", "archive", "settings",
+        "ticket", "print", "browse", "archive", "settings",
     )
     assert visibleTabKeys("admin", FULL_PROFILE) == FULL_PROFILE.tab_keys
 
@@ -91,7 +91,20 @@ def test_unknown_role_uses_least_privileged_visibility():
     )
 
 
-def test_general_user_keeps_both_issue_tabs_and_settings():
+def test_general_user_keeps_issue_tab_and_settings():
     visible = set(visibleTabKeys("user", FULL_PROFILE))
-    assert {"assignment_issue", "reward_issue", "settings"} <= visible
+    assert {"assignment_issue", "reward", "settings"} <= visible
     assert {"archive", "audit"}.isdisjoint(visible)
+
+
+def test_reward_issue_tab_is_fully_removed():
+    """敘獎發文頁已整頁移除，profile 各清單都不得再出現。"""
+    for profile in (FULL_PROFILE, ENTRY_PROFILE):
+        assert "reward_issue" not in profile.tab_keys
+        assert "reward_issue" not in profile.menu_keys
+        assert "reward_issue" not in profile.menu_labels
+        assert "reward_issue" not in profile.input_lock_flows
+
+
+def test_reward_joins_report_mode_flows():
+    assert FULL_PROFILE.input_mode_flows == ("crim", "gen", "reward", "ticket")

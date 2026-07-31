@@ -36,7 +36,6 @@ from ui_utils import (
     TicketEditDialog, attachStickyScroll, confirmBox, loadUi,
     makeDeleteBtn, msgWarning, refreshFilterCombo, reportError,
     setDocIdLinkCell, setupFilterCombo, setupPreviewTable,
-    sort_personnel_by_id_counts,
 )
 from lib.archive_text import _trimName
 
@@ -230,32 +229,15 @@ class TabTicket(BaseTab, InputLockMixin):
         self.ticket_sender_hint.setVisible(self_service)
 
     # ── 人員選擇 ────────────────────────────────────────────
-    def _candidateCounts(self):
-        """各開立人員在有效罰單中的出現次數（供候選清單排序，常用者在前）。
-
-        以 ``issuer_id`` 統計、不用 ``issuer_name``：View 的姓名是未去後綴
-        原值，與 `self._personnel` 的去後綴姓名不同命名空間，用姓名當 key
-        會查不到、排序退化成 no-op（審查實測過的雷）。
-        """
-        conn = self._getConn()
-        try:
-            rows = conn.execute(
-                "SELECT issuer_id FROM Document_Ticket_Full "
-                f"WHERE {TICKET_ACTIVE_SQL}").fetchall()
-        finally:
-            conn.close()
-        counts = {}
-        for (staff_id,) in rows:
-            if staff_id:
-                counts[staff_id] = counts.get(staff_id, 0) + 1
-        return counts
-
     def _rebuildCandidates(self):
-        """依使用次數＋人員既有順序重排候選清單（依 staff_id 統計）。"""
-        ordered = sort_personnel_by_id_counts(self._personnel,
-                                              self._candidateCounts())
+        """候選人員清單：一律照人員清單（`Ref_Personnel` 的 sort_order）排。
+
+        ⚠️ 不再依開立次數重排（維護者要求改回資料庫順序）：清單順序只跟設定頁
+        的人員排序走，登錄／刪除罰單都不會讓名條跳位，也省掉每次重建時的全表
+        統計查詢。
+        """
         self.ticket_candidates_list.clear()
-        for staff_id, name, _sort in ordered:
+        for staff_id, name, _sort in self._personnel:
             if not name:
                 continue
             item = QListWidgetItem(name)
@@ -408,8 +390,6 @@ class TabTicket(BaseTab, InputLockMixin):
         """以 DB 為準重建本次登錄預覽（失效列自動移除，比照敘獎登錄）。"""
         self.ticket_table.setRowCount(0)
         if not self._session_doc_ids:
-            # 預覽清空，但候選順序仍要依 DB 重算（剛切入分頁時 session 為空）
-            self._rebuildCandidates()
             return
         marks = ",".join("?" for _ in self._session_doc_ids)
         conn = self._getConn()
@@ -425,7 +405,6 @@ class TabTicket(BaseTab, InputLockMixin):
         self._session_doc_ids = [d for d in self._session_doc_ids if d in by_id]
         for doc_id in self._session_doc_ids:
             self._appendPreview(by_id[doc_id])
-        self._rebuildCandidates()
 
     def _appendPreview(self, row):
         doc_id, create_date, register_date, ticket_no, issuer_name = row

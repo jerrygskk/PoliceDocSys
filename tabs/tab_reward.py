@@ -1,23 +1,26 @@
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QLineEdit, QListWidget, QPushButton,
+    QComboBox, QDateEdit, QLabel, QLineEdit, QListWidget, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
 from lib.auth_manager import AuthManager
 from lib.base_tab import BaseTab, InputLockMixin
 from lib.db_utils import (
-    REWARD_ACTIVE_SQL, getResourcePath, isInputLocked, loadActivePersonnel,
-    nextDocId, softDeleteDoc,
+    REWARD_ACTIVE_SQL, getResourcePath, isInputLocked, isSelfServiceMode,
+    loadActivePersonnel, nextDocId, softDeleteDoc,
 )
 from ui_utils import (
     RecipientCombo, RewardEditDialog, attachStickyScroll, confirmBox,
-    count_recipient_names, loadUi, makeDeleteBtn, msgWarning,
-    parse_recipient_names, refreshRecipientComboItems, reportError,
-    setDocIdLinkCell, setupPreviewTable, setupRecipientCombo,
-    sort_personnel_by_counts,
+    loadUi, makeDeleteBtn, msgWarning, parse_recipient_names,
+    refreshFilterCombo, refreshRecipientComboItems, reportError,
+    setDocIdLinkCell, setupDateEditToToday, setupFilterCombo,
+    setupPreviewTable, setupRecipientCombo,
 )
+
+
+_SELF_SERVICE_HINT = "自助取號模式：發文日期與發文人員免填"
 
 
 class TabReward(BaseTab, InputLockMixin):
@@ -27,7 +30,6 @@ class TabReward(BaseTab, InputLockMixin):
         super().__init__(tab_widget, db_path)
         self._session_doc_ids = []
         self.reward_data_dirty = False
-        self._name_counts = {}   # {完整姓名: 出現次數}；記憶體維護，免每次全表 SELECT
 
     def setup(self, tab_index):
         tab = self.tab_widget.widget(tab_index)
@@ -41,13 +43,20 @@ class TabReward(BaseTab, InputLockMixin):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(inner)
         self._tab_index = tab_index
+        self.reward_date = inner.findChild(QDateEdit, "reward_date")
+        self.reward_sender = inner.findChild(QComboBox, "reward_sender")
+        self.reward_sender_hint = inner.findChild(QLabel, "reward_sender_hint")
         self.reward_reason = inner.findChild(QLineEdit, "reward_reason")
         self.reward_recipients = inner.findChild(RecipientCombo, "reward_recipients")
         self.reward_personnel_list = inner.findChild(QListWidget, "reward_personnel_list")
         self.reward_table = inner.findChild(QTableWidget, "reward_tableWidget")
         self.btn_submit = inner.findChild(QPushButton, "btn_reward_submit")
         self.btn_clear = inner.findChild(QPushButton, "btn_reward_clear")
+        self.reward_date.setDate(QDate.currentDate())
+        setupDateEditToToday(self.reward_date)
         self._personnel, self._personnel_alias_map = loadActivePersonnel(self.db_path)
+        setupFilterCombo(self.reward_sender, self._senderChoices(),
+                         alias_map=self._personnel_alias_map)
         # 敘獎人員：可編輯下拉（比照修改彈窗；下拉選取＝附加姓名，打字有 completer）。
         setupRecipientCombo(self.reward_recipients, self._personnel,
                             alias_map=self._personnel_alias_map)
@@ -55,7 +64,6 @@ class TabReward(BaseTab, InputLockMixin):
         if le is not None:
             le.setPlaceholderText("請輸入或點選人員")
         self._setup_table()
-        self._load_counts()
         self._rebuild_personnel_list()
         self.btn_submit.clicked.connect(self._submit)
         self.btn_clear.clicked.connect(self._form_clear)
@@ -72,6 +80,8 @@ class TabReward(BaseTab, InputLockMixin):
             tab_index,
             lock_kind="reward",
             lock_widgets=[
+                self.reward_date,
+                self.reward_sender,
                 self.reward_reason,
                 self.reward_recipients,
                 self.reward_personnel_list,
@@ -81,6 +91,50 @@ class TabReward(BaseTab, InputLockMixin):
             clear_tables=[self.reward_table],
         )
         self.reward_reason.setFocus()
+        self._applySelfServiceMode()
+
+    def _senderChoices(self):
+        """把 loadActivePersonnel 的 (staff_id, name, sort_order) 三元組轉成
+        setupFilterCombo 需要的 (id, name) 二元組（姓名已去後綴）。"""
+        return [(sid, name) for sid, name, _ in self._personnel]
+
+    def _applyInputLock(self):
+        """覆寫：先套唯讀設定鎖，再疊加自助取號模式的欄位反灰。
+        否則自助模式下該反灰的兩欄會被唯讀鎖解除時一併解鎖回可用
+        （比照 tab_report／tab_ticket）。"""
+        super()._applyInputLock()
+        self._applySelfServiceMode()
+
+    def _applySelfServiceMode(self):
+        """自助取號模式：發文日期與發文人員兩欄一起反灰，改由結算時自動填入；
+        切回送文者模式清哨兵並還原今天（照 tab_report._applySelfServiceMode 精神）。
+
+        提示以可見 QLabel（`reward_sender_hint`）呈現、比照罰單登錄頁：tooltip
+        在深色模式整塊黑、也要滑過才看得到（PITFALLS QSS-7）。
+
+        日期用 specialValueText 哨兵顯示空白：僅在反灰（不可互動）狀態下，無鍵盤／
+        滑鼠路徑，不踩 QDateEdit 可編輯空白欄的雷；widgets.setupDateEditToToday
+        已對此哨兵放行。送出值與此無關（自助模式 _submit 一律帶 register_date=''、
+        sender_id NULL）。"""
+        if not getattr(self, "reward_date", None):
+            return
+        is_self = isSelfServiceMode(self.db_path, "reward")
+        tip = _SELF_SERVICE_HINT if is_self else ""
+        self.reward_date.setToolTip(tip)
+        if getattr(self, "reward_sender", None):
+            self.reward_sender.setToolTip(tip)
+            if is_self:
+                self.reward_sender.setEnabled(False)
+        if getattr(self, "reward_sender_hint", None):
+            self.reward_sender_hint.setVisible(is_self)
+        if is_self:
+            self.reward_date.setEnabled(False)
+            self.reward_date.setSpecialValueText(" ")
+            self.reward_date.setDate(self.reward_date.minimumDate())
+        elif self.reward_date.specialValueText():
+            # 從自助切回送文者模式：清哨兵、還原今天（僅切換當下做一次）
+            self.reward_date.setSpecialValueText("")
+            self.reward_date.setDate(QDate.currentDate())
 
     def _setup_table(self):
         setupPreviewTable(
@@ -119,13 +173,14 @@ class TabReward(BaseTab, InputLockMixin):
             self.reward_recipients._recipient_controller.update_personnel(
                 self._personnel, alias_map=self._personnel_alias_map)
             refreshRecipientComboItems(self.reward_recipients, self._personnel)
+            refreshFilterCombo(self.reward_sender, self._senderChoices(),
+                               alias_map=self._personnel_alias_map)
             self._ref_changed = False
         if data_dirty:
             self._refresh_session_rows()
             self.reward_data_dirty = False
-        if ref_changed or data_dirty:
-            # 人員改名／敘獎資料異動皆可能改變名條計數或姓名 → 重載一次計數。
-            self._load_counts()
+        if ref_changed:
+            # 人員清單本身變了（改名／停用／排序）才需要重建候選名條。
             self._rebuild_personnel_list()
         # 切回本頁一律重讀唯讀設定並重套（唯讀狀態可能在他頁被改）。
         self._applyInputLock()
@@ -135,9 +190,9 @@ class TabReward(BaseTab, InputLockMixin):
 
         基底 `InputLockMixin._onRoleClearList` 只把預覽表 widget 清成 0 列、
         不動 `self._session_doc_ids`。本頁 `on_activated` 的 dirty-flag 守衛
-        只是「掩蓋」而非防線：`reward_data_dirty` 會被敘獎發文頁
-        （`tab_reward_issue.handleIssue`）無條件設為 True，而敘獎發文頁不設
-        角色 gate、一般使用者走得到；旗標一開，切回本頁就會
+        只是「掩蓋」而非防線：`reward_data_dirty` 會被其他不設角色 gate 的路徑
+        （如列印頁結算發文、瀏覽頁還原）設為 True，一般使用者走得到；
+        旗標一開，切回本頁就會
         `_refresh_session_rows()` 依殘留的 `_session_doc_ids` 把整份清單從 DB
         重建回來——降權後的一般使用者因此拿到「編輯（`_onEditRow`）／刪除
         （`_deleteByDocId`）管理身分建立之敘獎」的入口，而同一筆資料在資料庫
@@ -150,33 +205,17 @@ class TabReward(BaseTab, InputLockMixin):
             return
         self._session_doc_ids = []
 
-    def _load_counts(self):
-        """全表載入一次名條計數到 self._name_counts（開機／旗標刷新時呼叫）。"""
-        conn = self._getConn()
-        try:
-            texts = [r[0] for r in conn.execute(
-                f"SELECT recipients FROM Document_Reward WHERE {REWARD_ACTIVE_SQL}")]
-        finally:
-            conn.close()
-        self._name_counts = count_recipient_names(texts)
-
     def _rebuild_personnel_list(self):
-        """依記憶體中的 self._name_counts 就地重排名條清單（不查資料庫）。"""
-        ordered = sort_personnel_by_counts(self._personnel, self._name_counts)
+        """候選人員名條：一律照人員清單（`Ref_Personnel` 的 sort_order）排。
+
+        ⚠️ 不再依歷來敘獎次數重排（維護者要求改回資料庫順序）：清單順序只跟
+        設定頁的人員排序走，敘獎登錄／刪除都不會讓名條跳位。
+        """
         self.reward_personnel_list.clear()
-        for row in ordered:
+        for row in self._personnel:
             name = row[1]
             if name:
                 self.reward_personnel_list.addItem(name)
-
-    def _bump_counts(self, names, delta):
-        """對指定完整姓名清單的名條計數增減 delta（送出 +1／刪除 -1）。"""
-        for name in names:
-            new = self._name_counts.get(name, 0) + delta
-            if new > 0:
-                self._name_counts[name] = new
-            else:
-                self._name_counts.pop(name, None)
 
     def _form_clear(self):
         self.reward_reason.clear()
@@ -189,6 +228,17 @@ class TabReward(BaseTab, InputLockMixin):
                 and isInputLocked(self.db_path, "reward")):
             msgWarning("目前為唯讀", "此年度的敘獎登錄已鎖定，無法新增資料。")
             return
+        # 自助取號模式：發文日期留空哨兵（''）、發文人員 NULL，事後由列印頁結算
+        # 補發文日期與送文者；送文者模式則兩者當下填入（發文人員必填）。
+        # ⚠️ 登錄日期 create_date 與模式無關，兩模式一律帶今天。
+        is_self = isSelfServiceMode(self.db_path, "reward")
+        if is_self:
+            # 自助模式一律送空值：反灰欄可能有殘留值，此處不得讀取。
+            register_date = ""
+            sender_id = None
+        else:
+            register_date = self.reward_date.date().toString("yyyy-MM-dd")
+            sender_id = self.reward_sender.currentData() if self.reward_sender else None
         create_date = QDate.currentDate().toString("yyyy-MM-dd")
         reason = self.reward_reason.text().strip()
         names = parse_recipient_names(self.reward_recipients.currentText())
@@ -200,6 +250,10 @@ class TabReward(BaseTab, InputLockMixin):
         if missing:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(missing)}")
             return
+        # 發文人員必填（僅送文者模式；自助模式由結算補填），比照 tab_dispatch。
+        if not is_self and not sender_id:
+            msgWarning("欄位未填", "請選擇發文人員。")
+            return
         recipients = ",".join(names)
         conn = None
         try:
@@ -207,7 +261,8 @@ class TabReward(BaseTab, InputLockMixin):
             doc_id = nextDocId(conn, "Document_Reward")
             conn.execute(
                 "INSERT INTO Document_Reward(doc_id,create_date,register_date,sender_id,reason,recipients) "
-                "VALUES(?,?,?,?,?,?)", (doc_id, create_date, "", None, reason, recipients))
+                "VALUES(?,?,?,?,?,?)",
+                (doc_id, create_date, register_date, sender_id, reason, recipients))
             conn.commit()
         except Exception as exc:
             reportError("寫入失敗", exc)
@@ -216,9 +271,7 @@ class TabReward(BaseTab, InputLockMixin):
             if conn:
                 conn.close()
         self._session_doc_ids.append(doc_id)
-        self._append_preview(doc_id, "", reason, recipients)
-        self._bump_counts(names, +1)
-        self._rebuild_personnel_list()
+        self._append_preview(doc_id, register_date, reason, recipients)
         self._flag_browse_dirty()
         self._form_clear()
 
@@ -275,16 +328,11 @@ class TabReward(BaseTab, InputLockMixin):
         dlg = RewardEditDialog(self.db_path, doc_id, self.reward_table, source="entry")
         updated = dlg.exec() and dlg.get_updated()
         if getattr(dlg, "_row_missing", False):
-            # 併發刪除：該列已不存在，重整預覽移除失效列並同步名條計數。
+            # 併發刪除：該列已不存在，重整預覽移除失效列。
             self._refresh_session_rows()
-            self._load_counts()
-            self._rebuild_personnel_list()
             return
         if updated:
-            # 編輯後人員可能改變 → 簡單重載一次計數（編輯較少見，可接受）。
             self._refresh_session_rows()
-            self._load_counts()
-            self._rebuild_personnel_list()
             self._flag_browse_dirty()
 
     def _flag_browse_dirty(self):
@@ -293,8 +341,6 @@ class TabReward(BaseTab, InputLockMixin):
 
     def _deleteByDocId(self, doc_id):
         row = self._row_for_doc_id(doc_id)
-        recipients = (self.reward_table.item(row, 4).text()
-                      if row >= 0 and self.reward_table.item(row, 4) else "")
         if not confirmBox(
                 "確認刪除",
                 "刪除後，本筆敘獎登錄及文號將被廢棄不再使用，如有需要請重新輸入取號。",
@@ -317,6 +363,4 @@ class TabReward(BaseTab, InputLockMixin):
         self._session_doc_ids = [d for d in self._session_doc_ids if d != str(doc_id)]
         if row >= 0:
             self.reward_table.removeRow(row)
-        self._bump_counts(parse_recipient_names(recipients), -1)
-        self._rebuild_personnel_list()
         self._flag_browse_dirty()

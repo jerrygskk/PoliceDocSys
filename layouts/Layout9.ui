@@ -10,9 +10,11 @@
     <property name="topMargin"><number>12</number></property>
    <property name="rightMargin"><number>20</number></property>
    <property name="bottomMargin"><number>16</number></property>
+   <property name="spacing"><number>12</number></property>
    <property name="stretch"><string notr="true">1,0</string></property>
     <item>
      <layout class="QVBoxLayout" name="leftLayout">
+      <property name="spacing"><number>8</number></property>
       <property name="stretch"><string notr="true">0,1</string></property>
       <item>
        <layout class="QGridLayout" name="formLayout">
@@ -22,11 +24,30 @@
         <property name="topMargin"><number>0</number></property>
         <property name="rightMargin"><number>0</number></property>
         <property name="bottomMargin"><number>0</number></property>
-        <item row="0" column="2" rowspan="2"><spacer name="formStretch"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>0</width><height>0</height></size></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
-        <item row="0" column="0"><widget class="QLabel" name="label_reason"><property name="text"><string>敘獎事由</string></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
-        <item row="0" column="1"><widget class="QLineEdit" name="reward_reason"><property name="minimumSize"><size><width>220</width><height>36</height></size></property><property name="maximumSize"><size><width>16777215</width><height>36</height></size></property><property name="placeholderText"><string>請輸入敘獎事由</string></property></widget></item>
-        <item row="1" column="0"><widget class="QLabel" name="label_recipients"><property name="text"><string>敘獎人員</string></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
-        <item row="1" column="1"><widget class="RecipientCombo" name="reward_recipients"><property name="minimumSize"><size><width>220</width><height>36</height></size></property><property name="maximumSize"><size><width>16777215</width><height>36</height></size></property></widget></item>
+        <!-- 欄位骨架（與 Layout11.ui 罰單登錄對齊，改一邊要同步另一邊）：
+             col0 標籤 90×36 固定／col1 主欄位 220 固定／col2 次標籤或按鈕／
+             col3 次欄位 220 固定／col4 提示條（自帶右側 stretch，不撐滿）。
+             長輸入欄（事由／人員）跨 col1–col3，右緣＝「發文人員」下拉的右緣
+             （col1+col2+col3＋兩個 8px 間距＝546），罰單登錄的「罰單編號」以同一
+             數值固定寬度對齊。⚠️ 不放整排 Expanding spacer。 -->
+        <item row="0" column="0"><widget class="QLabel" name="label_date"><property name="text"><string>發文日期</string></property><property name="minimumSize"><size><width>90</width><height>36</height></size></property><property name="maximumSize"><size><width>90</width><height>36</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+        <item row="0" column="1"><widget class="QDateEdit" name="reward_date"><property name="minimumSize"><size><width>220</width><height>36</height></size></property><property name="maximumSize"><size><width>220</width><height>36</height></size></property><property name="calendarPopup"><bool>true</bool></property><property name="displayFormat"><string>yyyy-MM-dd</string></property></widget></item>
+        <item row="0" column="2"><widget class="QLabel" name="label_sender"><property name="text"><string>發文人員</string></property><property name="minimumSize"><size><width>90</width><height>36</height></size></property><property name="maximumSize"><size><width>90</width><height>36</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+        <item row="0" column="3"><widget class="QComboBox" name="reward_sender"><property name="minimumSize"><size><width>220</width><height>36</height></size></property><property name="maximumSize"><size><width>220</width><height>36</height></size></property><property name="editable"><bool>true</bool></property></widget></item>
+        <item row="0" column="4">
+         <layout class="QHBoxLayout" name="rewardHintRow">
+          <property name="leftMargin"><number>0</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item><widget class="QLabel" name="reward_sender_hint"><property name="text"><string>自助取號模式：發文日期與發文人員免填</string></property><property name="minimumSize"><size><width>0</width><height>36</height></size></property><property name="maximumSize"><size><width>16777215</width><height>36</height></size></property><property name="styleSheet"><string notr="true">background-color: #fdf3e0; color: #8a5c14; border: 1px solid #f0d9a8; border-radius: 7px; padding: 4px 12px;</string></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignVCenter</set></property></widget></item>
+          <item><spacer name="rewardHintStretch"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>0</width><height>0</height></size></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
+         </layout>
+        </item>
+        <item row="1" column="0"><widget class="QLabel" name="label_reason"><property name="text"><string>敘獎事由</string></property><property name="minimumSize"><size><width>90</width><height>36</height></size></property><property name="maximumSize"><size><width>90</width><height>36</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+        <item row="1" column="1" colspan="3"><widget class="QLineEdit" name="reward_reason"><property name="minimumSize"><size><width>220</width><height>36</height></size></property><property name="maximumSize"><size><width>16777215</width><height>36</height></size></property><property name="placeholderText"><string>請輸入敘獎事由</string></property></widget></item>
+        <item row="2" column="0"><widget class="QLabel" name="label_recipients"><property name="text"><string>敘獎人員</string></property><property name="minimumSize"><size><width>90</width><height>36</height></size></property><property name="maximumSize"><size><width>90</width><height>36</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+        <item row="2" column="1" colspan="3"><widget class="RecipientCombo" name="reward_recipients"><property name="minimumSize"><size><width>220</width><height>36</height></size></property><property name="maximumSize"><size><width>16777215</width><height>36</height></size></property></widget></item>
        </layout>
       </item>
       <item><widget class="QTableWidget" name="reward_tableWidget"><property name="columnCount"><number>5</number></property><column><property name="text"><string/></property></column><column><property name="text"><string>編號</string></property></column><column><property name="text"><string>發文日期</string></property></column><column><property name="text"><string>敘獎事由</string></property></column><column><property name="text"><string>敘獎人員</string></property></column></widget></item>

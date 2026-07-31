@@ -93,6 +93,7 @@ def mode_residue_warning(transitions, counts):
     labels = {
         "crim": ("件", "刑案陳報"),
         "gen": ("件", "一般陳報"),
+        "reward": ("件", "敘獎"),
         "ticket": ("張", "罰單"),
     }
     lines = []
@@ -589,7 +590,7 @@ _BAND_SS = """
 """
 
 
-# 唯讀設定（七種輸入流程；僅 admin；archive 整塊反灰；即時生效）
+# 唯讀設定（六種輸入流程；僅 admin；archive 整塊反灰；即時生效）
 # ══════════════════════════════════════════════════════════════════
 class InputLockPanel(_SettingsPanel):
     # (kind, 完整流程名)：供操作紀錄使用，不是勾選框上的字。
@@ -599,7 +600,6 @@ class InputLockPanel(_SettingsPanel):
         ("crim",     "刑案陳報"),
         ("gen",      "一般陳報"),
         ("reward",   "敘獎登錄"),
-        ("reward_issue", "敘獎發文"),
         ("ticket",   "罰單登錄"),
     ]
 
@@ -609,7 +609,7 @@ class InputLockPanel(_SettingsPanel):
     _GROUPS = [
         ("交辦單", [("dispatch", "發文"), ("task", "收文")]),
         ("陳報",   [("crim", "刑案"), ("gen", "一般")]),
-        ("敘獎",   [("reward", "登錄"), ("reward_issue", "發文")]),
+        ("敘獎",   [("reward", "登錄")]),
         ("罰單",   [("ticket", "登錄")]),
     ]
 
@@ -859,12 +859,13 @@ class BackupPanel(_SettingsPanel):
 # 輸入模式（自助取號／送文者輸入；僅 admin 可改；即時生效）
 # ══════════════════════════════════════════════════════════════════
 class InputModePanel(_SettingsPanel):
-    """陳報模式：刑案陳報／一般陳報／罰單登錄各自二選一。
+    """陳報模式：刑案陳報／一般陳報／敘獎登錄／罰單登錄各自二選一。
 
-    每列一組互斥 radio；兩種模式的意義說明置於三列之上，不逐列重複。
+    每列一組互斥 radio；兩種模式的意義說明置於各列之上，不逐列重複。
     """
 
-    _ROWS = (("crim", "刑案陳報"), ("gen", "一般陳報"), ("ticket", "罰單登錄"))
+    _ROWS = (("crim", "刑案陳報"), ("gen", "一般陳報"),
+             ("reward", "敘獎登錄"), ("ticket", "罰單登錄"))
 
     # 分類欄寬／每個模式欄寬：欄標題與各列 band 共用，改一處兩邊同步。
     # 欄寬要容得下最長的一行說明（不換行），面板本來就有整排橫向空間。
@@ -965,9 +966,8 @@ class InputModePanel(_SettingsPanel):
             self._radios[kind] = (rb_sender, rb_self)
 
         note = QLabel(
-            "交辦單與敘獎功能不適用：\n"
-            "交辦案成立前提要先完成交辦事項後主動回覆\n"
-            "敘獎由敘獎者自行填寫內容表示負責")
+            "交辦單功能不適用：\n"
+            "交辦案成立前提要先完成交辦事項後主動回覆")
         note.setStyleSheet(_HINT_SS)
         note.setWordWrap(True)
         note.setContentsMargins(0, 8, 0, 0)

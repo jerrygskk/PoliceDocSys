@@ -65,26 +65,31 @@ class TestRewardPrint(unittest.TestCase):
         self.assertAlmostEqual(sum(c["ratio"] for c in columns), 1.0)
 
     def test_unissued_counter_only_includes_settle_meta_types(self):
-        """文案依 SETTLE_META 逐型態列出（含罰單）；非 registry 型態（如 reward）
-        即便混進 count_unissued 回傳值也不計入，維持結算與發文頁的單一擴充點。"""
+        """文案依 SETTLE_META 逐型態列出（含敘獎與罰單）；非 registry 型態即便
+        混進 count_unissued 回傳值也不計入，維持結算的單一擴充點。"""
         fake = SimpleNamespace(db_path=self.db, lbl_unissued=QLabel())
         with patch("ui_utils.settle_dialog.count_unissued",
-                   return_value={"crim": 2, "gen": 3, "ticket": 1, "reward": 99}):
+                   return_value={"crim": 2, "gen": 3, "reward": 4, "ticket": 1,
+                                 "unknown": 99}):
             tab_print.TabPrint._refresh_unissued(fake)
         self.assertEqual(fake.lbl_unissued.text(),
-                         "未發文：6 筆（刑案 2／一般 3／罰單 1）")
+                         "未發文：10 筆（刑案 2／一般 3／敘獎 4／罰單 1）")
 
-    def test_settle_success_does_not_mark_reward_tab_dirty(self):
+    def test_settle_success_marks_reward_tab_dirty(self):
+        """結算已含敘獎：補完發文日期後，敘獎登錄頁的本次登錄清單必須重載。"""
         reward_tab = SimpleNamespace(reward_data_dirty=False)
         fake = SimpleNamespace(
             db_path=self.db, tab_widget=None, date_edit=None,
             _manager=SimpleNamespace(tabs={"reward": reward_tab}),
+            _flagRewardReload=tab_print.TabPrint._flagRewardReload,
+            _flagConvertReload=Mock(),
             _refresh_settle_group=Mock(), _on_generate=Mock())
+        fake._flagRewardReload = lambda: tab_print.TabPrint._flagRewardReload(fake)
         dialog = Mock()
         dialog.settled.return_value = True
         with patch("ui_utils.settle_dialog.SettleDialog", return_value=dialog):
             tab_print.TabPrint._on_settle(fake)
-        self.assertFalse(reward_tab.reward_data_dirty)
+        self.assertTrue(reward_tab.reward_data_dirty)
         fake._refresh_settle_group.assert_called_once_with()
         fake._on_generate.assert_called_once_with()
 

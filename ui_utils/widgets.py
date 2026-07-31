@@ -30,56 +30,6 @@ def format_recipient_names(names, trailing=False):
     return f"{text}, " if trailing and text else text
 
 
-def count_recipient_names(recipient_texts):
-    """統計每個完整姓名在敘獎紀錄字串中出現的次數，回傳 ``{name: count}``。"""
-    counts = {}
-    for text in recipient_texts or []:
-        for name in parse_recipient_names(text):
-            counts[name] = counts.get(name, 0) + 1
-    return counts
-
-
-def sort_personnel_by_counts(personnel, counts):
-    """依既有次數 dict 與人員既有順序排列在職人員（次數多者在前）。
-
-    ``personnel`` 每筆格式為 ``(staff_id, name, sort_order)``；
-    ``counts`` 為 :func:`count_recipient_names` 產生的 ``{name: count}``。
-    供敘獎頁以記憶體維護的次數就地重排，免每次全表 SELECT。
-    """
-    def _key(person):
-        staff_id, name, sort_order = person[:3]
-        return (-counts.get(name, 0), sort_order is None,
-                sort_order if sort_order is not None else 0, staff_id)
-
-    return sorted(personnel, key=_key)
-
-
-def sort_personnel_by_id_counts(personnel, id_counts):
-    """依 ``staff_id`` 次數與人員既有順序排列在職人員（次數多者在前）。
-
-    ``personnel`` 每筆 ``(staff_id, name, sort_order)``；``id_counts`` 為
-    ``{staff_id: count}``。罰單登錄的次數來自 ``Document_Ticket_Full`` 的
-    ``issuer_id``；姓名在 ``personnel`` 裡已去後綴，而 View 的 ``issuer_name``
-    是未去後綴原值，兩者字串不同命名空間，**必須以 staff_id 為 key**、不可
-    沿用 :func:`sort_personnel_by_counts` 的姓名 key（否則排序整個 no-op）。
-    """
-    def _key(person):
-        staff_id, _name, sort_order = person[:3]
-        return (-id_counts.get(staff_id, 0), sort_order is None,
-                sort_order if sort_order is not None else 0, staff_id)
-
-    return sorted(personnel, key=_key)
-
-
-def sort_reward_personnel(personnel, recipient_texts):
-    """依敘獎完整姓名出現次數及人員既有順序排列在職人員。
-
-    ``personnel`` 每筆格式為 ``(staff_id, name, sort_order)``。
-    """
-    return sort_personnel_by_counts(personnel,
-                                    count_recipient_names(recipient_texts))
-
-
 class RecipientLineEditController(QObject):
     """管理多人姓名 QLineEdit 的候選清單與附加行為。"""
 

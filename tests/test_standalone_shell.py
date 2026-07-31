@@ -71,10 +71,10 @@ def test_full_manager_keeps_all_current_tab_keys(qtbot, shell_db):
     manager = DocumentManager(profile=FULL_PROFILE)
     qtbot.addWidget(manager.window)
     assert tuple(manager.tab_index_by_key) == FULL_PROFILE.tab_keys
-    assert manager.tab_index("settings") == 9
-    assert manager.tab_index("browse") == 7
-    assert manager.tab_index("audit") == 10
-    assert manager.tab_widget.count() == 11
+    assert manager.tab_index("settings") == 8
+    assert manager.tab_index("browse") == 6
+    assert manager.tab_index("audit") == 9
+    assert manager.tab_widget.count() == 10
 
 
 def test_full_manager_initial_user_visibility_hides_archive_and_audit(
@@ -83,11 +83,11 @@ def test_full_manager_initial_user_visibility_hides_archive_and_audit(
     qtbot.addWidget(manager.window)
     assert _visible_tab_keys(manager) == (
         "assignment_issue", "assignment_receive", "report", "reward",
-        "reward_issue", "ticket", "print", "browse", "settings",
+        "ticket", "print", "browse", "settings",
     )
-    assert manager.tab_widget.count() == 11
-    assert manager.tab_index("settings") == 9
-    assert manager.tab_index("audit") == 10
+    assert manager.tab_widget.count() == 10
+    assert manager.tab_index("settings") == 8
+    assert manager.tab_index("audit") == 9
 
 
 def test_role_change_updates_visibility_without_reindexing(qtbot, shell_db):
@@ -103,7 +103,7 @@ def test_role_change_updates_visibility_without_reindexing(qtbot, shell_db):
     manager._applyTabVisibility("admin")
     assert _visible_tab_keys(manager) == FULL_PROFILE.tab_keys
     assert manager.tab_index_by_key == original_mapping
-    assert manager.tab_widget.count() == 11
+    assert manager.tab_widget.count() == 10
 
 
 def test_logout_from_admin_only_tab_falls_back_to_settings(qtbot, shell_db):
@@ -129,15 +129,15 @@ def test_logout_keeps_current_business_tab_when_still_visible(qtbot, shell_db):
     auth = AuthManager.instance()
     auth._role = "admin"
     manager._onRoleChanged("admin")
-    manager.requestTab("reward_issue")
+    manager.requestTab("reward")
     previous = manager.tab_index("browse")
     manager._prev_tab_index = previous
 
     auth._role = "user"
     manager._onRoleChanged("user")
 
-    assert manager.tab_widget.currentIndex() == manager.tab_index("reward_issue")
-    assert manager.tab_widget.isTabVisible(manager.tab_index("reward_issue"))
+    assert manager.tab_widget.currentIndex() == manager.tab_index("reward")
+    assert manager.tab_widget.isTabVisible(manager.tab_index("reward"))
     assert manager._prev_tab_index == previous
 
 
@@ -201,8 +201,8 @@ def test_request_visible_tab_opens_it_without_pending_login(qtbot, shell_db):
     manager = DocumentManager(profile=FULL_PROFILE)
     qtbot.addWidget(manager.window)
 
-    assert manager.requestTab("reward_issue") is True
-    assert manager.tab_widget.currentIndex() == manager.tab_index("reward_issue")
+    assert manager.requestTab("reward") is True
+    assert manager.tab_widget.currentIndex() == manager.tab_index("reward")
     assert manager._pending_tab_key is None
 
 
@@ -345,7 +345,7 @@ def test_entry_menu_has_exactly_four_visible_actions(qtbot):
     assert _visible_menu_keys(menu) == {"reward", "ticket", "browse", "settings"}
 
 
-def test_full_menu_still_shows_all_eleven_actions(qtbot):
+def test_full_menu_still_shows_all_ten_actions(qtbot):
     menu = MainMenu(
         profile=FULL_PROFILE,
         tab_index_by_key={key: idx for idx, key in enumerate(FULL_PROFILE.tab_keys)},
@@ -487,12 +487,12 @@ def test_run_application_activates_selected_startup_tab_exactly_once(
 
 
 def test_entry_manager_never_builds_full_only_tabs(qtbot, shell_db):
-    from tabs import TabRewardIssue, TabPrint, TabArchive
+    from tabs import TabDispatch, TabPrint, TabArchive
 
     manager = DocumentManager(profile=ENTRY_PROFILE)
     qtbot.addWidget(manager.window)
     tab_types = {type(tab) for tab in manager.tabs.values()}
-    assert TabRewardIssue not in tab_types
+    assert TabDispatch not in tab_types
     assert TabPrint not in tab_types
     assert TabArchive not in tab_types
 

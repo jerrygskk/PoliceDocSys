@@ -2,13 +2,14 @@
 settle_dialog.py — 自助取號模式「結算發文」彈窗
 
 功能：
-  - 單一表格列出所有「已取號、未發文」公文（刑案／一般），依 SETTLE_META
+  - 單一表格列出所有「已取號、未發文」公文（刑案／一般／敘獎／罰單），依 SETTLE_META
     順序分組，組內編號升冪；預設全勾，點整列切換勾選、取消勾選列整行灰掉
   - 類型 chip 過濾（互斥）＋關鍵字過濾（AND 疊加）；兩者只影響顯示、不動勾選
   - 全選核取方塊：三態顯示「顯示中列」全勾/部分/全不勾，點擊只勾/取消顯示中列
   - 底部即時計數（將結算 N 筆｜排除 m 筆）
   - 確認後同一 transaction 逐類別批次 UPDATE：刑案／一般補
-    report_date=選定發文日期+sender_id；任一步失敗則 rollback
+    report_date=選定發文日期+sender_id，敘獎／罰單補 register_date+sender_id；
+    任一步失敗則 rollback
   - 送文者僅在勾選中含「需送文者」型態時才必填
   - 開放擴充（open-closed）：日後新增類別只需再加一筆 SETTLE_META
 """
@@ -90,6 +91,27 @@ SETTLE_META = (
         "update": ("UPDATE Document_General SET report_date=?, sender_id=? "
                    "WHERE doc_id=? AND (report_date IS NULL OR report_date='') "
                    "AND subject IS NOT NULL AND subject != ''"),
+        "with_sender": True,
+    },
+    {
+        "key": "reward",
+        "label": "敘獎",
+        "color": "#0f6e56",
+        # 敘獎無承辦人欄（第二欄回空字串）；主旨欄放「事由：人員」。
+        # ⚠️ 未發文哨兵是空字串 register_date=''；NULL 是軟刪除哨兵，不可混用
+        #    （見 DEVELOPER §3 三態）。WHERE register_date='' 本身即並行防護：
+        #    他機已刪（NULL）／已發文（有值）時 rowcount=0，自然跳過。
+        "query": (
+            "SELECT doc_id, '', "
+            "       (COALESCE(reason,'') || '：' || COALESCE(recipients,'')) "
+            "FROM Document_Reward WHERE register_date='' "
+            "ORDER BY CAST(doc_id AS INTEGER)"
+        ),
+        "count_query": (
+            "SELECT COUNT(*) FROM Document_Reward WHERE register_date=''"
+        ),
+        "update": ("UPDATE Document_Reward SET register_date=?, sender_id=? "
+                   "WHERE doc_id=? AND register_date=''"),
         "with_sender": True,
     },
     {
@@ -331,7 +353,7 @@ class _CheckableHeader(QHeaderView):
 
 
 class _DocTable(QTableWidget):
-    """單一結算清單表格（刑案／一般混列，依 SETTLE_META 分組）。"""
+    """單一結算清單表格（刑案／一般／敘獎／罰單混列，依 SETTLE_META 分組）。"""
 
     HEADERS = ["", "類型", "編號", "承辦人", "主旨"]
     COL_CHK, COL_TYPE, COL_ID, COL_PROC, COL_SUBJ = 0, 1, 2, 3, 4

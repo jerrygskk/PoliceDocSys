@@ -50,6 +50,34 @@ class TestReportModeSwitch(unittest.TestCase):
         tab.setup(2)
         return tab
 
+    def test_right_column_does_not_shift_between_modes(self):
+        """切換刑案／一般時，右半部欄位不得左右位移（實機截圖比對過的回歸）。
+
+        一般模式會隱藏「報案人」那組（col7／col8），空出的寬度若沒被最右側
+        的 Expanding 欄吃掉，就會被 col3 標籤欄分走、整塊右半部往右跳。
+        ⚠️ 必須 show() 後再量，未顯示的 widget 量不到真實寬度（LAY-8）。
+        """
+        tab = self._make_tab()
+        self._tabs.resize(1400, 800)
+        self._tabs.show()
+        self._tabs.setCurrentIndex(2)
+        self._app.processEvents()
+
+        def snapshot():
+            self._app.processEvents()
+            return (tab.rpt_sender.x(), tab.rpt_sender.width())
+
+        tab.type_tabbar.setCurrentIndex(0)
+        crim = snapshot()
+        tab.type_tabbar.setCurrentIndex(1)
+        gen = snapshot()
+        tab.type_tabbar.setCurrentIndex(0)
+        crim_again = snapshot()
+
+        self.assertEqual(crim, gen, "切到一般模式後右半部位移了")
+        self.assertEqual(crim, crim_again, "切回刑案模式後右半部位移了")
+        self._tabs.hide()
+
     def test_crim_self_service_blanks_and_disables(self):
         tab = self._make_tab()
         tab.type_tabbar.setCurrentIndex(0)

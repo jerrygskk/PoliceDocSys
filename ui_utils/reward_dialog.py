@@ -91,7 +91,7 @@ class RewardEditDialog(_BaseEditDialog):
         form.addRow("登錄日期：", self.w_create_date)
         # 發文日期／發文人員屬「發文資訊」，僅資料庫瀏覽（管理者）可改狀態時才出現；
         # 敘獎登錄頁（entry）只可改事由與人員，故 entry 來源不建立這兩欄、儲存時
-        # 亦不觸碰 register_date/sender_id（發文一律走敘獎發文頁）。
+        # 亦不觸碰 register_date/sender_id（發文一律走登錄頁或列印頁結算）。
         personnel, alias_map = loadActivePersonnel(self.db_path)
         if self.source == "browse":
             # 發文日期：可空白（未發文＝''）又要能手打／挑月曆，故用 NullableDateEdit，

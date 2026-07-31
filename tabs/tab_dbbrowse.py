@@ -363,7 +363,7 @@ class TabDBBrowse(BaseTab):
         AuthManager.instance().role_changed.connect(self._onRolePerm)
 
     # 交辦單(task)、敘獎(reward)、罰單(ticket)：僅最高權限管理者可改，歸檔管理不可
-    # （走各自的收發文／敘獎發文／罰單登錄流程，不由歸檔管理在此改動）。
+    # （走各自的收發文／敘獎登錄／罰單登錄流程，不由歸檔管理在此改動）。
     # 刑案/一般(crim/gen)歸檔管理仍可。資料化來源：TABLE_META[key]["admin_only_edit"]
     # （task/reward 尚未搬遷到 meta，維持既有 tuple 亦一併判斷，避免遺漏）。
     _ADMIN_ONLY_EDIT_KEYS = ("task", "reward")

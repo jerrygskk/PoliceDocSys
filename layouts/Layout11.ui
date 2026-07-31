@@ -16,7 +16,7 @@
     <item>
      <layout class="QVBoxLayout" name="leftLayout">
       <property name="spacing"><number>8</number></property>
-      <property name="stretch"><string notr="true">0,0,1</string></property>
+      <property name="stretch"><string notr="true">0,1</string></property>
       <item>
        <layout class="QGridLayout" name="ticketFormLayout">
         <property name="horizontalSpacing"><number>8</number></property>
@@ -25,41 +25,68 @@
         <property name="topMargin"><number>0</number></property>
         <property name="rightMargin"><number>0</number></property>
         <property name="bottomMargin"><number>0</number></property>
+        <!-- 欄位骨架（與 Layout9.ui 敘獎登錄對齊，改一邊要同步另一邊）：
+             col0 標籤 90×36 固定／col1 主欄位 220 固定／col2 次標籤或按鈕／
+             col3 次欄位／col4 提示條（自帶右側 stretch，不撐滿）。
+             長輸入欄（罰單編號）跨 col1–col3 並固定 546 寬，對齊敘獎登錄
+             「發文人員」下拉的右緣（該頁 col1+col2+col3＋兩個 8px 間距）。
+             ⚠️ 本頁 col2 是 110 的清空鈕、col3 空著，欄寬推不出 546，故此處
+             直接寫死寬度；改任一頁的欄骨架都要回頭核對這個數值
+             （回歸測試 tests/test_ui_load.py 會比對兩頁右緣）。
+             ⚠️ 不放整排 Expanding spacer。 -->
         <!-- row0：發文人員（自助模式反灰但保留位置）＋可見提示標籤 -->
         <item row="0" column="0">
          <widget class="QLabel" name="lbl_ticket_sender">
           <property name="text"><string>發文人員</string></property>
           <property name="minimumSize"><size><width>90</width><height>36</height></size></property>
+          <property name="maximumSize"><size><width>90</width><height>36</height></size></property>
           <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
          </widget>
         </item>
         <item row="0" column="1">
          <widget class="QComboBox" name="ticket_sender">
           <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
-          <property name="maximumSize"><size><width>16777215</width><height>36</height></size></property>
+          <property name="maximumSize"><size><width>220</width><height>36</height></size></property>
           <property name="editable"><bool>true</bool></property>
          </widget>
         </item>
-        <item row="0" column="2" colspan="2">
-         <widget class="QLabel" name="ticket_sender_hint">
-          <property name="text"><string>自助取號模式：發文人員免填</string></property>
-          <property name="minimumSize"><size><width>0</width><height>36</height></size></property>
-          <property name="styleSheet"><string notr="true">background-color: #fdf3e0; color: #8a5c14; border: 1px solid #f0d9a8; border-radius: 7px; padding: 4px 12px;</string></property>
-          <property name="alignment"><set>Qt::AlignLeft|Qt::AlignVCenter</set></property>
-         </widget>
+        <item row="0" column="2" colspan="3">
+         <layout class="QHBoxLayout" name="ticketHintRow">
+          <property name="leftMargin"><number>0</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item>
+           <widget class="QLabel" name="ticket_sender_hint">
+            <property name="text"><string>自助取號模式：發文人員免填</string></property>
+            <property name="minimumSize"><size><width>0</width><height>36</height></size></property>
+            <property name="maximumSize"><size><width>16777215</width><height>36</height></size></property>
+            <property name="styleSheet"><string notr="true">background-color: #fdf3e0; color: #8a5c14; border: 1px solid #f0d9a8; border-radius: 7px; padding: 4px 12px;</string></property>
+            <property name="alignment"><set>Qt::AlignLeft|Qt::AlignVCenter</set></property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="ticketHintStretch">
+            <property name="orientation"><enum>Qt::Horizontal</enum></property>
+            <property name="sizeHint"><size><width>0</width><height>0</height></size></property>
+            <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+           </spacer>
+          </item>
+         </layout>
         </item>
         <!-- row1：開立人員（單一人員，不解析多人）＋緊接的清空鈕 -->
         <item row="1" column="0">
          <widget class="QLabel" name="lbl_ticket_issuer">
           <property name="text"><string>開立人員</string></property>
           <property name="minimumSize"><size><width>90</width><height>36</height></size></property>
+          <property name="maximumSize"><size><width>90</width><height>36</height></size></property>
           <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
          </widget>
         </item>
         <item row="1" column="1">
          <widget class="QComboBox" name="ticket_issuer">
           <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
-          <property name="maximumSize"><size><width>16777215</width><height>36</height></size></property>
+          <property name="maximumSize"><size><width>220</width><height>36</height></size></property>
           <property name="editable"><bool>true</bool></property>
          </widget>
         </item>
@@ -70,25 +97,19 @@
           <property name="text"><string>清空</string></property>
          </widget>
         </item>
-        <item row="1" column="3">
-         <spacer name="ticketFormSpacer">
-          <property name="orientation"><enum>Qt::Horizontal</enum></property>
-          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
-          <property name="sizeHint" stdset="0"><size><width>20</width><height>0</height></size></property>
-         </spacer>
-        </item>
         <!-- row2：罰單編號 -->
         <item row="2" column="0">
          <widget class="QLabel" name="lbl_ticket_no">
           <property name="text"><string>罰單編號</string></property>
           <property name="minimumSize"><size><width>90</width><height>36</height></size></property>
+          <property name="maximumSize"><size><width>90</width><height>36</height></size></property>
           <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
          </widget>
         </item>
-        <item row="2" column="1">
+        <item row="2" column="1" colspan="3">
          <widget class="QLineEdit" name="ticket_no">
-          <property name="minimumSize"><size><width>220</width><height>36</height></size></property>
-          <property name="maximumSize"><size><width>16777215</width><height>36</height></size></property>
+          <property name="minimumSize"><size><width>546</width><height>36</height></size></property>
+          <property name="maximumSize"><size><width>546</width><height>36</height></size></property>
           <property name="placeholderText"><string>請輸入罰單編號</string></property>
          </widget>
         </item>

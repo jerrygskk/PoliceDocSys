@@ -14,7 +14,7 @@ import importlib
 import sys
 
 __all__ = [
-    "TabDispatch", "TabReceive", "TabReport", "TabReward", "TabRewardIssue",
+    "TabDispatch", "TabReceive", "TabReport", "TabReward",
     "TabTicket", "TabPrint",
     "TabDBBrowse", "TabArchive", "TabSettings", "TabAudit",
 ]
@@ -25,7 +25,6 @@ _TAB_MODULES = {
     "TabReceive":     "tab_receive",
     "TabReport":      "tab_report",
     "TabReward":      "tab_reward",
-    "TabRewardIssue": "tab_reward_issue",
     "TabTicket":      "tab_ticket",
     "TabPrint":       "tab_print",
     "TabDBBrowse":    "tab_dbbrowse",

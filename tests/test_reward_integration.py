@@ -71,13 +71,12 @@ class RewardIntegrationTests(unittest.TestCase):
         from main import DocumentManager, MainMenu
 
         # TAB_CLASSES 語意已改為「key → (模組路徑, 類別名)」座標，不再是類別物件本身
-        # ——避免檔頭一次 import 全部 11 個分頁（見 tabs/__init__.py 延遲載入）。
+        # ——避免檔頭一次 import 全部 10 個分頁（見 tabs/__init__.py 延遲載入）。
         expected_tabs = {
             "assignment_issue": ("tabs.tab_dispatch", "TabDispatch"),
             "assignment_receive": ("tabs.tab_receive", "TabReceive"),
             "report": ("tabs.tab_report", "TabReport"),
             "reward": ("tabs.tab_reward", "TabReward"),
-            "reward_issue": ("tabs.tab_reward_issue", "TabRewardIssue"),
             "ticket": ("tabs.tab_ticket", "TabTicket"),
             "print": ("tabs.tab_print", "TabPrint"),
             "browse": ("tabs.tab_dbbrowse", "TabDBBrowse"),
@@ -85,16 +84,17 @@ class RewardIntegrationTests(unittest.TestCase):
             "settings": ("tabs.tab_settings", "TabSettings"),
             "audit": ("tabs.tab_audit", "TabAudit"),
         }
-        # 固定索引契約改以 FULL_PROFILE 驗證相同順序：完整版仍是同樣 11 個 Tab、同樣順序。
+        # 固定索引契約改以 FULL_PROFILE 驗證相同順序：完整版為 10 個 Tab、固定順序。
         self.assertEqual(DocumentManager.TAB_CLASSES, expected_tabs)
         self.assertEqual(tuple(DocumentManager.TAB_CLASSES), FULL_PROFILE.tab_keys)
         self.assertEqual(set(MainMenu.MENU_BUTTONS), set(FULL_PROFILE.menu_keys))
         self.assertEqual(MainMenu.MENU_BUTTONS["reward"], "btn_reward")
-        self.assertEqual(MainMenu.MENU_BUTTONS["reward_issue"], "btn_reward_issue")
         self.assertEqual(MainMenu.MENU_BUTTONS["ticket"], "btn_ticket")
         self.assertEqual(MainMenu.ICON_MAP["reward"], ":/menu/reward.svg")
-        self.assertEqual(MainMenu.ICON_MAP["reward_issue"], ":/menu/reward_issue.svg")
         self.assertEqual(MainMenu.ICON_MAP["ticket"], ":/menu/ticket.svg")
+        # 敘獎發文頁整頁移除：按鈕與圖示映射都不得殘留
+        self.assertNotIn("reward_issue", MainMenu.MENU_BUTTONS)
+        self.assertNotIn("reward_issue", MainMenu.ICON_MAP)
 
     def _menu_button_positions(self):
         menu = (ROOT / "layouts" / "main_menu.ui").read_text(encoding="utf-8")
@@ -108,19 +108,19 @@ class RewardIntegrationTests(unittest.TestCase):
         names = re.findall(r'<widget class="QWidget" name="(tab_[^"]+)"', layout)
         self.assertEqual(names, [
             "tab_dispatch", "tab_receive", "tab_report", "tab_reward",
-            "tab_reward_issue", "tab_ticket", "tab_print", "tab_dbbrowse",
+            "tab_ticket", "tab_print", "tab_dbbrowse",
             "tab_archive", "tab_settings", "tab_audit",
         ])
 
+        # 磚格位置由 MainMenu 依 menu_keys 重排（ceil(sqrt(n)) 欄），.ui 內的
+        # row/column 只是設計期擺放；此處只驗按鈕數量與不重複。
         positions = self._menu_button_positions()
-        self.assertEqual(len(positions), 11)
-        self.assertEqual(
-            {(row, col) for row, col, _ in positions},
-            {(0, c) for c in range(4)} | {(1, c) for c in range(4)} | {(2, c) for c in range(3)},
-        )
+        self.assertEqual(len(positions), 10)
+        self.assertEqual(len({name for _, _, name in positions}), 10)
 
         menu = (ROOT / "layouts" / "main_menu.ui").read_text(encoding="utf-8")
-        for name in ("btn_reward", "btn_reward_issue", "btn_ticket"):
+        self.assertNotIn('name="btn_reward_issue"', menu)
+        for name in ("btn_reward", "btn_ticket"):
             block = re.search(rf'<widget class="QToolButton" name="{name}">(.*?)</widget>', menu, re.S).group(1)
             self.assertNotIn('name="icon"', block)
 
@@ -145,13 +145,10 @@ class RewardIntegrationTests(unittest.TestCase):
             for fragment in fragments:
                 self.assertIn(fragment, svg)
 
-        ticket_svg = (ROOT / "res" / "buttons" / "menu_reward_issue.svg").read_text(
-            encoding="utf-8")
-        self.assertIn('width="512" height="512" viewBox="0 0 512 512"', ticket_svg)
-        self.assertIn('stroke="#4977b1"', ticket_svg)
-        self.assertIn('stroke-width="36"', ticket_svg)
-        self.assertIn('id="reward-glyph"', ticket_svg)
-        self.assertIn('id="outbound-arrow"', ticket_svg)
+        # 敘獎發文頁移除：圖檔與 qrc 別名都不得殘留
+        self.assertFalse((ROOT / "res" / "buttons" / "menu_reward_issue.svg").exists())
+        qrc = (ROOT / "res" / "resources.qrc").read_text(encoding="utf-8")
+        self.assertNotIn("menu_reward_issue.svg", qrc)
 
         for filename in ("menu_ticket.svg",):
             svg = (ROOT / "res" / "buttons" / filename).read_text(encoding="utf-8")
@@ -163,8 +160,7 @@ class RewardIntegrationTests(unittest.TestCase):
             self.assertIn('stroke-linejoin="round"', svg)
 
         from res import resources_rc  # noqa: F401
-        for path in (":/menu/reward.svg", ":/menu/reward_issue.svg", ":/tab/reward.svg",
-                     ":/menu/ticket.svg"):
+        for path in (":/menu/reward.svg", ":/tab/reward.svg", ":/menu/ticket.svg"):
             f = QFile(path)
             self.assertTrue(f.exists(), path)
             self.assertTrue(f.open(QFile.ReadOnly), path)
@@ -208,41 +204,28 @@ class RewardIntegrationTests(unittest.TestCase):
     def test_help_and_quickstart_indexes(self):
         from ui_utils.help_content import (HELP_PAGES, HELP_TIPS, HELP_TITLES,
                                            QUICKSTART, render_review_text)
-        self.assertEqual(set(HELP_TITLES), set(range(11)))
-        self.assertEqual(set(HELP_PAGES), set(range(11)))
-        self.assertEqual(set(HELP_TIPS), set(range(11)))
-        self.assertEqual(HELP_TITLES[4], "敘獎發文")
-        self.assertEqual(HELP_TITLES[5], "罰單登錄")
-        self.assertEqual(set(QUICKSTART), set(range(10)))
+        self.assertEqual(set(HELP_TITLES), set(range(10)))
+        self.assertEqual(set(HELP_PAGES), set(range(10)))
+        self.assertEqual(set(HELP_TIPS), set(range(10)))
+        self.assertEqual(HELP_TITLES[3], "敘獎登錄")
+        self.assertEqual(HELP_TITLES[4], "罰單登錄")
+        self.assertEqual(HELP_TITLES[5], "簽收單列印")
+        self.assertEqual(set(QUICKSTART), set(range(9)))
         source = (ROOT / "tools" / "gen_quickstart.py").read_text(encoding="utf-8")
         self.assertIn("PAGE1 = [0, 1, 2]", source)
-        self.assertIn("PAGE2 = [3, 4, 5, 6]", source)
-        self.assertIn("PAGE3 = [7, 8, 9]", source)
-        self.assertIn("十個分頁速查", source)
+        self.assertIn("PAGE2 = [3, 4, 5]", source)
+        self.assertIn("PAGE3 = [6, 7, 8]", source)
+        self.assertIn("九個分頁速查", source)
         reward_help = render_review_text(3)
-        issue_help = render_review_text(4)
-        ticket_help = render_review_text(5)
+        ticket_help = render_review_text(4)
         report_help = render_review_text(2)
-        print_help = render_review_text(6)
-        browse_help = render_review_text(7)
-        settings_help = render_review_text(9)
+        print_help = render_review_text(5)
+        browse_help = render_review_text(6)
+        settings_help = render_review_text(8)
         self.assertIn("登錄日期由系統自動填入今天", reward_help)
-        self.assertNotIn("選擇發文日期", reward_help)
-        self.assertNotIn("自助取號模式", reward_help)
-        self.assertIn("請由「敘獎發文」頁", reward_help)
-        self.assertIn("文號輸入框輸入編號", issue_help)
-        self.assertIn("Enter", issue_help)
-        self.assertIn("或按「輸入」", issue_help)
-        self.assertNotIn("加入清單", issue_help)
-        self.assertIn("輸入不存在的編號時，系統會提示找不到編號", issue_help)
-        self.assertIn("輸入已刪除的編號時，系統會提示已被刪除", issue_help)
-        self.assertIn("已發文", issue_help)
-        self.assertIn("覆蓋", issue_help)
-        self.assertIn("確認發文前已被其他電腦刪除或搶先發文", issue_help)
-        self.assertIn("已被他人發文的筆數", issue_help)
-        reward_issue_quickstart = "\n".join(QUICKSTART[4][1])
-        self.assertIn("或「輸入」", reward_issue_quickstart)
-        self.assertNotIn("加入清單", reward_issue_quickstart)
+        self.assertIn("自助取號模式", reward_help)
+        self.assertIn("送文者輸入模式", reward_help)
+        self.assertNotIn("敘獎發文", reward_help)
         # 模式名稱必須與設定頁 radio 的字面一致（使用者要照著去設定頁找選項），
         # 不可自創「發文者登錄模式」之類的同義詞。
         self.assertIn("送文者輸入模式", ticket_help)
@@ -253,31 +236,26 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertIn("罰單編號僅接受半形英文字母與數字", ticket_help)
         self.assertIn("不可還原", ticket_help)
         self.assertIn("文號（doc_id）直接作廢、不會再被使用；原罰單編號仍可重新登錄", ticket_help)
-        ticket_quickstart = "\n".join(QUICKSTART[5][1] + QUICKSTART[5][2])
+        ticket_quickstart = "\n".join(QUICKSTART[4][1] + QUICKSTART[4][2])
         self.assertIn("文號（doc_id）作廢不可再用，原罰單編號仍可重新登錄", ticket_quickstart)
         self.assertIn("本頁不設身分限制", ticket_help)
         self.assertIn("登錄日期＝取得文號日", report_help)
         self.assertIn("陳報日期＝實際發文日", report_help)
-        self.assertIn("未發文的刑案／一般／罰單案件", print_help)
+        self.assertIn("未發文的刑案／一般／敘獎／罰單案件", print_help)
         self.assertIn("結算發文只補上發文日期，不會變更登錄日期", print_help)
-        self.assertNotIn("未發文的刑案／一般／敘獎案件", print_help)
-        self.assertIn("三項皆為送文者輸入模式但仍有未發文殘留資料時", print_help)
-        self.assertIn("三項皆為送文者輸入模式但仍有未發文殘留資料時",
-                      QUICKSTART[6][2])
+        self.assertIn("四項皆為送文者輸入模式但仍有未發文殘留資料時", print_help)
+        self.assertIn("四項皆為送文者輸入模式但仍有未發文殘留資料時",
+                      QUICKSTART[5][2])
         self.assertEqual(set(HELP_TIPS[3]), {
             "btn_reward_submit", "btn_reward_clear", "reward_personnel_list",
         })
-        self.assertNotIn("日期", HELP_TIPS[3]["btn_reward_submit"])
         self.assertEqual(set(HELP_TIPS[4]), {
-            "btn_reward_input", "btn_reward_issue", "btn_reward_issue_clear",
-        })
-        self.assertEqual(set(HELP_TIPS[5]), {
             "ticket_add", "ticket_clear_issuer", "ticket_candidates_list",
         })
-        # 罰單登錄同受陳報模式影響（Task 5 起），說明不可再宣稱「只影響刑案與一般」
-        self.assertIn("自助取號模式影響刑案與一般陳報，以及罰單登錄", settings_help)
-        self.assertIn("敘獎登錄與敘獎發文不受陳報模式影響", settings_help)
-        self.assertNotIn("此模式同時涵蓋敘獎登錄", settings_help)
+        # 罰單與敘獎同受陳報模式影響，說明不可再宣稱「只影響刑案與一般」
+        self.assertIn(
+            "自助取號模式影響刑案與一般陳報，以及敘獎登錄與罰單登錄", settings_help)
+        self.assertNotIn("敘獎登錄與敘獎發文不受陳報模式影響", settings_help)
         self.assertNotIn("一併於結算時補齊", settings_help)
         self.assertIn("罰單簽收歸屬日一律依發文日期", settings_help)
         self.assertIn("與目前採送文者輸入模式或自助取號模式無關", settings_help)
@@ -295,16 +273,14 @@ class RewardIntegrationTests(unittest.TestCase):
 
         developer = (ROOT / "DEVELOPER.md").read_text(encoding="utf-8")
         self.assertNotIn("新 Tab 若有日期／發文欄位要接自助取號模式", developer)
-        self.assertIn("只有陳報類輸入頁才依需求接 `report_input_mode`", developer)
-        self.assertNotIn("SETTLE_META` reward", developer)
-        self.assertNotIn("並對有 `reward_data_dirty` 屬性的 tab 設 True", developer)
-        self.assertIn("成員為刑案／一般／罰單", developer)
-        self.assertIn("罰單 meta 帶 `strict=True`，任一衝突即整批 rollback", developer)
         self.assertIn(
-            "`input_lock_reward`／`input_lock_reward_issue`／`input_lock_ticket`",
+            "會發文的輸入頁才依需求接陳報模式（`REPORT_MODE_KEYS` 逐流程一把",
             developer)
-        self.assertIn(
-            "`tab_reward_issue.handleIssue`(reward_issue／UPDATE)", developer)
+        self.assertIn("成員為刑案／一般／敘獎／罰單", developer)
+        self.assertIn("罰單 meta 帶 `strict=True`，任一衝突即整批 rollback", developer)
+        self.assertIn("`input_lock_reward`／`input_lock_ticket`", developer)
+        self.assertNotIn("`tab_reward_issue.handleIssue`", developer)
+        self.assertIn("`report_mode_reward`", developer)
         self.assertIn("`print_title_ticket`", developer)
         self.assertIn("| **罰單登錄**（`Document_Ticket`／`print_title_ticket`）", developer)
         self.assertIn("所有 CRUD 寫入唯一走 `lib/ticket_utils.py`；結算發文由 `SETTLE_META` 在共用 transaction 更新", developer)
@@ -382,8 +358,8 @@ class RewardIntegrationTests(unittest.TestCase):
               patch.object(gen_quickstart, "SimpleDocTemplate", FakeDocument)):
             gen_quickstart.build(str(ROOT / "docs" / "_test_quick_start.pdf"))
 
-        self.assertEqual(rendered, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-        self.assertNotIn(10, rendered)
+        self.assertEqual(rendered, [0, 1, 2, 3, 4, 5, 6, 7, 8])
+        self.assertNotIn(9, rendered)
 
 
 class TestThemeTicketAddButton(unittest.TestCase):
