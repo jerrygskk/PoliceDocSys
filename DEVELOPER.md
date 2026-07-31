@@ -24,7 +24,7 @@ main.py
 - `DocumentManager.TAB_CLASSES`＝`{key: (模組路徑, 類別名)}`，新增 Tab 在此登記
 - 每個 Tab 繼承 `BaseTab`，必須實作 `setup(tab_index)`；可 override `get_tables()`／`get_focus_widget()`／`on_activated()`
 - **10 個大 Tab（index 0–9）**：交辦發文／交辦收文／公文陳報／敘獎登錄／罰單登錄／簽收單列印／資料庫瀏覽／檔案歸檔／資料庫設定／操作紀錄；類別見 `tabs/`，各對應一個 `layouts/LayoutN.ui`（`Layout10.ui` 為敘獎發文頁移除後的**空號**，其餘檔名不重編號）
-- **主選單**（`main_menu.ui`）為 4 欄 × 3 列圖示磚格（11 顆）（QToolButton），圖示 `res/buttons/menu_*.svg`（qrc 別名 `:/menu/`）於 `main.py` 以 `QIcon` 套用（避開 QUiLoader 解析 .qrc 的問題）
+- **主選單**（`main_menu.ui`）為圖示磚格（QToolButton；磚數依 `profile.menu_keys` 決定，`MainMenu` 以 `ceil(sqrt(n))` 欄重排——完整版 10 顆＝4 欄、獨立版 4 顆＝2 欄，`.ui` 內的 row/column 只是設計期擺放），圖示 `res/buttons/menu_*.svg`（qrc 別名 `:/menu/`）於 `main.py` 以 `QIcon` 套用（避開 QUiLoader 解析 .qrc 的問題）
 - ⚠️ **主選單拉到最前**：打包版偶因 Windows 前景鎖，`MainMenu` 的 `exec()` dialog 被壓到別視窗後。修法 `QTimer.singleShot(0, …)` 在 exec 進事件迴圈後 `raise_()`＋`activateWindow()`＋清最小化（`main.py` `_on_data_ready`）
 - ⚠️ **LOADING 畫面不掛 `WindowStaysOnTopHint`**：splash 若置頂，會把載入/建表階段冒出的 modal 錯誤視窗（excepthook 或各 Tab setup 的 DB 錯誤）壓在後面、使用者看不到也點不到。故 `LoadingScreen` 只用 `FramelessWindowHint`，開機前景改由 `main.py` `loading.show()` 後 `raise_()`＋`activateWindow()` 保證（與上一條主選單同招）。全專案不再有 always-on-top 視窗。**勿再加回置頂旗標。**
 
@@ -156,7 +156,8 @@ graph LR
 │                    db_backup／db_schema／db_seed／archive_text／theme／version／loading_screen／
 │                    app_profile（完整版／獨立版能力設定唯一來源，見 §1）／
 │                    ticket_utils（罰單 domain 層，唯一寫入入口）／window_geometry（開窗尺寸收斂）
-├── layouts/         所有 .ui（Layout1~11、main_menu；Layout1＝主視窗，其餘依 Tab 對應）
+├── layouts/         所有 .ui（Layout1~11、main_menu；Layout1＝主視窗，其餘依 Tab 對應；
+│                    Layout10 為敘獎發文頁移除後的空號，檔名不重編號）
 ├── res/             圖片／SVG／qrc（package）：resources.qrc／resources_rc.py／buttons／tabs
 ├── tabs/            各 Tab
 ├── ui_utils/        共用 UI 工具（table／widgets／status／sticky_scroll／edit_dialog／
@@ -337,7 +338,7 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 - 刑案／一般共用 `Layout3.ui` **單一 `mainGrid`**（row0 共用、row1-3 刑案、row4-5 一般），程式建獨立 `QTabBar` 切換：`_switchFormType` show/hide 兩組 widget＋`setRowMinimumHeight` 鎖兩模式同高（防抖細節見 PITFALLS LAY 組）
 - **頂列 topbar（v1.1.10）**：「清除表單／確認陳報」鈕**不在 mainGrid**，由 `setup()` 程式建立（objectName 沿用 `btn_rpt_clear`/`btn_rpt_submit`——theme.py 套色與 findChild 綁定都靠它），與刑案/一般子頁籤同一 `QHBoxLayout` 靠右。⚠️ 預覽列因此改按 `previewLayout` objectName 定位（頂端多了 topbar，不能再拿「第一個 HBox」當預覽列）。欄寬：col1=300（.ui 鎖 min/max）、col4=242（code 錨點 `setColumnMinimumWidth`），表單最小寬約 1100 邏輯px
 - 發文分類 radio：刑案 `radio_status_a/b/c`→CS01/CS02/CS03；一般 `radio_gen_cat_a/b/c`→GC01/GC03/GC02
-- ⚠️ **部分預覽顯示 ≠ DB 值**（刷新時務必轉換）：人名 預覽`王小明`/DB`王小明-19.06`（去 `-` 後綴）；日期 預覽`MM-DD-YYYY`/DB`YYYY-MM-DD`
+- ⚠️ **部分預覽顯示 ≠ DB 值**（刷新時務必轉換）：人名 預覽`王小明`/DB`王小明-19.06`（去 `-` 後綴）；日期 陳報兩張預覽表為 `MM-DD`（`_fmtDateShort`，見下方「陳報預覽欄寬基準」）、其餘頁預覽為 `MM-DD-YYYY`（`BaseTab._fmtDate`）／DB 一律 `YYYY-MM-DD`
 - 刑案發文分類／一般分類**已正規化**：`status_name`／`gen_cat_name` 直接存兩字顯示名（現行/到案/未到、業務/其他/相驗），View 撈出即顯示（舊 `_STATUS_MAP`／`_CAT_MAP` 已移除）。現行犯判斷改以 `case_status` ID（`CS01`）比對、與顯示名脫鉤（見 `tab_print._build_*`）
 
 ### 列印（tab_print.py）
@@ -361,7 +362,7 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 ### 系統設定子頁（settings_panels.py，v1.1.6）
 
-設定 Tab9 第 4 個 nav 子頁「系統設定」（`inner_stack` index 3，`_PAGE_SYSTEM`），QScrollArea 內直排六個嵌入面板（`ui_utils/settings_panels.py`，QGroupBox）。取代原 nav 兩顆鈕＋兩個 Dialog（`ArchiveRootDialog`／`PrintTitleDialog` 已刪，邏輯原樣搬入面板）。⚠️ **nav 排序（v1.1.7）**：archive 專屬（灰）項聚在底部＝人員／部門／案件類型／**系統設定**／資源回收筒／備份還原，避免灰項交錯在黑項間看似故障；`_PAGE_*` 常數＋`.ui` nav 按鈕序＋`inner_stack` 頁序＋兩份 loaders 清單四者須同序對齊：
+設定 Tab8 第 4 個 nav 子頁「系統設定」（`inner_stack` index 3，`_PAGE_SYSTEM`），QScrollArea 內直排六個嵌入面板（`ui_utils/settings_panels.py`，QGroupBox）。取代原 nav 兩顆鈕＋兩個 Dialog（`ArchiveRootDialog`／`PrintTitleDialog` 已刪，邏輯原樣搬入面板）。⚠️ **nav 排序（v1.1.7）**：archive 專屬（灰）項聚在底部＝人員／部門／案件類型／**系統設定**／資源回收筒／備份還原，避免灰項交錯在黑項間看似故障；`_PAGE_*` 常數＋`.ui` nav 按鈕序＋`inner_stack` 頁序＋兩份 loaders 清單四者須同序對齊：
 
 | 面板 | 內容 | 權限 |
 |------|------|------|
@@ -394,9 +395,8 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 - **兩個日期欄刻意只顯示 `MM-DD` 段**（維護者決定，年份被切可接受），
   但**標題不可被切**，故寬度由標題決定：登錄日期＝4 全形＝**92**、
   日期＝**64**（標題 2 全形＝58，內容 5 半形剛好放下 `07-16`）。
-  ⚠️ 顯示格式仍是 `BaseTab._fmtDate` 的 `MM-DD-YYYY`（各頁預覽共用，未改），
-  這裡是靠欄寬把後段切掉；要真的只輸出 `MM-DD` 必須在陳報頁另包一層，
-  不可直接改 `_fmtDate`（會動到交辦單／罰單／敘獎所有預覽）
+  顯示由 `tab_report._fmtDateShort` 只輸出 `MM-DD`，完整日期掛 tooltip。
+  ⚠️ **不可改 `BaseTab._fmtDate`**（`MM-DD-YYYY`）：交辦單／罰單／敘獎所有預覽共用它
 - ⚠️ **伸縮欄＝「陳報主旨」**，不是末端空標題欄。其餘欄位全部固定寬，剩餘寬度
   由主旨吸收，所以**主旨不需要一個決定好的數字**，視窗放大時也只有它變寬。
   `stretch_col=HEADERS.index("陳報主旨")`
@@ -458,7 +458,7 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 ### 備份還原子頁（backup_restore_panel.py，v1.1.7）
 
-設定 Tab9 nav 第 6 子頁「備份還原」（`inner_stack` index 5＝`_PAGE_BACKUP`，`page_backup`；**僅 admin**，archive 可見但反灰、user 進不了設定頁）。內容全於程式建立（`ui_utils/backup_restore_panel.py` 的 `BackupRestorePanel`），掛進 `.ui` 的 `backup_content` 空容器；比照回收筒的 nav 掛法（`_nav_btns` 第 6 項、`_switchPage`／`on_activated` 兩份 loaders 清單各補 `_loadBackup`、`_applyRolePermissions` 補 visible＋enabled）。
+設定 Tab8 nav 第 6 子頁「備份還原」（`inner_stack` index 5＝`_PAGE_BACKUP`，`page_backup`；**僅 admin**，archive 可見但反灰、user 進不了設定頁）。內容全於程式建立（`ui_utils/backup_restore_panel.py` 的 `BackupRestorePanel`），掛進 `.ui` 的 `backup_content` 空容器；比照回收筒的 nav 掛法（`_nav_btns` 第 6 項、`_switchPage`／`on_activated` 兩份 loaders 清單各補 `_loadBackup`、`_applyRolePermissions` 補 visible＋enabled）。
 
 - **來源彙整**：`list_backups` 掃三處合併成單一表（時間｜類型｜來源｜大小，最新在前）——主備份（`backups/`）／異地副本（第二位置）／db 旁重置留底＋還原前留底。另一顆「從其他位置選擇備份檔…」逃生口（`QFileDialog` 挑任意 `.db`）涵蓋隨身碟等清單掃不到的情境。EXE 存放端不設為獨立來源（單機時 = db 旁已涵蓋；多機時 exe 旁從不寫備份）
 - **兩道防呆**：①選取列顯示該備份五張公文主表筆數（`backup_doc_counts`）供確認選對份 ②`verify_backup`（存在＋`quick_check`）擋掉損毀／非資料庫檔
@@ -485,7 +485,7 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 ### 歸檔根目錄未設定警示
 
-重置後／首次安裝歸檔根目錄為空，三層提醒：① 瀏覽 Tab7（`on_activated`）篩選列右側紅字 ② 歸檔 Tab8（`on_activated`/`_onShown`）資料夾列右側紅字 ③ 設定 Tab9（`on_activated`）每次登入首次進入彈一次確認框（`_arch_warn_shown` flag 控制，重新登入後重置），按「前往設定」導航到「系統設定」子頁（v1.1.6 前為直接開 `ArchiveRootDialog`）。
+重置後／首次安裝歸檔根目錄為空，三層提醒：① 瀏覽 Tab6（`on_activated`）篩選列右側紅字 ② 歸檔 Tab8（`on_activated`/`_onShown`）資料夾列右側紅字 ③ 設定 Tab9（`on_activated`）每次登入首次進入彈一次確認框（`_arch_warn_shown` flag 控制，重新登入後重置），按「前往設定」導航到「系統設定」子頁（v1.1.6 前為直接開 `ArchiveRootDialog`）。
 
 > **重啟（`_restartApp()`）**：⚠️ **打包版啟動新程序前必設 `PYINSTALLER_RESET_ENVIRONMENT=1`**（PyInstaller 6.10+ 官方機制），否則新程序沿用舊 `_MEI`、載入已刪 DLL 而崩潰（見 PITFALLS PKG 組）。重置後資料全變，故用整程序重啟取代逐一刷新 Tab，最乾淨
 
@@ -660,15 +660,8 @@ CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入�
 | v1.2.7 | **依角色隱藏主功能 TAB**。①主視窗上方分頁改依目前登入身分精簡：一般使用者 9 個（隱藏「檔案歸檔」「操作紀錄」）、歸檔管理員 10 個（隱藏「操作紀錄」）、管理者 11 個全開；隱藏的分頁不占分頁列空間，其餘自動向左遞補，改善 125% 縮放下分頁列過度擁擠。②可見矩陣為不依賴 GUI 的純邏輯（`lib/app_profile.py` 的 `visibleTabKeys()`），只能縮小目前 Profile 的可見集合、不會讓 Profile 未核准的分頁出現，未知角色一律退回一般使用者最小範圍；執行期只用 `setTabVisible()`，`tab_index_by_key` 與 HELP 的固定 index 映射完全不變（不得再 `removeTab()`／重排）。③主選單維持 11 個入口不隱藏：選到目前身分看不到的功能時不跳訊息框，直接切到「資料庫設定」並在登入卡片標示原目標功能名稱；登入成功且新身分可用才自動開啟該分頁，權限仍不足則留在設定頁。待前往目標在未登入即離開設定頁時清除、登入失敗停留登入頁時保留。④登出、變更密碼後自動登出與閒置登出共用同一條 `role_changed` 路徑：目前頁面即將被隱藏才先退回設定登入頁，仍可見的業務頁不強制切換；靜默導向時同步 `_prev_tab_index`，設定頁未存排序的離頁提示不受影響。⑤HELP 與速查卡補上三身分可見分頁、設定頁兼作登入入口與受限入口導向登入的說明；README 補一段使用者說明。完整套件 unittest 790／pytest 868。 |
 | v1.2.6-v2 | **同版號重新發布（tag `v1.2.6-v2`，`lib/version.py` 仍為 1.2.6）**。①結算發文日期改為可選（預設今天、允許回填），刑案／一般／罰單共用同一日期；簽收表改依實際結算日產生。②罰單簽收歸屬一律依 `register_date`，修掉自助取號建立、切回送文者模式後結算會從所有簽收表消失的漏單。③全域 `QDateEdit` 滾輪 guard（PITFALLS QTW-13）；由自助取號切回送文者模式前，若仍有未發文殘料會提示筆數並可取消。④敘獎編輯儲存與批次發文加入原值比對，防多機無聲覆蓋（見 §10「多機無聲覆蓋防護」）。⑤打包驗證全面 fail-closed，PE import 名稱補 `.drv`／`.sys`／`.exe`／`.ocx`／`.cpl`（`WINSPOOL.DRV` 曾使完整版整支誤報）；發布 gate 移到 push／tag 之前。⑥資料庫瀏覽刪除與敘獎批次發文，於確認框關閉後、寫入前重新檢查身分與唯讀鎖；主視窗建構失敗改為先關載入畫面再退出。⑦結算彈窗改套公版樣式。⚠️ 因版號未進位，exe 版本資訊仍顯示 1.2.6，只能靠 Release 頁與檔名區分。完整套件 unittest 788／pytest 844。 |
 | v1.2.6 | **獨立版正式命名與雙程式發布＋UI 文字全面校訂**。①兩支程式定名：完整版「公文收發管理系統」、獨立版「公文快速登錄系統」，名稱單一來源仍為 `lib/app_profile.py`，主選單標題列改讀 profile（原沿用 `.ui` 寫死的完整版名稱，獨立版顯示錯名）；兩份 `version_info` 與 `tools/bump_version.py` 常數同步，橫幅圖重製。②罰單「發文者」一律改稱「發文人員」（登錄頁／編輯視窗／瀏覽頁欄名／HELP／稽核內容）；瀏覽頁敘獎發文人員、罰單發文人員與開立人員三欄改顯示去後綴姓名。③修正可打字下拉的 focus-in 延後清空會吃掉當下選取（空白欄第一次下拉沒反應，陳報頁案類實際踩過），改為執行當下再確認仍顯示提示文字才清；罰單人名下拉改比照陳報發文人員，不掛提示文字。④未發文計數（列印頁橘字、結算彈窗底部與確認訊息）比照類型 chip，只列自助模式開啟或仍有殘留的類別。⑤罰單稽核政策改為只記刪除（新增／修改不寫），刪除仍記錄刪除前內容；操作紀錄類別篩選補上「罰單」（罰單上線時漏補）。⑥唯讀設定與陳報模式面板改為分組橫帶版面，選項文字不再重複「唯讀」與模式名。⑦HELP 修正獨立版按 ? 開到別頁說明（改依分頁 key 換算頁碼，原以分頁位置對完整版頁碼）、各頁引言統一黑字並精簡、補「重載」「未發文」「變更密碼／登出」等說明、於四頁標註獨立版差異；新增罰單子頁籤與「未發文」按鈕示意圖。⑧發布改為 5 個 asset：加上獨立版 exe，速查卡改帶版號，PACKED.zip 內含兩支 exe＋空白資料庫；README 新增獨立版介紹。完整套件 750 tests。 |
-| v1.2.5 | **罰單登錄（第 5 張公文表）＋敘獎唯讀鎖破口修補**。①新增 `Document_Ticket` 主表與 `Document_Ticket_Full` View（唯一查詢入口），全表 CRUD 寫入收斂於 `lib/ticket_utils.py` 單一 domain 層；`tabs/tab_ticket.py` 由前版佔位頁改為完整登錄頁（選開立人員→連續輸入罰單編號→本次登錄清單可改可刪；編號限半形英數、自動轉大寫、重複擋下），三身分皆可操作並受 `input_lock_ticket` 唯讀鎖控制。②罰單接入既有五條共用管線：自助取號結算（`SETTLE_META` 的 ticket meta 帶 `strict=True`，任一併行衝突整批 rollback）、簽收單列印（新增 Ticket renderer 與 `print_title_ticket` 標題 key）、資料庫瀏覽罰單子頁（編輯／刪除皆 admin only）、跨年度重置、備份筆數統計；罰單刻意**不進資源回收筒**。③修補敘獎唯讀與降權破口：敘獎登錄／發文改為兩個獨立 `input_lock` 開關，瀏覽頁敘獎子頁編輯權限收斂為僅 admin（歸檔管理者不可改）。④主選單改 4×3 磚格容納 11 顆入口；預覽表伸縮欄改由最右空標題欄吸收剩餘寬度（PITFALLS LAY-7）。⑤新增罰單四組測試（domain／登錄頁欄寬／瀏覽 gate／列印排序分頁合併）與 combo 提示灰字、開窗尺寸測試，完整套件 655 tests。 |
-| v1.2.4 | **測試基線盤點＋公開契約強化＋pytest-qt 敘獎生命週期 pilot（測試／驗證工程）**。①建立 35 個測試檔、470 tests 的逐檔基線與 DB 契約矩陣，記錄既知的 Quick_Start.pdf 缺檔與 SVG CRLF 差異，並將缺少發版產物／pytest 的情境改為可辨識 skip、SVG 資源比較忽略換行差異，使不同開發環境的 suite 結果穩定。②既有高耦合測試改以公開行為驗證：登入缺少密碼 hash 的拒絕路徑、案類 alias migration、瀏覽頁經 `on_activated()` 同步，以及敘獎三態的可觀察結果；同步記錄瀏覽 soft-delete 同秒 signature 限制，未改 production code。③新增 offscreen pytest-qt runtime smoke 與單一敘獎 GUI 生命週期 pilot，涵蓋登錄、發文、資料庫結果與畫面更新；10/10 重跑通過，受控 selector 破壞能在 DB mutation 前紅燈，且未新增 production seam。④新增並鎖定 `requirements-dev.txt`（PySide6／matplotlib／pypdf／reportlab／pytest／pytest-qt），文件化 unittest 與 pytest-qt 指令；其餘 GUI 流程擴充須另立核准計畫。無 production、schema 或使用者操作變更。 |
-| v1.2.3 | **敘獎三態語意集中＋發文預查失敗改為停止（重構／穩定性）**。①敘獎發文頁預查原發文日期時，若 SQL 例外原本被吞掉（`already=0` 後照樣彈確認視窗），改為 `reportError` 後 `return`：DB 讀失敗不再進確認／更新，避免使用者在少了「將覆蓋原發文日期」提示的情況下誤覆蓋（`tab_reward_issue.py`）。②敘獎 `register_date` 三態語意集中定義於 `lib/db_utils.py`：`REWARD_ACTIVE_SQL`（`IS NOT NULL`，有效＝含已發文）／`REWARD_PENDING_SQL`（`= ''`，有效未發文）／`REWARD_DELETED_SQL`（`IS NULL`，軟刪除哨兵）＋ `rewardState()`／`rewardActiveSql()`；生產碼（`tab_reward`／`tab_reward_issue`／`tab_dbbrowse`／`tab_settings`／`db_backup`／`reward_dialog`）逐處以常數替換散落的魔法條件，語意與 `register_date IS NOT NULL` 並行刪除保護完全不變。③瀏覽頁「未發文」橘字顯示改由 `TABLE_META` 的 `pending_date_col` 宣告（刑案／一般＝`陳報日期`、敘獎＝`register_date`），移除散在 `_fillRow` 的類型判斷 if；新增公文型態只需在 meta 補欄。④新增預查 SQL 失敗測試（不彈確認、資料不變、走 reportError）與三態純邏輯測試。無 schema／文件面向使用者改動。 |
-| v1.2.2 | **結算併發防護＋敘獎彈窗選人快照修正＋日期驗證抽共用**。①結算 UPDATE 加「仍未發文」防護條件（刑案/一般 `AND (report_date IS NULL OR report_date='')`、敘獎 `AND register_date=''`，不可用 `IS NULL`——NULL 是敘獎軟刪除哨兵）：彈窗開啟期間他機已補發或刪除的列 rowcount=0 自然跳過、不蓋寫；實結筆數＜勾選數時提示「N 筆已由其他電腦處理」，不 rollback、流程照走（`TestSettleConcurrencyGuard` 四測）。②敘獎修改彈窗敘獎人員欄：快照改 `showPopup` 張開瞬間抓取，修 completer 與下拉混用時洗掉已選人名（PITFALLS QTW-11）。③三編輯彈窗日期驗證收斂 `_BaseEditDialog._resolveReportDate`；結算彈窗送文者改 `loadActivePersonnel`（去後綴姓名，與敘獎頁一致）；tab_print 去多餘 try/except。 |
-| v1.2.1 | **敘獎接入自助取號＋發文人員欄、結算彈窗重構、未發文日期治本、穩定性三項**。①敘獎登錄接入自助取號模式：`register_date` 未發文哨兵用 `''`（**不可用 NULL**，NULL 是敘獎軟刪除哨兵），自助模式下發文日期＋發文人員兩欄反灰；預覽／瀏覽空日期橘字「未發文」。②`Document_Reward` 加 `sender_id`（發文人員欄，登錄頁與發文日期同列，格式比照交辦發文頁）；瀏覽頁敘獎子頁加發文人員欄（JOIN `Ref_Personnel`）、排序改升冪（`TABLE_META` 旗標 `sort_numeric`，diff 依數字序插入）；軟刪除同步清 `sender_id`。③結算彈窗重構：單一表格＋`SETTLE_META` registry（新公文型態接結算＝加一筆 meta），類型 chip 過濾＋表頭三態全選（只作用顯示中列），勾選含刑案／一般或敘獎時送文者必填。④三編輯彈窗（敘獎／刑案／一般）發文日期改 `NullableDateEdit`（PITFALLS QTW-10）：空白＝未發文哨兵（敘獎 `''`、刑案／一般 NULL）、補填日期須一併選發文人員、清空退回未發文；刑案／一般不再開啟即填今日蓋哨兵。⑤敘獎彈窗敘獎人員改可編輯下拉（選取＝附加）；案類互轉沿用區未發文顯示「未發文」，轉換哨兵原樣帶到新單。⑥穩定性三項：三主表 `last_modified` 索引、每週深度完整性檢查（`PRAGMA integrity_check`）、瀏覽頁列同步測試。⑦HELP／QUICKSTART 同步（敘獎／陳報／列印／設定四頁）並重產速查卡 PDF。已知迴避：Windows 深色模式 tooltip 黑底無解（PITFALLS QSS-7），議定新功能不依賴 tooltip。 |
-| v1.2.0 | **全新 repo 起點（`PoliceDocSys`）**：內容延續 v1.1.12，功能無變動；為徹底清除舊 git 歷史中殘留的真實人名，改以單一初始 commit 建立全新公開 repo（舊 `project_police` 轉私有封存）。版號自 1.2.0 起、第三碼歸零。以下 v1.1.x 及更早為文件保留的歷史技術記錄（該版 git 歷史已不在本 repo）。 |
-| v1.1.12 | **敘獎登錄（Tab3）＋罰單登錄佔位頁（Tab4）**：全 Tab 重編號 0–9（原 Tab3~7 依序後移為 Tab5~9）。新增 `Document_Reward` 表（`doc_id`／`register_date`／`reason`／`recipients`／`last_modified`，`trg_reward_insert`/`_update` 維護 `last_modified`）與登錄頁 `tabs/tab_reward.py`（候選人員清單點選／多人姓名輸入解析／本次登錄預覽列可改可刪，三身分皆可操作，無角色 gate）；瀏覽頁新增 reward 子頁（沿用既有 `is_manager()`/`is_admin()` gate）；簽收單列印新增敘獎 section（`REWARD_COLUMNS`）＋新 `App_Settings` key `print_title_reward`（敘獎簽收表標題，`PrintTitlePanel` 補一格）；軟刪除／回收筒／備份筆數統計／跨年度重置皆已接入敘獎表。**罰單登錄**（`tabs/tab_ticket.py` `TabTicketPlaceholder`）：三身分皆僅顯示「本功能建置中，將於後續版本提供」提示，無實際功能。主選單改 2×5 圖示磚格容納新增兩顆入口。**主視窗可放大**：移除 `maximumSize` 鎖定，開啟預設 1320×768、可自由放大（`Layout1.ui`）。**敘獎頁 code review 修正**：修改彈窗改繼承 `_BaseEditDialog`，列被他機刪除時彈白話提示視同取消（不再拋未捕捉例外）、儲存 UPDATE 影響 0 列不再假成功；人員／名條計數改記憶體維護＋`_ref_changed` 旗標，免每次切頁全表重讀；瀏覽頁敘獎 `_diffUpdate` 移除多餘全表掃描；`loadActivePersonnel`／`formatDocCounts` 收斂重複程式碼。**敘獎預覽表**：首欄改空表頭（去「刪除」二字，比照其他頁）、移除空白 stretch 欄改由事由欄撐滿。**候選人員填入**：搜尋下拉與名條選取去尾逗號填乾淨姓名、姓名去 `-NN` 後綴（`loadActivePersonnel` 統一 `_trimName`，搜尋下拉與右側名單一致）。 |
 
-完整歷史（v1.1.11 以前逐版詳記）見 [HISTORY.md](HISTORY.md)。
+本節只留最近三個版本；**v1.2.5 以前的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
 
 ---
 
@@ -819,7 +812,7 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 - **Reset 與 log**：①先寫 Reset log（含清除筆數）②整庫自動備份（歷史 log 隨備份保存）③`performYearEndReset` 清主表時含 `Audit_Log`（當前庫歸零、歷史在備份）
 - ⚠️ **DB 須含本表才寫稽核**：舊庫未跑 `fix_audit_setup.py` 則程式照跑但稽核一筆不寫（靜默退化成單一 admin、無 log）。`fix_audit_setup.py` 一次性、不入庫
 
-**檢視 UI（Tab10，`tabs/tab_audit.py`）**：唯讀、**僅 admin**；archive／user 執行期隱藏此 TAB，從主選單選取時改由 Tab9 開啟登入畫面。頁面本身仍保留角色 guard，避免未來新增入口時只靠顯隱保護。
+**檢視 UI（Tab9，`tabs/tab_audit.py`）**：唯讀、**僅 admin**；archive／user 執行期隱藏此 TAB，從主選單選取時改由 Tab9 開啟登入畫面。頁面本身仍保留角色 guard，避免未來新增入口時只靠顯隱保護。
 
 - 全量載入（`ORDER BY log_id DESC`）後 `setRowHidden` 篩選；`detail` 經 `parseDetail` 拆「類別／動作／內容」三欄
 - 欄位：時間｜身分｜類別｜動作｜內容｜對象人。刪除／重置／登入失敗動作紅字＋紅「●」（`setForeground`，勿用 `::item{color}`）；身分 admin 鋼藍、archive 灰藍、空白灰
@@ -835,7 +828,7 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 - **表 `Trash_Documents`**（見 §6）：`payload` 存整列 JSON 快照；由 `ensureSchema` 建立
 - **helper（`lib/db_utils.py`，可單測 `tests/test_trash.py`）**：`snapshotRow(conn, table, doc_id)`（清空前抓整列，table 走 task／crim／gen／reward allowlist；ticket 不進回收筒）／`writeTrash(...)`（缺表靜默跳過）／`restoreFromTrash(conn, trash_id)`（寫回原列＋刪該 trash 列，table allowlist 防注入）
 - **4 個刪除點**（瀏覽三表／收文／刑案／一般）清空前先 `snapshotRow`＋`writeTrash`，同一 transaction
-- **入口（設定 Tab9 子頁「資源回收筒」，僅 admin）**：唯讀單選表（刪除時間／文號／類別／主旨／對象人／刪除身分）＋關鍵字過濾＋「⟳ 重整」「↩ 還原」。archive 看得到鈕但反灰（`setVisible(True)`＋`setEnabled(is_admin)`）；user 進不了設定頁。還原寫一筆「還原」稽核
+- **入口（設定 Tab8 子頁「資源回收筒」，僅 admin）**：唯讀單選表（刪除時間／文號／類別／主旨／對象人／刪除身分）＋關鍵字過濾＋「⟳ 重整」「↩ 還原」。archive 看得到鈕但反灰（`setVisible(True)`＋`setEnabled(is_admin)`）；user 進不了設定頁。還原寫一筆「還原」稽核
 - **保留**：永久，跨年度 Reset 一併清空。**還原保留歸檔狀態**（快照含 `is_reported`／`is_electronic`，原已歸檔者還原後仍為已歸檔、不回待歸清單）；清空式刪除不刪實體 PDF
 - ⚠️ **還原後刷新**：`restoreFromTrash` **必須排除 `last_modified`**，讓 update trigger（`WHEN NEW.last_modified IS OLD.last_modified`）自己蓋成當下時間；若寫回快照舊值，trigger 不觸發、指紋偵測不到。另以 `_pending_reload_keys` 通知瀏覽／歸檔頁，切過去時 `on_activated` 走 `_forceReload`（`runWithBusy` popup→全量重建）
 
@@ -856,7 +849,7 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 - **PK 為 1xx 時日期解析空白** → 日期 token 用 `(?<!\d)(1\d{2})(\d{2})(\d{2})(?!\d)`（舊正則把 PK「103」當民國年）
 - **歸檔預覽主旨退回 DB 主旨（檔名無 `-`）** → `_parseSubject` 補「無 `-`」分支：去開頭日期＋從尾端剝人名，中間即主旨
 
-### 資料庫瀏覽（Tab7）搜尋
+### 資料庫瀏覽（Tab6）搜尋
 
 **全量載入 + `setRowHidden`**（非搜尋重建表格）：
 
@@ -869,7 +862,7 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 - **精簡/完整**：單顆「完整」切換鈕（預設精簡），`_applyMode` 做 `setColumnHidden` 再 `_applyRowVisibility`
 - ⚠️ 兩個雷（`_allRows`/`_docorder` 1:1 對應、`setUpdatesEnabled` 須 try/finally）見 PITFALLS SQL 組
 
-### 歸檔頁「檔名過濾」（Tab8）
+### 歸檔頁「檔名過濾」（Tab7）
 
 候選 PDF 的關鍵字框（`{key}_kw`，標籤「檔名過濾」）做**檔名子字串過濾、不分大小寫**：`_rematch` 只保留 `os.path.basename(fp)` 含該串者（非重排、非斷詞）。關鍵字不混入評分；評分排序仍照 `match_cols` 斷詞交集。觸發為 Enter 或「比對」鈕。
 
