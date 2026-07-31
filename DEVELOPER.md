@@ -621,19 +621,27 @@ python tools/check_bundle_deps.py
 - ⚠️ **跨年度重啟**：onefile 版重啟新程序前必設 `PYINSTALLER_RESET_ENVIRONMENT=1`（否則 `Failed to load Python DLL`／`unicodedata` 缺，`_restartApp()` 已處理，見 PITFALLS PKG 組）
 - 打包報 `No module named res`／`lib.xxx` → 補進對應 spec 的 `hiddenimports`
 - **exe 檔案資訊**由 spec 的 `version=` 帶入（`version_info.txt`／`version_info_entry.txt`）；該檔由 `tools/bump_version.py` 進版時連同版號產生（已收進 git），改顯示文字改該腳本頂部常數
-- GitHub release 上傳用英文檔名
+- GitHub release 的 **asset 檔名用英文**（單獨上傳的兩支 exe、`dbfile.db`、`PACKED.zip`、速查卡）；**只有 `PACKED.zip` 內容物用中文檔名**（見下節）
 
 ### 發 GitHub Release（5 個 asset）
 
 CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入獨立版 exe，速查卡改帶版號）：
 
-1. `Police-Document-Manager_v{版號}.exe`（本次 build 的 onefile；⚠️ **上傳前把 `dist/Police-Document-Manager.exe` 複製成帶版號的檔名**再傳，例：`Police-Document-Manager_v1.2.0.exe`，方便使用者辨識版本。`gh` 以本機檔名當 asset 名，故改檔名即改 asset 名。**PACKED.zip 內的 exe 維持不帶版號**（見下），只有單獨上傳的 exe asset 帶版號）
+1. `Police-Document-Manager_v{版號}.exe`（本次 build 的 onefile；⚠️ **上傳前把 `dist/Police-Document-Manager.exe` 複製成帶版號的檔名**再傳，例：`Police-Document-Manager_v1.2.0.exe`，方便使用者辨識版本。`gh` 以本機檔名當 asset 名，故改檔名即改 asset 名。**PACKED.zip 內的兩支 exe 改用中文檔名＋版號**（見下），與這裡單獨上傳的英文 asset 不同）
 2. `dbfile.db`（**乾淨空殼**——用 `python tools/gen_shell_db.py <暫存路徑> --force` 產生。schema 來自 `lib/db_schema.py`、種子來自 `lib/db_seed.py`，兩者是唯一來源，產出即與程式碼一致。例：`python tools/gen_shell_db.py 暫存/dbfile.db --force`。**不要用工作區根目錄那份**（真實測試資料）；`gen_shell_db.py` 的暫存產物是發版來源。）
-3. `PACKED.zip`（= 兩支 exe + dbfile.db **三檔扁平放根目錄**，無子資料夾）
+3. `PACKED.zip`（= 空白 `dbfile.db` + 主程式 exe + 獨立登錄 exe **三檔扁平放根目錄**，無子資料夾；兩支 exe 用**中文檔名＋版號**，見下）
 4. `Police-Entry-Manager_v{版號}.exe`（獨立版「公文快速登錄系統」的 onefile；同樣**複製成帶版號的檔名**再傳）
 5. `Quick_Start_v{版號}.pdf`（速查卡）——⚠️ `docs/` 已 gitignore，發版前先跑 `python tools/gen_quickstart.py` 重產到 `docs/Quick_Start.pdf`，**複製成 `Quick_Start_v{版號}.pdf`** 再上傳（內容單一來源 `ui_utils/help_content.py` 的 `QUICKSTART`）
 
-- **打包 zip（PowerShell）**：`Compress-Archive -Path 暫存\dbfile.db,暫存\Police-Document-Manager.exe,暫存\Police-Entry-Manager.exe -DestinationPath 暫存\PACKED.zip -Force`（zip 內兩支 exe 都用**不帶版號**的原名，解壓後三檔並放即可執行；兩支共用同一份 `dbfile.db`）
+- **PACKED.zip 內用中文檔名＋版號**（使用者解壓後直接看得懂哪支是哪支；`dbfile.db` **不可改名**，程式固定找這個檔名）：
+  ```powershell
+  cp dist/Police-Document-Manager.exe "暫存/公文收發管理系統_v{版號}.exe"
+  cp dist/Police-Entry-Manager.exe    "暫存/公文快速登錄系統_v{版號}.exe"
+  Compress-Archive -Path "暫存\dbfile.db","暫存\公文收發管理系統_v{版號}.exe","暫存\公文快速登錄系統_v{版號}.exe" `
+    -DestinationPath 暫存\PACKED.zip -Force
+  ```
+  解壓後三檔並放即可執行；兩支共用同一份 `dbfile.db`。
+  ⚠️ exe **改檔名不影響執行**：程式只用 `sys.executable` 的**目錄**去找 `dbfile.db` 與鎖檔，不看自身檔名（`app_profile.exe_name` 僅供 `version_info` 的 `OriginalFilename` 用，屬檔案內容資訊，不參與執行）。副作用是 Windows 檔案內容資訊仍顯示英文原名，可接受。
 - **兩支 exe 與速查卡都帶版號**：
   ```
   cp dist/Police-Document-Manager.exe 暫存/Police-Document-Manager_v{版號}.exe
