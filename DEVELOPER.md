@@ -561,13 +561,18 @@ python -m PyInstaller --clean --noconfirm Police-Entry-Manager.spec
 
 ### 打包瘦身與兩支檢查工具
 
-排除清單的**唯一來源是 `tools/pyi_prune.py`**，兩份 spec 共用（`prune(a)`），不要在個別 spec 裡另開清單。它負責三件 CLI 做不到的事：
+排除清單的**唯一來源是 `tools/pyi_prune.py`**，兩份 spec 共用（`prune(a)`），不要在個別 spec 裡另開清單。它負責 CLI 做不到的事：
 
 - 剔除 `opengl32sw.dll`（Qt 軟體 OpenGL 後備，純 QWidget 程式用不到）與 QtQuick／QML 相關 DLL
+- 剔除 **PDF／網路整串**：`qpdf.dll`（把 PDF 當圖檔讀的 imageformats 外掛）→ `Qt6Pdf.dll` → `Qt6Network.dll`，連同 `tls`／`networkinformation`／`generic` 三個外掛資料夾。⚠️ **要砍就整串砍**：它們互為連結期使用者，只砍其中一支，另一支仍會被留下來。與列印無關（列印走 QPrinter／QPdfWriter，在 Qt6Gui／Qt6PrintSupport 內）
+- 剔除備用平台外掛 `qdirect2d`／`qoffscreen`／`qminimal`（正式執行只走 `qwindows.dll`）與冷門影像格式（`qtiff`／`qwebp`／`qicns`／`qtga`／`qwbmp`／`qgif`）。⚠️ `qjpeg`（安全網）、`qico`（視窗圖示）、`qsvg`／`qsvgicon`（本專案 icon 的命脈）不可砍
 - 只保留 `zh_TW` 的 Qt 語系檔，其餘數十國全砍
 - 濾掉來源路徑在 `Program Files\Git` 的 binary——打包機器 PATH 上若有 Git for Windows，PyInstaller 會撿到 mingw64 的 OpenSSL 混進來（見 PITFALLS PKG 組）
+- `drop_openssl=True`（**獨立版限定**）另剔除 `libcrypto-3.dll`／`libssl-3.dll`（未壓縮約 5.2MB）。獨立版包內 libcrypto 的唯一使用者是 `_hashlib.pyd`，而本專案只用 `hashlib.sha256` 做密碼雜湊，`_hashlib` 缺席時 Python 自動退回內建 `_sha2`、結果相同，故該 spec 一併 `excludes=['_hashlib']`。⚠️ **完整版不可比照**：它另有 `_ssl.pyd`／`libssl-3.dll` 也吃 libcrypto，要開之前得先重跑逆向相依確認沒有第二個使用者
 
 `force_qt_binaries()` 則相反：把「Python 綁定層已被 excludes 排除、但仍是連結期硬相依」的 Qt DLL 強制收回來（目前是 `Qt6OpenGL.dll`／`Qt6OpenGLWidgets.dll`）。
+
+> **怎麼判斷一支 DLL 能不能砍**：不是看原始碼有沒有 import 那個名字，而是解析包內每個 PE 的 import table、反查「誰在連結它」，沒有任何使用者才是真的能砍（`tools/check_bundle_deps.py` 的 `pe_imports()` 可直接拿來做這件事）。本次 PDF／網路那串就是這樣定案的。剩下的大宗是 `Qt6OpenGL.dll`（1.98MB，被 `Qt6UiTools` 連結期綁住，除非廢掉 `QUiLoader`）與完整版 numpy 的 OpenBLAS（20.4MB，除非列印頁脫離 matplotlib），兩者都屬另立計畫的範圍。
 
 ⚠️ **改動排除清單後必跑這兩支**（不跑就是拿打包版當測試場）：
 
@@ -603,14 +608,16 @@ python tools/check_bundle_deps.py
   (Get-Item 'dist\Police-Entry-Manager.exe').VersionInfo
   ```
 
-### 體積參考（2026-07 瘦身後）
+### 體積參考（2026-07 兩輪瘦身）
 
-| | 瘦身前 | 瘦身後 |
-|---|---|---|
-| 完整版 | 81.0 MB | 57.2 MB |
-| 獨立版 | 52.3 MB | 32.7 MB |
+| | 原始 | 第一輪 | 第二輪（v1.2.8-v2） |
+|---|---|---|---|
+| 完整版 | 81.0 MB | 57.2 MB | **55.5 MB** |
+| 獨立版 | 52.3 MB | 32.7 MB | **26.6 MB** |
 
-大程式剩餘最大單項是 numpy 的 OpenBLAS（未壓縮 19.5MB），要處理得先讓列印頁脫離 matplotlib，屬於另立計畫的範圍。
+第二輪砍的是 PDF／網路整串與備用外掛（兩支共用），獨立版另砍 OpenSSL 並重壓開機橫幅，故降幅較大。
+
+大程式剩餘最大單項是 numpy 的 OpenBLAS（未壓縮 20.4MB），要處理得先讓列印頁脫離 matplotlib，屬於另立計畫的範圍。
 
 ### 注意事項
 
@@ -665,11 +672,11 @@ CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入�
 
 | 版本 | 摘要 |
 |------|------|
+| v1.2.8-v2 | **同版號重新發布（tag `v1.2.8-v2`，`lib/version.py` 仍為 1.2.8）：打包瘦身與開機加速，無任何功能／schema 變動**。①排除清單（`tools/pyi_prune.py`，兩份 spec 共用）新增 PDF／網路整串：`qpdf` 外掛→`Qt6Pdf.dll`→`Qt6Network.dll`，連同 `tls`／`networkinformation`／`generic` 三個外掛資料夾；判定依據是解析包內每個 PE 的 import table 反查「誰在連結它」，確認彼此以外無使用者，**不是**看原始碼有沒有 import。②另砍備用平台外掛（`qdirect2d`／`qoffscreen`／`qminimal`）與冷門影像格式（`qicns`／`qtga`／`qwbmp`／`qgif`）；`qjpeg`／`qico`／`qsvg`／`qsvgicon` 明確保留。③新增 `prune(drop_openssl=True)`，**獨立版限定**砍 `libcrypto-3.dll`／`libssl-3.dll`（唯一使用者 `_hashlib` 由該 spec `excludes` 排除，`hashlib.sha256` 自動退回內建 `_sha2`）；完整版另有 `_ssl` 也吃 libcrypto 故維持不開。④兩份 spec 同步排除 `PySide6.QtNetwork` 綁定層，避免留下缺連結期相依的 pyd。⑤移除 `LoadWorker._run()` 的 `DEBUG_DELAY`：每個載入步驟 `sleep(0.05)` 是早期觀察進度條用的暫時措施（註解寫著上線前改 0，一直沒改），開機平白多花 0.3～0.45 秒。⑥獨立版開機橫幅重壓 1641×656 → 875×349（實際只顯示 700×279），1444KB → 345KB。⑦體積：完整版 60.1 → 55.5 MB、獨立版 34.3 → 26.6 MB。⚠️ 因版號未進位，exe 版本資訊仍顯示 1.2.8，只能靠 Release 頁與檔名區分。完整套件 unittest 814／pytest 863＋29。 |
 | v1.2.8 | **敘獎發文頁併回結算發文＋陳報預覽版面修正**。①敘獎發文（原 Tab4）整頁移除，發文回歸列印頁「結算發文」（`SETTLE_META` 加回敘獎 entry 含 `count_query`）；大 Tab 由 11 個減為 10 個、index 全面前移，`Layout10.ui` 留空號不重編。②敘獎重新掛回陳報模式（`REPORT_MODE_KEYS` 加 `report_mode_reward`）：送文者模式登錄即發文（發文日期＋發文人員必填）、自助取號模式兩欄反灰待結算補值；⚠️ reward **不吃**舊的全域 `report_input_mode` 回退（`LEGACY_MODE_FALLBACK_KINDS` 只含 crim／gen／ticket），避免舊庫殘值誤啟自助模式。③唯讀鎖由七把減為六把（移除 `input_lock_reward_issue`），現場舊庫殘值不清。④敘獎與罰單的候選人員名條改照 `Ref_Personnel.sort_order`，取消依使用次數重排，連帶移除整組計數機制與每次重建時的全表統計查詢。⑤陳報兩張預覽表改固定欄寬（`cap_mode=False`）、欄寬依實機 125% 截圖反推的字數基準（全形 17px／半形 8px／PAD 24），伸縮欄改為「陳報主旨」、`previewLayout` 分配 3:2；兩個日期欄縮為 5 半形只顯示 `MM-DD`（完整日期掛 tooltip），除主旨外一律不顯示省略號。⑥修掉三個版面雷：切換刑案／一般時右半部整塊位移、視窗 resize 不重算欄寬（右側留白）、一開啟就冒水平捲軸（Qt 會把欄夾到 header `minimumSectionSize`，改以實際欄寬回頭校正）。⑦敘獎登錄與罰單登錄兩頁表單骨架對齊，自助模式提示改用可見 QLabel 提示條。⑧文件整理：§8 版本記錄只留三版、其餘搬 HISTORY.md，修正敘獎發文頁移除後殘留的分頁編號；`PACKED.zip` 內容物改用中文檔名＋版號。完整套件 unittest 808／pytest 859＋29。 |
 | v1.2.7 | **依角色隱藏主功能 TAB**。①主視窗上方分頁改依目前登入身分精簡：一般使用者 9 個（隱藏「檔案歸檔」「操作紀錄」）、歸檔管理員 10 個（隱藏「操作紀錄」）、管理者 11 個全開；隱藏的分頁不占分頁列空間，其餘自動向左遞補，改善 125% 縮放下分頁列過度擁擠。②可見矩陣為不依賴 GUI 的純邏輯（`lib/app_profile.py` 的 `visibleTabKeys()`），只能縮小目前 Profile 的可見集合、不會讓 Profile 未核准的分頁出現，未知角色一律退回一般使用者最小範圍；執行期只用 `setTabVisible()`，`tab_index_by_key` 與 HELP 的固定 index 映射完全不變（不得再 `removeTab()`／重排）。③主選單維持 11 個入口不隱藏：選到目前身分看不到的功能時不跳訊息框，直接切到「資料庫設定」並在登入卡片標示原目標功能名稱；登入成功且新身分可用才自動開啟該分頁，權限仍不足則留在設定頁。待前往目標在未登入即離開設定頁時清除、登入失敗停留登入頁時保留。④登出、變更密碼後自動登出與閒置登出共用同一條 `role_changed` 路徑：目前頁面即將被隱藏才先退回設定登入頁，仍可見的業務頁不強制切換；靜默導向時同步 `_prev_tab_index`，設定頁未存排序的離頁提示不受影響。⑤HELP 與速查卡補上三身分可見分頁、設定頁兼作登入入口與受限入口導向登入的說明；README 補一段使用者說明。完整套件 unittest 790／pytest 868。 |
-| v1.2.6-v2 | **同版號重新發布（tag `v1.2.6-v2`，`lib/version.py` 仍為 1.2.6）**。①結算發文日期改為可選（預設今天、允許回填），刑案／一般／罰單共用同一日期；簽收表改依實際結算日產生。②罰單簽收歸屬一律依 `register_date`，修掉自助取號建立、切回送文者模式後結算會從所有簽收表消失的漏單。③全域 `QDateEdit` 滾輪 guard（PITFALLS QTW-13）；由自助取號切回送文者模式前，若仍有未發文殘料會提示筆數並可取消。④敘獎編輯儲存與批次發文加入原值比對，防多機無聲覆蓋（見 §10「多機無聲覆蓋防護」）。⑤打包驗證全面 fail-closed，PE import 名稱補 `.drv`／`.sys`／`.exe`／`.ocx`／`.cpl`（`WINSPOOL.DRV` 曾使完整版整支誤報）；發布 gate 移到 push／tag 之前。⑥資料庫瀏覽刪除與敘獎批次發文，於確認框關閉後、寫入前重新檢查身分與唯讀鎖；主視窗建構失敗改為先關載入畫面再退出。⑦結算彈窗改套公版樣式。⚠️ 因版號未進位，exe 版本資訊仍顯示 1.2.6，只能靠 Release 頁與檔名區分。完整套件 unittest 788／pytest 844。 |
 
-本節只留最近三個版本；**v1.2.5 以前的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
+本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.8-v2／v1.2.8／v1.2.7）；**v1.2.5 以前的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
 
 ---
 
