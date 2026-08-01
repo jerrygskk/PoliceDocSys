@@ -363,14 +363,25 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
    與欄名曾整批變成一般字重）。
 3. **垂直置中沿用 matplotlib 的 `"lp"` 參考字串規則**，不是墨跡框置中、也不是 Qt
    的 `AlignVCenter`——純 CJK 差 1.7pt。
-4. **驗收網三層，缺一不可**：`tools/print_baseline.py --check`（逐位元組比對基準
-   影像，鎖住版面沒位移）、`tools/render_diff.py`（Qt vs matplotlib 感知級比對，
+4. **驗收網三層，缺一不可**：`tools/print_baseline.py --check`（目前 101 個比對項目：
+   100 張 PNG＋1 個查無資料哨兵，逐位元組鎖住基準版面沒位移）、
+   `tools/render_diff.py`（Qt vs matplotlib 感知級比對，
    附 `--selftest` 自我驗證）、`tools/check_no_matplotlib.py`（靜態 AST 掃描＋執行期
    import 攔截雙軌，證明產品路徑無 matplotlib）。⚠️ `tools/engine_diff.py` 只驗
    「打算畫什麼」，對繪製正確性零保證——上述第 2、3 條它照樣全綠。
-   ⚠️ 基準影像放 `docs/print_baseline/`（未入庫），且**內含真實人員姓名**（承辦人
-   取自 `Ref_Personnel`），一律不得上傳；換機器時在新機重建基準當新起點，不要拿
-   舊雜湊硬比（字型／Qt 版本／縮放一變雜湊必然全滅）。
+   可版控雜湊放 `tests/print_baseline_manifest.json`，頂層 `environment` 同時記錄一般／
+   粗體字型檔與版本、Qt／PySide6 版本及 Windows 顯示縮放；`--check` 失敗會把記錄值
+   與目前值並排列出，先辨別環境漂移或程式回歸。PNG 放 `docs/print_baseline/`（未入庫），
+   由 `tools/seed_print_baseline.py` 產生的全虛構資料重建；從專案根依序執行：
+   ```powershell
+   python tools/seed_print_baseline.py tmp/print-baseline
+   python tools/print_baseline.py --db-dir tmp/print-baseline --save --force
+   python tools/print_baseline.py --db-dir tmp/print-baseline --check
+   ```
+   輸出資料夾已有資料庫時 seed 會拒絕覆寫，請另選空的暫存資料夾。換機器時應在新機
+   重建基準當新起點，不要拿舊雜湊硬比（字型／Qt／PySide6／縮放一變，雜湊可能全滅）。
+   ⚠️ 雜湊全綠只證明前後一致，不證明圖面正確；重建候選仍須由維護者逐張目視確認，
+   Codex 的 offscreen 自動檢查不能替代這道人工核准。
 
 - ⚠️ **簽收表產生走前景＋modal「產生中」popup**（`runWithBusy`），非背景執行緒：
   `generate_pages` 一律主執行緒同步畫（單機 1～2 秒可接受）。QPainter／QPdfWriter

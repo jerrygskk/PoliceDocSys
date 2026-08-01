@@ -11,13 +11,11 @@ matplotlib，任何差異都代表抽層抄錯了。**階段 3 起產品引擎�
 拿它當比對基準才有意義。
 
 用法：
-    python tools/print_baseline.py --save             # 建立基準（已建好，勿重跑）
-    python tools/print_baseline.py --save --force      # 基準已存在時強制覆寫
-                                                         # （須以未改動的 HEAD 產生，否則使前面所有階段的驗收失效）
-    python tools/print_baseline.py --check            # 比對，回傳碼 0 = 通過
+    python tools/print_baseline.py --db-dir tmp/print-baseline --save --force
+    python tools/print_baseline.py --db-dir tmp/print-baseline --check
 
-基準檔放在 `docs/print_baseline/`（`.gitignore` 排除 `docs/*`，不會污染
-`git status`）。比對失敗時會把有差異那幾頁的新舊 PNG 一起留在
+PNG 放在 `docs/print_baseline/`（`.gitignore` 排除 `docs/*`）；可攜的
+manifest 放在 `tests/print_baseline_manifest.json`。比對失敗時會把有差異那幾頁的新舊 PNG 一起留在
 `docs/print_baseline/diff/`，可直接開圖看差在哪。
 
 ⚠️ 本工具只驗「matplotlib 參考輸出有沒有位移」，不驗「Qt 畫得對不對」——
@@ -32,11 +30,13 @@ import json
 import os
 import shutil
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-BASE_DIR = os.path.join("docs", "print_baseline")
-MANIFEST = os.path.join(BASE_DIR, "manifest.json")
+ROOT = Path(__file__).resolve().parents[1]
+BASE_DIR = str(ROOT / "docs" / "print_baseline")
+MANIFEST = str(ROOT / "tests" / "print_baseline_manifest.json")
 DIFF_DIR = os.path.join(BASE_DIR, "diff")
 
 # 涵蓋全部五種 section 與各項邊界；每筆為 (DB 檔, 日期, 說明)。
@@ -51,11 +51,11 @@ _DB = "dbfile.db"
 _DB_ML = "dbfile_multiline_title.db"   # 標題含換行（全域設定，須獨立一份）
 
 CASES = [
-    # ── 一般路徑（階段 1 建立，勿更動）──
+    # ── 一般路徑 ──
     (_DB, "2026-05-11", "交辦16/刑案26（含13筆現行犯免簽收）/一般16/敘獎5：四種表齊全＋現行犯註記"),
     (_DB, "2026-02-23", "交辦16/刑案22/一般39：最大資料量，多頁與奇數頁補白"),
     (_DB, "2026-06-22", "交辦4/刑案31/一般14：刑案跨頁"),
-    (_DB, "2026-07-26", "罰單150筆：三頁滿版，跨欄／跨頁重建姓名群組"),
+    (_DB, "2026-07-26", "罰單180筆：三頁滿版，跨欄／跨頁重建姓名群組"),
     (_DB, "2026-07-25", "罰單10筆：單頁未滿，補空白列"),
     (_DB, "2026-01-01", "查無資料：generate_pages 應回傳 (None, None, None)"),
     # ── 極端排版路徑 ──
@@ -64,6 +64,12 @@ CASES = [
     (_DB_ML, "2026-08-10", "標題含換行：多行文字的 linespacing／multialignment 路徑"),
     (_DB_ML, "2026-08-11", "標題含換行（罰單表）"),
 ]
+
+
+def resolve_cases(db_dir):
+    """把固定案例映射到 seed 工具產生的資料庫目錄。"""
+    root = Path(db_dir).expanduser().resolve()
+    return [(str(root / db), date_str, desc) for db, date_str, desc in CASES]
 
 
 def _sha(b):
@@ -83,7 +89,7 @@ def _case_key(db, date_str):
 FROZEN_PRINT_DATE = "2026/07/31"
 
 
-def collect():
+def collect(db_dir):
     """跑完所有案例，回傳 {案例識別: {頁碼: (sha, png_bytes)}}。
 
     明確走 `tools/mpl_canvas.py` 的 matplotlib 路徑（見檔頭說明）：
@@ -98,7 +104,7 @@ def collect():
     out = {}
     try:
         tp._set_text_measurer(mpl_text_width_pt)
-        for db, date_str, _desc in CASES:
+        for db, date_str, _desc in resolve_cases(db_dir):
             key = _case_key(db, date_str)
             specs = tp._build_page_specs(db, date_str)
             if not specs:
@@ -131,42 +137,124 @@ def collect():
     return out
 
 
-def cmd_save(force=False):
+def _font_version(path):
+    from matplotlib.ft2font import FT2Font
+
+    for key, value in FT2Font(path).get_sfnt().items():
+        if key[-1] != 5:
+            continue
+        try:
+            return value.decode("utf-16-be" if key[0] == 3 else "utf-8")
+        except UnicodeDecodeError:
+            continue
+    return "unknown"
+
+
+def _windows_scaling_percent():
+    if sys.platform != "win32":
+        return 100
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Control Panel\Desktop\WindowMetrics",
+        ) as key:
+            dpi, _kind = winreg.QueryValueEx(key, "AppliedDPI")
+        return round(int(dpi) * 100 / 96)
+    except (OSError, TypeError, ValueError):
+        try:
+            import ctypes
+
+            return round(ctypes.windll.user32.GetDpiForSystem() * 100 / 96)
+        except (AttributeError, OSError):
+            return 100
+
+
+def environment_metadata():
+    """回傳會影響逐位元組輸出的可攜環境描述。"""
+    import PySide6
+    from PySide6.QtCore import qVersion
+    import tabs.tab_print as tp
+
+    def font(path):
+        return {"file": Path(path).name, "version": _font_version(path)}
+
+    return {
+        "fonts": {"regular": font(tp._REG), "bold": font(tp._BOLD)},
+        "qt_version": qVersion(),
+        "pyside6_version": PySide6.__version__,
+        "windows_scaling_percent": _windows_scaling_percent(),
+    }
+
+
+def _flatten_environment(environment, prefix=""):
+    flat = {}
+    for key, value in environment.items():
+        name = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            flat.update(_flatten_environment(value, name))
+        else:
+            flat[name] = value
+    return flat
+
+
+def _print_environment_comparison(recorded, current):
+    recorded_flat = _flatten_environment(recorded)
+    current_flat = _flatten_environment(current)
+    print("\n環境資訊（記錄值 vs 目前值）：")
+    print(f"  {'項目':<32} {'記錄值':<28} 目前值")
+    for key in sorted(set(recorded_flat) | set(current_flat)):
+        old = str(recorded_flat.get(key, "<未記錄>"))
+        new = str(current_flat.get(key, "<無>"))
+        print(f"  {key:<32} {old:<28} {new}")
+
+
+def cmd_save(db_dir, force=False):
     if os.path.exists(MANIFEST) and not force:
         print(f"[X] 基準已存在（{MANIFEST}），拒絕覆寫。"
               f"基準必須以未改動的 HEAD 程式碼產生，重建會使前面所有階段"
               f"的驗收失效；確定要重建才加 --force。")
         return 2
     os.makedirs(BASE_DIR, exist_ok=True)
-    data = collect()
-    manifest = {}
+    data = collect(db_dir)
+    cases = {}
     for case, pages in data.items():
-        manifest[case] = {k: sha for k, (sha, _b) in pages.items()}
+        cases[case] = {k: sha for k, (sha, _b) in pages.items()}
         for key, (_sha_, blob) in pages.items():
             if blob:
                 with open(os.path.join(BASE_DIR, f"{case}_{key}.png"), "wb") as f:
                     f.write(blob)
+    manifest = {"environment": environment_metadata(), "cases": cases}
     with open(MANIFEST, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
-    total = sum(len(v) for v in manifest.values())
-    print(f"[OK] 基準已建立：{len(manifest)} 個案例、{total} 張影像 → {BASE_DIR}")
+    total = sum(len(v) for v in cases.values())
+    print(f"[OK] 基準已建立：{len(cases)} 個案例、{total} 張影像 → {BASE_DIR}")
     for db, date_str, desc in CASES:
         k = _case_key(db, date_str)
-        print(f"  {k}  {len(manifest[k]):3d} 張  {desc}")
+        print(f"  {k}  {len(cases[k]):3d} 張  {desc}")
     return 0
 
 
-def cmd_check():
-    if not os.path.exists(MANIFEST):
-        print(f"[X] 找不到基準：{MANIFEST}（需先跑 --save，且必須在重構前跑）")
+def cmd_check(db_dir):
+    if not os.path.isdir(BASE_DIR) or not os.path.exists(MANIFEST):
+        print(f"[X] 找不到完整基準：{BASE_DIR} / {MANIFEST}")
+        print("請依序重建：")
+        print(f"  python tools/seed_print_baseline.py {db_dir}")
+        print(f"  python tools/print_baseline.py --db-dir {db_dir} --save --force")
         return 2
     with open(MANIFEST, encoding="utf-8") as f:
-        base = json.load(f)
+        manifest = json.load(f)
 
-    now = collect()
+    base = manifest.get("cases", {})
+    recorded_environment = manifest.get("environment", {})
+    current_environment = environment_metadata()
+    now = collect(db_dir)
     shutil.rmtree(DIFF_DIR, ignore_errors=True)
 
     bad = []
+    if recorded_environment != current_environment:
+        bad.append(("environment", "產生環境不同"))
     for db, date_str, _desc in CASES:
         case = _case_key(db, date_str)
         exp = base.get(case, {})
@@ -192,6 +280,7 @@ def cmd_check():
     print(f"[X] {len(bad)} 處與基準不同（共比對 {total} 張）：")
     for case, msg in bad:
         print(f"  {case}  {msg}")
+    _print_environment_comparison(recorded_environment, current_environment)
     print(f"\n差異影像已輸出到 {DIFF_DIR}（_OLD 為基準、_NEW 為現在），可直接開圖比對。")
     return 1
 
@@ -203,17 +292,26 @@ def main():
     g.add_argument("--check", action="store_true", help="比對基準（重構後）")
     ap.add_argument("--force", action="store_true",
                      help="配合 --save：基準已存在時仍強制覆寫")
+    ap.add_argument(
+        "--db-dir",
+        default=str(ROOT / "tmp" / "print-baseline"),
+        help="tools/seed_print_baseline.py 產生兩份資料庫的資料夾",
+    )
     args = ap.parse_args()
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
-    missing = sorted({db for db, _d, _x in CASES if not os.path.exists(db)})
+    if args.check and (not os.path.isdir(BASE_DIR) or not os.path.exists(MANIFEST)):
+        return cmd_check(args.db_dir)
+    missing = sorted(
+        {db for db, _d, _x in resolve_cases(args.db_dir) if not os.path.exists(db)}
+    )
     if missing:
         print(f"[X] 找不到資料庫：{'、'.join(missing)}（需在專案根目錄執行；"
-              f"極端案例的 DB 由 tools/seed_extreme_cases.py 產生）")
+              f"請先執行 tools/seed_print_baseline.py）")
         return 2
-    return cmd_save(force=args.force) if args.save else cmd_check()
+    return cmd_save(args.db_dir, force=args.force) if args.save else cmd_check(args.db_dir)
 
 
 if __name__ == "__main__":
