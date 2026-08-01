@@ -1,9 +1,13 @@
 """
 tabs/__init__.py 延遲載入（PEP 562 module-level __getattr__）驗證。
 
-matplotlib 為全專案唯一重量級 import 來源，僅 tabs/tab_print.py 於模組層引入。
-獨立版（ENTRY_PROFILE）不含列印頁，理應完全不載入 tabs.tab_print / matplotlib；
-大程式（FULL_PROFILE）維持原行為，仍會載入。
+⚠️ 階段 3（STAGE3-BRIEF）起，簽收表繪圖引擎已從 matplotlib 換成 Qt，
+`tabs/tab_print.py` 模組層不再 import matplotlib（`tools/check_no_
+matplotlib.py` 專門驗證這件事）——本檔原本「載入 tab_print 必連帶載入
+matplotlib」的假設已不成立，兩者的載入與否分開驗證。獨立版
+（ENTRY_PROFILE）不含列印頁，理應完全不載入 tabs.tab_print；
+大程式（FULL_PROFILE）維持原行為，仍會載入 tab_print，但不再連帶載入
+matplotlib。
 
 由於 sys.modules 快取會因同一行程內其他測試先行 import 而失真，凡涉及
 「某模組是否已被載入」的斷言一律以子行程驗證。
@@ -85,7 +89,11 @@ class LazyTabLoadingSubprocessTests(unittest.TestCase):
         script = _BUILD_MANAGER_SCRIPT.format(profile_name="FULL_PROFILE")
         out = _run_subprocess_check(script)
         lines = dict(line.split("=", 1) for line in out.splitlines())
-        self.assertEqual(lines["matplotlib_loaded"], "True")
+        # 階段 3：tab_print 仍會載入（大程式含列印頁），但引擎已換成 Qt，
+        # 不再連帶載入 matplotlib（tools/check_no_matplotlib.py 專門驗證
+        # 這件事；本檔改成同時斷言兩者，鎖住「tab_print 可用、matplotlib
+        # 缺席」這個新的不變式）。
+        self.assertEqual(lines["matplotlib_loaded"], "False")
         self.assertEqual(lines["tab_print_loaded"], "True")
 
     def test_importing_tabs_package_does_not_import_tab_print(self):

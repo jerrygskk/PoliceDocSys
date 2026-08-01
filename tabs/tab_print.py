@@ -1,22 +1,17 @@
-import io
+import os
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from datetime import date
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import matplotlib.font_manager as fm
-from matplotlib.transforms import Bbox, TransformedBbox
-from matplotlib.backends.backend_pdf import PdfPages
+from lib.print_canvas import QtCanvas
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QWidget, QDateEdit, QFileDialog,
 )
-from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui  import QPixmap, QImage, QPainter, QPageSize
+from PySide6.QtCore import Qt, QDate, QMarginsF
+from PySide6.QtGui  import QPixmap, QImage, QPainter, QPageSize, QPdfWriter
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from lib.base_tab import BaseTab
@@ -56,8 +51,25 @@ def _find_cjk_fonts():
 
 _REG, _BOLD = _find_cjk_fonts()
 
+
+class FontSpec:
+    """輕量字型描述：`fp()` 的回傳型別（階段 3 起不再依賴 matplotlib 的
+    `FontProperties`）。只帶版面計算需要的三樣東西：字型檔路徑、字級(pt)、
+    是否粗體。`get_size()` 保留是為了讓 `_draw_page()`／`drawTicketPage()`
+    既有的 `font.get_size()` 呼叫點不必逐一改寫。"""
+    __slots__ = ('path', 'size', 'bold')
+
+    def __init__(self, path, size, bold=False):
+        self.path = path
+        self.size = size
+        self.bold = bold
+
+    def get_size(self):
+        return self.size
+
+
 def fp(size, bold=False):
-    return fm.FontProperties(fname=_BOLD if bold else _REG, size=size)
+    return FontSpec(_BOLD if bold else _REG, size, bold)
 
 # ── A4 直向（inch）────────────────────────────────────────
 A4_W, A4_H = 8.27, 11.69
@@ -90,18 +102,59 @@ def _today():
 
 _A4_PT = 595.3   # A4 寬（pt），1 inch=72pt × 8.27 ≈ 595.3
 
-_MEASURE_RENDERER = None
+
+# 產品量測器（階段 3 起唯一內建後端，取代舊版預設的 matplotlib 量測）。
+# ⚠️ 量測基準固定 1200dpi、與任何實際繪製 device 的解析度無關（STAGE2-
+# BRIEF §3-1）：階段 0 實測過，低 dpi 下 Qt 會把每個字的寬度取整到整數
+# device pixel，換行結果對不上（96dpi 下就有 1 條截斷差異）。
+_QT_MEASURE_DPI = 1200
+_qt_measure_font_cache = {}
+def _qt_text_width_pt(text, prop):
+    """`prop` 是 `fp()` 回傳的 `FontSpec`（`.path`／`.size`／`.bold`）。
+
+    ⚠️ 一定要呼叫 `setBold()`：本機 msjh.ttc／msjhbd.ttc 回傳的 family 名
+    完全相同（見 lib/print_canvas.py `_load_font_family()` 說明），若只靠
+    `QFont(family)` 不設字重旗標，量到的永遠是 regular 字重的寬度——這與
+    缺陷 A（QtCanvas 粗體失效）同一個根因。`_wrap_clamp()`／`_fit_font()`
+    目前都只用 `fp(size)`（非粗體）呼叫本函式，所以還沒有實際爆開；一併
+    修掉是因為階段 3 擴大 Qt 量測範圍到粗體文字時就會踩到同一個雷
+    （STAGE2-FIX2-BRIEF §5）。直接用 `prop.bold`（`FontSpec` 明確欄位），
+    不再靠字型 family 名或路徑比對判斷字重。"""
+    from PySide6.QtGui import QFont, QFontMetricsF
+    from lib.print_canvas import _load_font_family
+    path, size, bold = prop.path, prop.size, prop.bold
+    key = (path, size, bold)
+    font = _qt_measure_font_cache.get(key)
+    if font is None:
+        font = QFont(_load_font_family(path))
+        font.setBold(bold)
+        font.setPixelSize(max(1, round(size * _QT_MEASURE_DPI / 72.0)))
+        _qt_measure_font_cache[key] = font
+    width_px = QFontMetricsF(font).horizontalAdvance(text or "")
+    return width_px * 72.0 / _QT_MEASURE_DPI
+
+
+# 產品行為預設：一律走 Qt 量測，_TEXT_WIDTH_FN 全程不 import matplotlib。
+# 比對工具（tools/render_diff.py、tools/engine_diff.py、
+# tools/print_baseline.py）用 `_set_text_measurer(tools.mpl_canvas.
+# mpl_text_width_pt)` 切到 matplotlib 版比對，比完務必切回
+# `_set_text_measurer('qt')`（或直接開新 process），不得讓這個全域狀態
+# 滲透到產品路徑。matplotlib 量測器本身已搬到 tools/mpl_canvas.py——
+# 本檔（tabs/tab_print.py）刻意不 import 它，只接受呼叫端傳進來的函式物件，
+# 才能保證 `import tabs.tab_print` 全程不觸發 matplotlib import
+# （見 tools/check_no_matplotlib.py）。
+_TEXT_WIDTH_FN = _qt_text_width_pt
 def _text_width_pt(text, prop):
-    """以 matplotlib 實際字型度量回傳字串寬度(pt)。
-    用 dpi=72 的 RendererAgg → 回傳像素數即等於點數（pt）。
-    取代舊版「中文字當滿格 size + 0.86 經驗係數」的估算，避免欄寬還夠卻提早換行
-    （臨界長度的主旨最容易被誤折，見 v1.1.x 修正）。"""
-    global _MEASURE_RENDERER
-    if _MEASURE_RENDERER is None:
-        from matplotlib.backends.backend_agg import RendererAgg
-        _MEASURE_RENDERER = RendererAgg(1, 1, 72)
-    w, _h, _d = _MEASURE_RENDERER.get_text_width_height_descent(text or "", prop, False)
-    return w
+    return _TEXT_WIDTH_FN(text, prop)
+
+
+def _set_text_measurer(measurer):
+    """切換 `_text_width_pt()` 的量測後端：字串 `'qt'`（預設、內建）或直接
+    傳入量測函式物件（例如 `tools/mpl_canvas.py::mpl_text_width_pt`，供
+    比對工具切到 matplotlib 版）。`_wrap_clamp()` 的演算法本身不因此改變，
+    只換「量一個字串多寬」這個動作的實作。"""
+    global _TEXT_WIDTH_FN
+    _TEXT_WIDTH_FN = _qt_text_width_pt if measurer == 'qt' else measurer
 
 
 def _wrap_clamp(text, col_width_norm, max_lines=2, pad=PAD, fixed_size=None):
@@ -211,35 +264,32 @@ REWARD_COLUMNS = (
 
 def _draw_page(side_label, table_title, print_date, disp_date,
                columns, rows, fill_to, is_crim=False,
-               page_num=1, total_pages=1, scheme='task', note_text=NOTE):
-    fig = plt.figure(figsize=(A4_W, A4_H))
-    ax  = fig.add_axes([0, 0, 1, 1])
-    ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
-    fig.patch.set_facecolor('white')
+               page_num=1, total_pages=1, scheme='task', note_text=NOTE,
+               *, canvas):
+    """畫一頁到 `canvas`（必填：`QtCanvas`、`RecordingCanvas()`，或
+    `tools/mpl_canvas.py::MatplotlibCanvas` 供比對用）。**只畫圖，不建立
+    也不回傳 figure**——本函式不再擁有繪圖裝置的生命週期，那是呼叫端
+    （`generate_pages()`／比對工具）的責任。"""
+    cv = canvas
     c_title, c_hdr, c_row_odd, c_border, c_text = SCHEMES[scheme]
     headers = [c['header'] for c in columns]
     col_ratios = [c['ratio'] for c in columns]
 
     # 列印日期（左）
-    ax.text(TABLE_L + PAD, TOP - DATE_H/2,
+    cv.text(TABLE_L + PAD, TOP - DATE_H/2,
             f'列印日期　{print_date}',
-            fontproperties=fp(8), ha='left', va='center',
-            transform=ax.transAxes, color='#333333')
+            size=8, ha='left', va='center', color='#333333')
     # 發文日期（右，粗體）
-    ax.text(1-R-PAD, TOP - DATE_H/2,
+    cv.text(1-R-PAD, TOP - DATE_H/2,
             f'發文日期：{disp_date}',
-            fontproperties=fp(10, bold=True), ha='right', va='center',
-            transform=ax.transAxes, color=c_text)
+            size=10, bold=True, ha='right', va='center', color=c_text)
     cy = TOP - DATE_H
 
     # 大標題
-    ax.add_patch(patches.FancyBboxPatch(
-        (TABLE_L, cy-TITLE_H), TABLE_W, TITLE_H,
-        boxstyle='square,pad=0', lw=0, fc=c_title,
-        transform=ax.transAxes, zorder=1))
-    ax.text(TABLE_L + TABLE_W/2, cy - TITLE_H/2, table_title,
-            fontproperties=fp(14, bold=True), ha='center', va='center',
-            transform=ax.transAxes, color=c_text)
+    cv.rect(TABLE_L, cy-TITLE_H, TABLE_W, TITLE_H,
+            facecolor=c_title, linewidth=0, zorder=1)
+    cv.text(TABLE_L + TABLE_W/2, cy - TITLE_H/2, table_title,
+            size=14, bold=True, ha='center', va='center', color=c_text)
     cy -= TITLE_H
 
     # 欄 x 位置
@@ -249,13 +299,11 @@ def _draw_page(side_label, table_title, print_date, disp_date,
 
     # 表頭
     # 表頭上方粗分隔線
-    ax.plot([TABLE_L, TABLE_L+TABLE_W], [cy]*2,
-            color=c_border, lw=0.8, transform=ax.transAxes, zorder=4)
+    cv.line(TABLE_L, cy, TABLE_L+TABLE_W, cy,
+            color=c_border, linewidth=0.8, zorder=4)
 
-    ax.add_patch(patches.FancyBboxPatch(
-        (TABLE_L, cy-HDR_H), TABLE_W, HDR_H,
-        boxstyle='square,pad=0', lw=0, fc=c_hdr,
-        transform=ax.transAxes, zorder=1))
+    cv.rect(TABLE_L, cy-HDR_H, TABLE_W, HDR_H,
+            facecolor=c_hdr, linewidth=0, zorder=1)
     for hidx, (hdr, cx, column) in enumerate(zip(headers, col_xs, columns)):
         if column.get('header_align') == 'center' or column['role'] != 'subject':
             x_pos = cx + TABLE_W * col_ratios[hidx] / 2
@@ -263,11 +311,10 @@ def _draw_page(side_label, table_title, print_date, disp_date,
         else:
             x_pos = cx + PAD
             ha = 'left'
-        ax.text(x_pos, cy-HDR_H/2, hdr,
-                fontproperties=fp(12, bold=True), ha=ha, va='center',
-                transform=ax.transAxes, color=c_text)
-    ax.plot([TABLE_L, TABLE_L+TABLE_W], [cy-HDR_H]*2,
-            color=c_border, lw=0.8, transform=ax.transAxes)
+        cv.text(x_pos, cy-HDR_H/2, hdr,
+                size=12, bold=True, ha=ha, va='center', color=c_text)
+    cv.line(TABLE_L, cy-HDR_H, TABLE_L+TABLE_W, cy-HDR_H,
+            color=c_border, linewidth=0.8)
     cy -= HDR_H
 
     # 資料列
@@ -285,10 +332,12 @@ def _draw_page(side_label, table_title, print_date, disp_date,
             is_current = False
 
         bg = c_row_odd if ridx % 2 == 0 else '#FFFFFF'
-        ax.add_patch(patches.FancyBboxPatch(
-            (TABLE_L, cy-ROW_H), TABLE_W, ROW_H,
-            boxstyle='square,pad=0', lw=0, fc=bg,
-            transform=ax.transAxes, zorder=1))
+        cv.rect(TABLE_L, cy-ROW_H, TABLE_W, ROW_H,
+                facecolor=bg, linewidth=0, zorder=1)
+        # ⚠️ 這一列的字型（font）刻意仍由 fp()／_fit_font()／_wrap_clamp()
+        # 產生完整 FontProperties（brief §5：字型度量本階段不動），畫圖時
+        # 才用 font.get_size() 換回 Canvas.text() 要的 size；三者內部一律
+        # 只呼叫 fp(size)（不帶 bold），故 bold 在這個迴圈恆為 False。
 
         for val, cx, ratio, column in zip(display, col_xs, col_ratios, columns):
             role = column['role']
@@ -339,37 +388,32 @@ def _draw_page(side_label, table_title, print_date, disp_date,
 
             # 置中欄用欄位中心 x
             x_pos = cx + TABLE_W * ratio / 2 if ha == 'center' else cx + PAD
-            ax.text(x_pos, cy - ROW_H/2, text,
-                    fontproperties=font, ha=ha, va='center',
-                    transform=ax.transAxes, color=color, clip_on=True,
-                    multialignment='left', linespacing=1.3)
+            cv.text(x_pos, cy - ROW_H/2, text,
+                    size=font.get_size(), bold=False, ha=ha, va='center',
+                    color=color, linespacing=1.3, multialignment='left',
+                    clip_rect=(0, 0, 1, 1))
 
-        ax.plot([TABLE_L, TABLE_L+TABLE_W], [cy-ROW_H]*2,
-                color=c_border, lw=0.5, transform=ax.transAxes)
+        cv.line(TABLE_L, cy-ROW_H, TABLE_L+TABLE_W, cy-ROW_H,
+                color=c_border, linewidth=0.5)
         cy -= ROW_H
 
     # 外框
     box_top = TOP - DATE_H
     box_h   = box_top - cy
-    ax.add_patch(patches.FancyBboxPatch(
-        (TABLE_L, cy), TABLE_W, box_h,
-        boxstyle='square,pad=0', lw=1.2,
-        ec=c_border, fc='none',
-        transform=ax.transAxes, zorder=3))
+    cv.rect(TABLE_L, cy, TABLE_W, box_h,
+            edgecolor=c_border, facecolor=None, linewidth=1.2, zorder=3)
 
     # 欄線
     for cx in col_xs[1:]:
-        ax.plot([cx, cx], [cy, box_top - TITLE_H],
-                color=c_border, lw=0.5, transform=ax.transAxes)
+        cv.line(cx, cy, cx, box_top - TITLE_H,
+                color=c_border, linewidth=0.5)
 
     # 左側直排大字已移除
 
     # 頁碼（底部置中）
-    ax.text(0.5, BOT/2,
+    cv.text(0.5, BOT/2,
             str(page_num),
-            fontproperties=fp(9), ha='center', va='center',
-            transform=ax.transAxes, color='#555555')
-    return fig
+            size=9, ha='center', va='center', color='#555555')
 
 
 # ── 罰單簽收表：純邏輯層（排序／六欄分組／分頁）────────────
@@ -529,7 +573,7 @@ _TICKET_GRID_LW = 0.4
 
 def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
                    page_num=1, total_pages=1, scheme='ticket',
-                   show_summary=False, total_count=0):
+                   show_summary=False, total_count=0, canvas):
     """畫一頁罰單簽收表：三組並排、共六欄（開立人員｜罰單編號 ×3），
     開立人員依 `TicketCell.issuer_rowspan` 合併——本函式只讀取已算好的欄位
     值，不做任何排序、分組或分頁判斷。
@@ -539,22 +583,20 @@ def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
     比照既有四種簽收表 `_draw_page(fill_to=...)` 的作法）。
 
     每頁於表格下方加畫一次「本頁／本日總計／簽收人」區。
-    """
-    fig = plt.figure(figsize=(A4_W, A4_H))
-    ax = fig.add_axes([0, 0, 1, 1])
-    ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
-    fig.patch.set_facecolor('white')
 
-    ax.text(TABLE_L + PAD, TOP - DATE_H/2, f'列印日期　{print_date}',
-            fontproperties=fp(8), ha='left', va='center',
-            transform=ax.transAxes, color='#333333')
-    ax.text(1-R-PAD, TOP - DATE_H/2, f'發文日期：{disp_date}',
-            fontproperties=fp(10, bold=True), ha='right', va='center',
-            transform=ax.transAxes, color='#333333')
+    `canvas`：必填，畫到哪個 `Canvas`（`QtCanvas`、`RecordingCanvas()`，
+    或 `tools/mpl_canvas.py::MatplotlibCanvas` 供比對用）。**只畫圖，不建立
+    也不回傳 figure**（與 `_draw_page()` 同一原則）。
+    """
+    cv = canvas
+
+    cv.text(TABLE_L + PAD, TOP - DATE_H/2, f'列印日期　{print_date}',
+            size=8, ha='left', va='center', color='#333333')
+    cv.text(1-R-PAD, TOP - DATE_H/2, f'發文日期：{disp_date}',
+            size=10, bold=True, ha='right', va='center', color='#333333')
     cy = TOP - DATE_H
-    ax.text(TABLE_L + TABLE_W/2, cy - TITLE_H/2, table_title,
-            fontproperties=fp(14, bold=True), ha='center', va='center',
-            transform=ax.transAxes, color='#333333')
+    cv.text(TABLE_L + TABLE_W/2, cy - TITLE_H/2, table_title,
+            size=14, bold=True, ha='center', va='center', color='#333333')
     cy -= TITLE_H
     header_top = cy
 
@@ -569,25 +611,21 @@ def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
         return xs
 
     # 欄名列是唯一深色網底；標題與日期留在表格粗外框之外。
-    ax.add_patch(patches.Rectangle(
-        (TABLE_L, cy-HDR_H), TABLE_W, HDR_H,
-        linewidth=0, facecolor=TICKET_HEADER_BG,
-        transform=ax.transAxes, zorder=1))
+    cv.rect(TABLE_L, cy-HDR_H, TABLE_W, HDR_H,
+            facecolor=TICKET_HEADER_BG, linewidth=0, zorder=1)
     for b in range(3):
         sub_xs = _sub_xs(TABLE_L + band_w * b)
         for hdr, sx, ratio in zip(TICKET_SUB_HEADERS, sub_xs, _TICKET_SUB_RATIOS):
-            ax.text(sx + band_w*ratio/2, cy-HDR_H/2, hdr,
-                    fontproperties=fp(11, bold=True), ha='center', va='center',
-                    transform=ax.transAxes, color=TICKET_HEADER_TEXT)
+            cv.text(sx + band_w*ratio/2, cy-HDR_H/2, hdr,
+                    size=11, bold=True, ha='center', va='center',
+                    color=TICKET_HEADER_TEXT)
     cy -= HDR_H
     table_top = cy
     table_bottom = table_top - TICKET_ROW_H * body_rows
 
     # 明細一律純白；整塊鋪底避免逐列 patch 造成斑馬或相鄰邊界疊畫。
-    ax.add_patch(patches.Rectangle(
-        (TABLE_L, table_bottom), TABLE_W, table_top - table_bottom,
-        linewidth=0, facecolor='#FFFFFF',
-        transform=ax.transAxes, zorder=0.5))
+    cv.rect(TABLE_L, table_bottom, TABLE_W, table_top - table_bottom,
+            facecolor='#FFFFFF', linewidth=0, zorder=0.5)
 
     # 開立人員合併：只在群組起始列畫姓名。
     for ridx in range(body_rows):
@@ -603,55 +641,49 @@ def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
                 text, font = _wrap_clamp(cell.issuer_name,
                                           band_w*_TICKET_SUB_RATIOS[0],
                                           max_lines=1, fixed_size=12)
-                ax.text(sub_xs[0] + band_w*_TICKET_SUB_RATIOS[0]/2,
+                cv.text(sub_xs[0] + band_w*_TICKET_SUB_RATIOS[0]/2,
                         row_top - merge_h/2, text,
-                        fontproperties=font, ha='center', va='center',
-                        transform=ax.transAxes, color='#111111')
+                        size=font.get_size(), bold=False, ha='center',
+                        va='center', color='#111111')
             no_font = _fit_font(cell.ticket_no, band_w*_TICKET_SUB_RATIOS[1],
                                  max_size=12, min_size=8)
             no_x0 = sub_xs[1]
             no_x1 = sub_xs[1] + band_w*_TICKET_SUB_RATIOS[1]
-            no_text = ax.text(no_x0 + (no_x1-no_x0)/2,
-                    row_top - TICKET_ROW_H/2, cell.ticket_no,
-                    fontproperties=no_font, ha='center', va='center',
-                    transform=ax.transAxes, color='#111111')
             # F2：_fit_font 以 8pt 觸底、非精確量測，超長編號（例如 20 字元）仍可能
             # 溢出格寬壓到鄰欄；用該格自己的 bbox 當 clip box（而非整張 axes，
             # ax 涵蓋整頁，單純 clip_on=True 擋不住跨欄溢出），確保超出部分被
             # 裁掉、不污染鄰欄。
-            no_text.set_clip_box(TransformedBbox(
-                Bbox.from_extents(
-                    no_x0, row_top - TICKET_ROW_H, no_x1, row_top), ax.transAxes))
-            no_text.set_clip_on(True)
+            cv.text(no_x0 + (no_x1-no_x0)/2,
+                    row_top - TICKET_ROW_H/2, cell.ticket_no,
+                    size=no_font.get_size(), bold=False, ha='center',
+                    va='center', color='#111111',
+                    clip_rect=(no_x0, row_top - TICKET_ROW_H, no_x1, row_top))
 
     # 簽收格先鋪淡酒紅底，線條稍後統一只畫一次。
     if show_summary:
         summary_top = table_bottom
         summary_bottom = summary_top - TICKET_SUMMARY_H
-        ax.add_patch(patches.Rectangle(
-            (TABLE_L, summary_bottom), TABLE_W, TICKET_SUMMARY_H,
-            linewidth=0, facecolor=TICKET_SUMMARY_BG,
-            transform=ax.transAxes, zorder=0.5))
+        cv.rect(TABLE_L, summary_bottom, TABLE_W, TICKET_SUMMARY_H,
+                facecolor=TICKET_SUMMARY_BG, linewidth=0, zorder=0.5)
     else:
         summary_top = table_bottom
         summary_bottom = table_bottom
 
     # 欄名列下緣為一般格線，只畫一次。
-    ax.plot([TABLE_L, TABLE_L+TABLE_W], [table_top]*2,
-            color=TICKET_GRID_BORDER, lw=_TICKET_GRID_LW,
-            transform=ax.transAxes, zorder=2)
+    cv.line(TABLE_L, table_top, TABLE_L+TABLE_W, table_top,
+            color=TICKET_GRID_BORDER, linewidth=_TICKET_GRID_LW, zorder=2)
 
     # 兩條三組邊界為中階單線；三條組內直線為一般細線。
     for b in range(3):
         band_left = TABLE_L + band_w * b
         if b > 0:
-            ax.plot([band_left, band_left], [table_bottom, header_top],
-                    color=TICKET_GROUP_BORDER, lw=_TICKET_GROUP_LW,
-                    transform=ax.transAxes, zorder=2)
+            cv.line(band_left, table_bottom, band_left, header_top,
+                    color=TICKET_GROUP_BORDER, linewidth=_TICKET_GROUP_LW,
+                    zorder=2)
         for sx in _sub_xs(band_left)[1:]:
-            ax.plot([sx, sx], [table_bottom, header_top],
-                    color=TICKET_GRID_BORDER, lw=_TICKET_GRID_LW,
-                    transform=ax.transAxes, zorder=2)
+            cv.line(sx, table_bottom, sx, header_top,
+                    color=TICKET_GRID_BORDER, linewidth=_TICKET_GRID_LW,
+                    zorder=2)
 
     # 明細共享邊界一次決定：群組結束畫一條中階線跨完整直欄；群組內只畫
     # 罰單編號細線，開立人員合併格不畫；空白補列則畫一般細線。
@@ -667,46 +699,43 @@ def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
             )
             ends_last_group = bool(band) and ridx == len(band)
             if starts_group or ends_last_group:
-                ax.plot([band_left, band_left + band_w], [ry, ry],
-                        color=TICKET_GROUP_BORDER, lw=_TICKET_GROUP_LW,
-                        transform=ax.transAxes, zorder=2)
+                cv.line(band_left, ry, band_left + band_w, ry,
+                        color=TICKET_GROUP_BORDER, linewidth=_TICKET_GROUP_LW,
+                        zorder=2)
             elif ridx >= len(band):
-                ax.plot([band_left, band_left + band_w], [ry, ry],
-                        color=TICKET_GRID_BORDER, lw=_TICKET_GRID_LW,
-                        transform=ax.transAxes, zorder=2)
+                cv.line(band_left, ry, band_left + band_w, ry,
+                        color=TICKET_GRID_BORDER, linewidth=_TICKET_GRID_LW,
+                        zorder=2)
             else:
-                ax.plot([number_x0, number_x1], [ry, ry],
-                        color=TICKET_GRID_BORDER, lw=_TICKET_GRID_LW,
-                        transform=ax.transAxes, zorder=2)
+                cv.line(number_x0, ry, number_x1, ry,
+                        color=TICKET_GRID_BORDER, linewidth=_TICKET_GRID_LW,
+                        zorder=2)
 
     # 每頁 summary：上緣與左右分區皆為中階單線，不加簽名底線。
     if show_summary:
-        ax.plot([TABLE_L, TABLE_L+TABLE_W], [summary_top]*2,
-                color=TICKET_GROUP_BORDER, lw=_TICKET_GROUP_LW,
-                transform=ax.transAxes, zorder=2)
+        cv.line(TABLE_L, summary_top, TABLE_L+TABLE_W, summary_top,
+                color=TICKET_GROUP_BORDER, linewidth=_TICKET_GROUP_LW,
+                zorder=2)
         mid_x = TABLE_L + TABLE_W * 0.5
-        ax.plot([mid_x, mid_x], [summary_bottom, summary_top],
-                color=TICKET_GROUP_BORDER, lw=_TICKET_GROUP_LW,
-                transform=ax.transAxes, zorder=2)
+        cv.line(mid_x, summary_bottom, mid_x, summary_top,
+                color=TICKET_GROUP_BORDER, linewidth=_TICKET_GROUP_LW,
+                zorder=2)
         page_count = sum(len(band) for band in grid)
-        ax.text(TABLE_L + TABLE_W*0.25, (summary_top+summary_bottom)/2,
+        cv.text(TABLE_L + TABLE_W*0.25, (summary_top+summary_bottom)/2,
                 f'本頁共 {page_count} 筆，本日總計 {total_count} 筆',
-                fontproperties=fp(12, bold=True), ha='center', va='center',
-                transform=ax.transAxes, color='#333333')
-        ax.text(mid_x + PAD*1.5, (summary_top+summary_bottom)/2,
+                size=12, bold=True, ha='center', va='center',
+                color='#333333')
+        cv.text(mid_x + PAD*1.5, (summary_top+summary_bottom)/2,
                 '簽收人：',
-                fontproperties=fp(12, bold=True), ha='left', va='center',
-                transform=ax.transAxes, color='#333333')
+                size=12, bold=True, ha='left', va='center', color='#333333')
 
     # 唯一粗框：只從欄名列頂端包到簽收格底端；標題／日期在框外。
-    ax.add_patch(patches.Rectangle(
-        (TABLE_L, summary_bottom), TABLE_W, header_top - summary_bottom,
-        linewidth=_TICKET_OUTER_LW, edgecolor=TICKET_OUTER_BORDER,
-        facecolor='none', transform=ax.transAxes, zorder=3))
+    cv.rect(TABLE_L, summary_bottom, TABLE_W, header_top - summary_bottom,
+            edgecolor=TICKET_OUTER_BORDER, facecolor=None,
+            linewidth=_TICKET_OUTER_LW, zorder=3)
 
-    ax.text(0.5, BOT/2, str(page_num), fontproperties=fp(9),
-            ha='center', va='center', transform=ax.transAxes, color='#555555')
-    return fig
+    cv.text(0.5, BOT/2, str(page_num), size=9, ha='center', va='center',
+            color='#555555')
 
 
 def queryTicketPrintRows(db_path, date_text):
@@ -807,95 +836,168 @@ def _build_sections(db_path, date_str):
 
 
 # ── 產生所有頁（回傳 figures + pdf_bytes）────────────────
-def generate_pages(db_path, date_str):
-    """回傳預覽 PNG、PDF 與列印 PNG；查無資料時皆回傳 None。"""
+def _standard_section_specs(section, per, note_text, print_date, disp_date):
+    """把一個「標準四表」section 展開成 `(kind, kwargs)` 規格清單，純資料
+    整形，不畫圖、不建立 canvas——`kind` 恆為 `'standard'`，`kwargs` 是
+    `_draw_page()` 除 `canvas` 外的全部關鍵字參數。"""
+    rows = section['rows']
+    n = max(1, -(-len(rows) // per))
+    specs = []
+    for page_num, start in enumerate(range(0, max(len(rows), 1), per), start=1):
+        chunk = rows[start:start+per]
+        specs.append(('standard', dict(
+            side_label=section['side'], table_title=section['title'],
+            print_date=print_date, disp_date=disp_date,
+            columns=section['columns'], rows=chunk, fill_to=per,
+            is_crim=section['is_crim'], page_num=page_num, total_pages=n,
+            scheme=section['scheme'], note_text=note_text)))
+    return specs, n
+
+
+def _ticket_section_specs(section, print_date, disp_date):
+    """罰單專用 renderer 的規格展開：每頁固定三組 × 20 筆且每頁有簽收格；
+    不消費 `per`（那是既有四種簽收表的逐頁容量）。"""
+    ticket_pages = paginateTicketRows(section['rows'])
+    specs = []
+    for tpg in ticket_pages:
+        grid = buildTicketGrid(tpg.items, body_rows=TICKET_ROWS_PER_BAND)
+        specs.append(('ticket', dict(
+            grid=grid, table_title=section['title'], print_date=print_date,
+            disp_date=disp_date, body_rows=TICKET_ROWS_PER_BAND,
+            page_num=tpg.page_num, total_pages=tpg.total_pages,
+            scheme=section['scheme'], show_summary=tpg.show_summary,
+            total_count=tpg.total_count)))
+    return specs, len(ticket_pages)
+
+
+def _build_page_specs(db_path, date_str, print_date=None, disp_date=None):
+    """展開一次要印的所有頁面規格：`[(kind, kwargs), ...]`，
+    `kind ∈ {'standard', 'ticket', 'blank'}`（`'blank'` 的 `kwargs` 恆為
+    `{}`，供雙面列印每個 section 補一頁）。純資料整形，與繪圖引擎、canvas
+    完全無關——`generate_pages()`（產品，Qt）與 `tools/print_baseline.py`
+    （比對基準，matplotlib）共用同一份規格，才不會有兩邊分頁/排序邏輯
+    各自實作、慢慢長歪的風險。查無資料回傳空清單。
+
+    `print_date`／`disp_date` 省略時分別取 `_today()`／`_fmt_date(date_str)`
+    （產品正常呼叫的行為）；比對工具凍結日期時傳入固定字串。"""
     sections = _build_sections(db_path, date_str)
     if not sections:
-        return None, None, None
+        return []
 
-    print_date = _today()
-    disp_date = _fmt_date(date_str)
+    print_date = print_date if print_date is not None else _today()
+    disp_date = disp_date if disp_date is not None else _fmt_date(date_str)
     per = _rows_per_page()
     note_text = printTitle(db_path, 'note')
 
-    def _blank_page():
-        """產生一頁空白頁（雙面印用）"""
-        fig = plt.figure(figsize=(A4_W, A4_H))
-        fig.patch.set_facecolor('white')
-        return fig
-
-    def _standard_section_figs(section):
-        rows = section['rows']
-        n = max(1, -(-len(rows) // per))
-        section_figs = []
-        for page_num, start in enumerate(range(0, max(len(rows), 1), per), start=1):
-            chunk = rows[start:start+per]
-            fig = _draw_page(section['side'], section['title'], print_date, disp_date,
-                             section['columns'], chunk, per, section['is_crim'],
-                             page_num=page_num, total_pages=n,
-                             scheme=section['scheme'], note_text=note_text)
-            section_figs.append(fig)
-        return section_figs, n
-
-    def _ticket_section_figs(section):
-        # 罰單專用 renderer：每頁固定三組 × 20 筆且每頁有簽收格；不消費
-        # per（那是既有四種簽收表的逐頁容量）。
-        ticket_pages = paginateTicketRows(section['rows'])
-        section_figs = []
-        for tp in ticket_pages:
-            grid = buildTicketGrid(
-                tp.items, body_rows=TICKET_ROWS_PER_BAND)
-            fig = drawTicketPage(
-                grid, table_title=section['title'], print_date=print_date,
-                disp_date=disp_date, body_rows=TICKET_ROWS_PER_BAND,
-                page_num=tp.page_num, total_pages=tp.total_pages,
-                scheme=section['scheme'], show_summary=tp.show_summary,
-                total_count=tp.total_count)
-            section_figs.append(fig)
-        return section_figs, len(ticket_pages)
-
-    figs = []
+    specs = []
     for section in sections:
         if section.get('kind') == 'ticket':
-            section_figs, section_total = _ticket_section_figs(section)
+            section_specs, section_total = _ticket_section_specs(
+                section, print_date, disp_date)
         else:
-            section_figs, section_total = _standard_section_figs(section)
-
-        figs.extend(section_figs)
-
-        # 若此 section 為奇數頁，插入空白頁
+            section_specs, section_total = _standard_section_specs(
+                section, per, note_text, print_date, disp_date)
+        specs.extend(section_specs)
+        # 若此 section 為奇數頁，插入空白頁（雙面印用）。
         if section_total % 2 == 1:
-            figs.append(_blank_page())
+            specs.append(('blank', {}))
+    return specs
 
-    # PNG bytes（用於預覽，不需 poppler）
-    png_list = []
-    for fig in figs:
-        buf = io.BytesIO()
-        fig.savefig(buf, format='png', dpi=200, bbox_inches='tight',
-                    facecolor='white')
-        buf.seek(0)
-        png_list.append(buf.read())
 
-    # PNG bytes（用於另存 / 列印）
-    pdf_buf = io.BytesIO()
-    with PdfPages(pdf_buf) as pdf:
-        for fig in figs:
-            pdf.savefig(fig, dpi=150)
-    pdf_buf.seek(0)
-    pdf_bytes = pdf_buf.read()
+def _draw_spec(kind, kw, canvas):
+    """把一則 `_build_page_specs()` 規格畫到 `canvas` 上；`'blank'` 不畫
+    任何東西（canvas 本身的空白底色即為一頁空白頁）。"""
+    if kind == 'blank':
+        return
+    kw = dict(kw)
+    if kind == 'ticket':
+        grid = kw.pop('grid')
+        drawTicketPage(grid, canvas=canvas, **kw)
+    else:
+        _draw_page(canvas=canvas, **kw)
 
-    # 列印用全頁影像（300 dpi，不裁切，維持 A4 比例對齊紙張）
-    print_pngs = []
-    for fig in figs:
-        buf = io.BytesIO()
-        fig.savefig(buf, format='png', dpi=300, facecolor='white')
-        buf.seek(0)
-        print_pngs.append(buf.read())
 
-    for fig in figs:
-        plt.close(fig)
+# 預覽 PNG 解析度：沿用階段 1 以前的 200dpi 等級。⚠️ 已核可的已知差異
+# 不再有 `bbox_inches='tight'` 的裁邊，改為整頁
+# （留白更接近紙本）。
+_PREVIEW_DPI = 200
+# PDF 解析度：沿用 tools/qt_pdf_export.py 已驗證可行的設定（1200dpi、A4、
+# 零邊界；實測 dpi 誤差 0.081%、內嵌字型、可選取文字、無影像物件）。
+_PDF_RESOLUTION = 1200
 
-    return png_list, pdf_bytes, print_pngs
+
+def _render_preview_png(kind, kw):
+    """把一頁規格畫成 200dpi 等級的預覽 PNG bytes（QImage → PNG）。"""
+    from PySide6.QtCore import QBuffer, QIODevice
+
+    width_px = round(A4_W * _PREVIEW_DPI)
+    height_px = round(A4_H * _PREVIEW_DPI)
+    img = QImage(width_px, height_px, QImage.Format.Format_RGB32)
+    img.fill(0xFFFFFFFF)
+    if kind != 'blank':
+        painter = QPainter(img)
+        try:
+            cv = QtCanvas(painter, width_px, height_px, (_REG, _BOLD))
+            _draw_spec(kind, kw, cv)
+        finally:
+            painter.end()
+    buf = QBuffer()
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    img.save(buf, 'PNG')
+    return bytes(buf.data())
+
+
+def _render_pdf_bytes(specs):
+    """把整批頁面規格畫成一份向量 PDF（`QPdfWriter`），回傳 bytes。
+
+    `QPdfWriter` 只接受檔名或 `QIODevice`；沿用
+    `tools/qt_pdf_export.py::_export_case()` 已驗證可行、以檔名建立的
+    方式（而非記憶體內的 `QIODevice`），寫到暫存檔再讀回 bytes、用完即刪，
+    避免引入未經驗證的 API 組合。"""
+    fd, path = tempfile.mkstemp(suffix='.pdf')
+    os.close(fd)
+    try:
+        writer = QPdfWriter(path)
+        writer.setResolution(_PDF_RESOLUTION)
+        writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        writer.setPageMargins(QMarginsF(0, 0, 0, 0))
+        w, h = writer.width(), writer.height()
+        painter = QPainter(writer)
+        try:
+            first = True
+            for kind, kw in specs:
+                if not first:
+                    writer.newPage()
+                first = False
+                if kind == 'blank':
+                    continue
+                cv = QtCanvas(painter, w, h, (_REG, _BOLD))
+                _draw_spec(kind, kw, cv)
+        finally:
+            painter.end()
+        del writer   # 確保 PDF 尾端資料在讀檔前已寫完（見上方說明）。
+        with open(path, 'rb') as f:
+            return f.read()
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def generate_pages(db_path, date_str):
+    """回傳預覽 PNG 清單、PDF bytes、頁面規格清單；查無資料時皆回傳 None。
+
+    第三項（`page_specs`）取代舊版的「300dpi 列印用 PNG 清單」：改為
+    `_build_page_specs()` 的原始規格，交給 `TabPrint._paint_pages()` 在
+    `QPrinter` 上向量直印。"""
+    specs = _build_page_specs(db_path, date_str)
+    if not specs:
+        return None, None, None
+
+    png_list = [_render_preview_png(kind, kw) for kind, kw in specs]
+    pdf_bytes = _render_pdf_bytes(specs)
+    return png_list, pdf_bytes, specs
 
 
 # ── Tab 5 UI ──────────────────────────────────────────────
@@ -955,9 +1057,9 @@ class TabPrint(BaseTab):
         if self._layout:
             self._layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
 
-        self._pdf_bytes  = None
-        self._print_pngs = None
-        self._gen_sig    = None     # 上次「產生」當下的標題指紋，供偵測過期
+        self._pdf_bytes   = None
+        self._page_specs  = None    # 向量列印用頁面規格（見 generate_pages()）
+        self._gen_sig     = None    # 上次「產生」當下的標題指紋，供偵測過期
         self._refresh_title_warn()
 
         # ── 自助取號模式：結算按鈕群（僅自助模式顯示）──
@@ -1013,11 +1115,11 @@ class TabPrint(BaseTab):
             return
         self._refresh_title_warn()
         self._refresh_settle_group()
-        if (self._print_pngs and self._gen_sig is not None
+        if (self._page_specs and self._gen_sig is not None
                 and self._gen_sig != self._titles_sig()):
             self._clear()
             self._pdf_bytes = None
-            self._print_pngs = None
+            self._page_specs = None
             if self.btn_download:
                 self.btn_download.setEnabled(False)
             if self.btn_print:
@@ -1103,9 +1205,9 @@ class TabPrint(BaseTab):
         self._refresh_title_warn()
 
     def _on_generate(self):
-        # 前景產生＋modal「產生中」popup：matplotlib 走全域狀態，不宜在背景執行緒
-        # 跑（會與主執行緒搶用而偶發崩潰）。改在主執行緒同步畫，期間以 popup 擋住
-        # 互動，畫完即關（單機 1～2 秒可接受）。
+        # 前景產生＋modal「產生中」popup：改在主執行緒同步畫（Qt 繪圖走
+        # 全域字型快取／QPainter 狀態，不宜在背景執行緒跑），期間以 popup
+        # 擋住互動，畫完即關（單機 1～2 秒可接受）。
         date_str = self.date_edit.date().toString('yyyy-MM-dd')
         self.btn_gen.setEnabled(False)
         self._clear()
@@ -1120,15 +1222,15 @@ class TabPrint(BaseTab):
         finally:
             self.btn_gen.setEnabled(True)
 
-        png_list, pdf_bytes, print_pngs = result
+        png_list, pdf_bytes, page_specs = result
         if png_list is None:
             self._on_fail('查無資料')
         else:
-            self._on_done(png_list, pdf_bytes, print_pngs)
+            self._on_done(png_list, pdf_bytes, page_specs)
 
-    def _on_done(self, png_list, pdf_bytes, print_pngs):
+    def _on_done(self, png_list, pdf_bytes, page_specs):
         self._pdf_bytes  = pdf_bytes
-        self._print_pngs = print_pngs
+        self._page_specs = page_specs
         self._gen_sig    = self._titles_sig()   # 記下產生當下的標題，供切回時偵測過期
         self.btn_gen.setEnabled(True)
         self.btn_download.setEnabled(True)
@@ -1171,7 +1273,7 @@ class TabPrint(BaseTab):
                 f.write(self._pdf_bytes)
 
     def _on_print(self):
-        if not self._print_pngs:
+        if not self._page_specs:
             return
         printer = QPrinter(QPrinter.HighResolution)
         printer.setPageSize(QPageSize(QPageSize.A4))
@@ -1186,25 +1288,50 @@ class TabPrint(BaseTab):
         dlg.exec()
 
     def _paint_pages(self, printer):
-        """把 300 dpi 全頁影像逐頁畫到印表機頁面（等比置中填滿）"""
+        """逐頁在 `printer` 上用 `QtCanvas` 向量直印
+        （取代舊版「貼 300dpi PNG」的作法）。版面決策（換行／字級）已在
+        `generate_pages()` 產生 `page_specs` 時算好一次（固定 1200dpi
+        基準），這裡只負責照著同一組結果畫，不重算。
+
+        ⚠️ 等比例保底（唯一使用者看得到的行為改變，補於驗證後）：不能直接
+        拿 `painter.viewport()` 的寬高當整頁 A4 填滿——可列印區域的長寬比
+        會因印表機邊界設定而偏離 A4（Qt 預設 10mm 邊界下已有約 1.14% 的
+        差異，實體印表機底邊界較大時可到 3%），版面會被拉伸失真。改為在
+        `viewport()` 內算出**維持 A4 長寬比的最大矩形並置中**（等同舊版
+        `KeepAspectRatio` 的 letterbox 行為），`QtCanvas` 用這個矩形的尺寸
+        作畫；`QtCanvas` 本身假設原點在 (0,0)，故用 `painter.translate()`
+        把原點移到矩形左上角，不改動 `QtCanvas` 的座標語意。"""
         painter = QPainter(printer)
-        first = True
-        for png_bytes in self._print_pngs:
-            img = QImage.fromData(png_bytes)
-            if img.isNull():
-                continue
-            if not first:
-                printer.newPage()
-            first = False
-            # viewport = 當前可列印區域（device pixel），避開 enum 命名空間差異
-            vp = painter.viewport()
-            scaled = img.scaled(
-                vp.width(), vp.height(),
-                Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            x = vp.x() + (vp.width()  - scaled.width())  // 2
-            y = vp.y() + (vp.height() - scaled.height()) // 2
-            painter.drawImage(x, y, scaled)
-        painter.end()
+        try:
+            first = True
+            for kind, kw in self._page_specs:
+                if not first:
+                    printer.newPage()
+                first = False
+                if kind == 'blank':
+                    continue
+                # viewport = 當前可列印區域（device pixel），避開 enum 命名空間差異
+                vp = painter.viewport()
+                vp_w, vp_h = vp.width(), vp.height()
+                a4_ratio = A4_W / A4_H
+                if vp_w / vp_h > a4_ratio:
+                    # viewport 較「扁」：高度吃滿，寬度置中收窄
+                    draw_h = vp_h
+                    draw_w = draw_h * a4_ratio
+                else:
+                    # viewport 較「窄」：寬度吃滿，高度置中收窄
+                    draw_w = vp_w
+                    draw_h = draw_w / a4_ratio
+                off_x = (vp_w - draw_w) / 2
+                off_y = (vp_h - draw_h) / 2
+
+                painter.save()
+                painter.translate(off_x, off_y)
+                cv = QtCanvas(painter, draw_w, draw_h, (_REG, _BOLD))
+                _draw_spec(kind, kw, cv)
+                painter.restore()
+        finally:
+            painter.end()
 
     def _clear(self):
         while self._layout.count():

@@ -88,9 +88,11 @@ from res import resources_rc  # 註冊 Qt resource（arrow.svg）
 
 # ──────────────────────────────────────────────
 # Tab 建立：集中式 key → (模組路徑, 類別名) 對照，供 DocumentManager 依
-# profile.tab_keys 組裝。刻意不在檔頭 import 各分頁類別——tabs/tab_print.py
-# 模組層引入 matplotlib（全專案唯一重量級 import 來源），獨立版
-# （ENTRY_PROFILE）不含列印頁，須避免僅因 import 就連帶付出這筆成本。
+# profile.tab_keys 組裝。刻意不在檔頭 import 各分頁類別，維持逐頁隔離：
+# 獨立版（ENTRY_PROFILE）不含列印頁，不應為了 import 用不到的分頁而連帶
+# 付出成本。⚠️ 階段 3 起 tabs/tab_print.py 已不再於模組層引入 matplotlib
+# （產品路徑一律走 Qt 繪圖，見 lib/print_canvas.py／
+# tools/check_no_matplotlib.py），本段延遲載入與 matplotlib 無關。
 # 實際類別在 create_tab() 建立當下才用 importlib 解析並快取。
 # ──────────────────────────────────────────────
 TAB_CLASSES = {

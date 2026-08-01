@@ -19,17 +19,18 @@ import sys
 import tempfile
 import unittest
 
-from matplotlib.colors import to_hex
-from matplotlib.patches import FancyBboxPatch, Rectangle
+from matplotlib.patches import FancyBboxPatch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import db_schema, db_seed, db_utils
+from lib.print_canvas import LineOp, RecordingCanvas, RectOp, TextOp
 from lib.ticket_utils import createTicket
 from ui_utils.settle_dialog import settle_selected
 
+import tabs.tab_print as tab_print
 from tabs.tab_print import (
     TICKET_BODY_H, TICKET_ROWS_PER_BAND, TICKET_ROW_H, TICKET_SUB_HEADERS,
     TICKET_SUMMARY_H, TicketCell, TicketPage, ROW_H, _TICKET_SUB_RATIOS,
@@ -226,29 +227,52 @@ class TestTicketGridRowspan(TicketPrintTestCase):
 
 
 # ── drawTicketPage（renderer：只消費已整理好的資料，不得再做決策）──
+# ⚠️ 階段 3：`canvas` 改為必填，`drawTicketPage()` 本身不再建立／回傳
+# matplotlib Figure（見 tabs/tab_print.py 檔頭與 STAGE3-BRIEF §2）。需要
+# 真實 Figure 的測試改用 `tools/mpl_canvas.py::new_mpl_page()` 自行建立
+# 一頁、傳入 `canvas=`，再對呼叫端自己持有的 `fig` 斷言——與原本「呼叫
+# drawTicketPage() 拿到 fig」等價，只是 fig 的來源從回傳值改成呼叫端
+# 自建（型別相關寫法變動，斷言強度不變：兩者都是驗證「真的用 matplotlib
+# 畫出一個有效 Figure，過程不拋例外」）。
 class TestDrawTicketPage(TicketPrintTestCase):
+    # 階段 3：產品預設量測器改用 Qt（見 tabs/tab_print.py::_qt_text_width_pt），
+    # `_wrap_clamp()`／`_fit_font()` 在 `drawTicketPage()` 內部一律會呼叫到，
+    # 不論最終畫在哪種 canvas 上——`QFontDatabase` 需要先有 QGuiApplication
+    # 實例才能用（見 lib/print_canvas.py::_load_font_family()），否則直接
+    # RuntimeError。比照 tests/test_reward_print.py 既有作法補上。
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
     def test_draws_without_error_and_returns_figure(self):
         import matplotlib.figure
+        import matplotlib.pyplot as plt
+        from tools.mpl_canvas import new_mpl_page
         rows = self._rows("王小明", ["A1", "A2", "A3"])
         grid = buildTicketGrid(rows, body_rows=2)
-        fig = drawTicketPage(
-            grid, table_title="○○分局罰單簽收表",
-            print_date="2026/07/25", disp_date="2026/07/25",
-            body_rows=2, page_num=1, total_pages=1,
-            show_summary=True, total_count=3)
+        fig, cv = new_mpl_page(tab_print.fp)
         try:
+            drawTicketPage(
+                grid, table_title="○○分局罰單簽收表",
+                print_date="2026/07/25", disp_date="2026/07/25",
+                body_rows=2, page_num=1, total_pages=1,
+                show_summary=True, total_count=3, canvas=cv)
             self.assertIsInstance(fig, matplotlib.figure.Figure)
         finally:
-            import matplotlib.pyplot as plt
             plt.close(fig)
 
     def test_draws_empty_grid_without_error(self):
         import matplotlib.pyplot as plt
-        fig = drawTicketPage(
-            [[], [], []], table_title="○○分局罰單簽收表",
-            print_date="2026/07/25", disp_date="2026/07/25",
-            body_rows=2, page_num=1, total_pages=1)
-        plt.close(fig)
+        from tools.mpl_canvas import new_mpl_page
+        fig, cv = new_mpl_page(tab_print.fp)
+        try:
+            drawTicketPage(
+                [[], [], []], table_title="○○分局罰單簽收表",
+                print_date="2026/07/25", disp_date="2026/07/25",
+                body_rows=2, page_num=1, total_pages=1, canvas=cv)
+        finally:
+            plt.close(fig)
 
     def test_six_columns_no_signature_subcolumn(self):
         # C1：spec §11.1 每頁三組並排、共六欄（開立人員｜罰單編號 ×3）；
@@ -285,34 +309,30 @@ class TestDrawTicketPage(TicketPrintTestCase):
         self.assertAlmostEqual(bottom, BOT)
 
     def test_summary_shows_page_count_daily_total_and_no_signature_underline(self):
-        import matplotlib.pyplot as plt
         from tabs.tab_print import BOT
 
         rows = self._rows("王小明", ["A1"])
         grid = buildTicketGrid(rows, body_rows=TICKET_ROWS_PER_BAND)
-        fig = drawTicketPage(
+        cv = RecordingCanvas()
+        drawTicketPage(
             grid, table_title="○○分局罰單簽收表",
             print_date="2026/07/25", disp_date="2026/07/25",
             body_rows=TICKET_ROWS_PER_BAND, page_num=2, total_pages=2,
-            show_summary=True, total_count=61)
-        try:
-            ax = fig.axes[0]
-            texts = [text.get_text() for text in ax.texts]
-            self.assertIn("本頁共 1 筆，本日總計 61 筆", texts)
-            self.assertIn("簽收人：", texts)
+            show_summary=True, total_count=61, canvas=cv)
+        texts = [op.s for op in cv.ops if isinstance(op, TextOp)]
+        self.assertIn("本頁共 1 筆，本日總計 61 筆", texts)
+        self.assertIn("簽收人：", texts)
 
-            summary_bottom = BOT
-            summary_top = BOT + TICKET_SUMMARY_H
-            right_half_horizontal_lines = [
-                line for line in ax.lines
-                if len(line.get_xdata()) == 2
-                and len(set(round(y, 6) for y in line.get_ydata())) == 1
-                and summary_bottom < line.get_ydata()[0] < summary_top
-                and min(line.get_xdata()) >= 0.5
-            ]
-            self.assertEqual(right_half_horizontal_lines, [])
-        finally:
-            plt.close(fig)
+        summary_bottom = BOT
+        summary_top = BOT + TICKET_SUMMARY_H
+        right_half_horizontal_lines = [
+            op for op in cv.ops
+            if isinstance(op, LineOp)
+            and abs(op.y0 - op.y1) < 1e-9
+            and summary_bottom < op.y0 < summary_top
+            and min(op.x0, op.x1) >= 0.5
+        ]
+        self.assertEqual(right_half_horizontal_lines, [])
 
     def test_outer_box_starts_at_header_and_leaves_title_outside(self):
         # Task 6：唯一粗外框只包「欄名列頂端～簽收格底端」；
@@ -326,51 +346,46 @@ class TestDrawTicketPage(TicketPrintTestCase):
         rows = self._rows("王小明", ["A1", "A2"], issuer_id="P1")
         grid = buildTicketGrid(rows, body_rows=2)
 
-        import matplotlib.pyplot as plt
-        fig = drawTicketPage(
+        cv = RecordingCanvas()
+        drawTicketPage(
             grid, table_title="○○分局罰單簽收表",
             print_date="2026/07/25", disp_date="2026/07/25",
-            body_rows=2, page_num=1, total_pages=1)
-        try:
-            ax = fig.axes[0]
+            body_rows=2, page_num=1, total_pages=1, canvas=cv)
+        outer_boxes = [
+            op for op in cv.ops
+            if isinstance(op, RectOp)
+            and op.linewidth and op.linewidth >= 1.0
+            and (op.edgecolor or '').lower() != "#ffffff"
+        ]
+        self.assertEqual(len(outer_boxes), 1, "應恰有一個粗單線表格外框")
+        box = outer_boxes[0]
+        box_top_y = box.y + box.h
+        self.assertAlmostEqual(
+            box_top_y, header_top, places=3,
+            msg="外框上緣只能到欄名列頂端，標題必須留在框外")
+        self.assertGreater(box_top_y, table_top)
+        self.assertLess(box_top_y, title_top)
 
-            outer_boxes = [
-                p for p in ax.patches
-                if getattr(p, 'get_linewidth', None)
-                and p.get_linewidth() >= 1.0
-                and to_hex(p.get_edgecolor(), keep_alpha=False) != "#ffffff"
-            ]
-            self.assertEqual(len(outer_boxes), 1, "應恰有一個粗單線表格外框")
-            box = outer_boxes[0]
-            box_top_y = box.get_y() + box.get_height()
-            self.assertAlmostEqual(
-                box_top_y, header_top, places=3,
-                msg="外框上緣只能到欄名列頂端，標題必須留在框外")
-            self.assertGreater(box_top_y, table_top)
-            self.assertLess(box_top_y, title_top)
-
-            # 5 條內部直線（2 條組間分隔線＋3 條組內子欄分隔線）須穿過欄名列，
-            # 上緣須到達 header_top（標題帶不分欄，欄名列須分欄）。
-            vlines = [
-                l for l in ax.lines
-                if len(l.get_xdata()) == 2 and len(set(l.get_xdata())) == 1
-                and len(set(round(y, 6) for y in l.get_ydata())) == 2
-            ]
-            touching_header = [
-                l for l in vlines
-                if abs(max(l.get_ydata()) - header_top) < 1e-3
-            ]
-            self.assertEqual(
-                len(touching_header), 5,
-                "欄名列高度範圍內應有 5 條內部直線（六個欄名各自有邊界）")
-        finally:
-            plt.close(fig)
+        # 5 條內部直線（2 條組間分隔線＋3 條組內子欄分隔線）須穿過欄名列，
+        # 上緣須到達 header_top（標題帶不分欄，欄名列須分欄）。
+        vlines = [
+            op for op in cv.ops
+            if isinstance(op, LineOp)
+            and abs(op.x0 - op.x1) < 1e-9 and abs(op.y0 - op.y1) > 1e-9
+        ]
+        touching_header = [
+            l for l in vlines
+            if abs(max(l.y0, l.y1) - header_top) < 1e-3
+        ]
+        self.assertEqual(
+            len(touching_header), 5,
+            "欄名列高度範圍內應有 5 條內部直線（六個欄名各自有邊界）")
 
     def test_ticket_palette_and_flat_single_line_artists(self):
         # 色碼改回既有四表藍色、明細恢復斑馬紋，或 renderer 再使用
         # FancyBboxPatch 模擬立體框，本測試都必須失敗。
         import matplotlib.pyplot as plt
-        import tabs.tab_print as tab_print
+        from tools.mpl_canvas import new_mpl_page
         from tabs.tab_print import DATE_H, HDR_H, TABLE_L, TABLE_W, TITLE_H, TOP
 
         expected_palette = {
@@ -388,126 +403,153 @@ class TestDrawTicketPage(TicketPrintTestCase):
         rows = (self._rows("王小明", ["A1", "A2", "A3"], issuer_id="P1")
                 + self._rows("李大華", ["B1"], issuer_id="P2"))
         grid = buildTicketGrid(rows, body_rows=4)
-        fig = drawTicketPage(
-            grid, table_title="○○分局罰單簽收表",
-            print_date="2026/07/25", disp_date="2026/07/25",
-            body_rows=4, page_num=1, total_pages=1,
-            show_summary=True, total_count=4)
+
+        # 結構不變性（不得再用 FancyBboxPatch 模擬立體框）：
+        # MatplotlibCanvas.rect() 一律只產生平面 Rectangle，用實際渲染的
+        # fig 驗證這個不變性（RecordingCanvas 的 op 不帶 artist 類別資訊，
+        # 測不到這一項）；fig 改由呼叫端經 `new_mpl_page()` 自建，
+        # `drawTicketPage()` 本身不再回傳 figure（STAGE3-BRIEF §2）。
+        fig, cv_mpl = new_mpl_page(tab_print.fp)
         try:
+            drawTicketPage(
+                grid, table_title="○○分局罰單簽收表",
+                print_date="2026/07/25", disp_date="2026/07/25",
+                body_rows=4, page_num=1, total_pages=1,
+                show_summary=True, total_count=4, canvas=cv_mpl)
             ax = fig.axes[0]
             self.assertFalse(
                 any(isinstance(p, FancyBboxPatch) for p in ax.patches),
                 "罰單 renderer 只能使用平面 Rectangle，不得有 FancyBbox 外觀")
-            rectangles = [p for p in ax.patches if isinstance(p, Rectangle)]
-            fills = [to_hex(p.get_facecolor(), keep_alpha=False) for p in rectangles
-                     if p.get_facecolor()[-1] > 0]
-            self.assertIn("#b9858e", fills, "欄名列必須是酒紅底")
-            self.assertIn("#f5eaec", fills, "簽收格必須是淡酒紅底")
-            self.assertNotIn("#eaf0f7", fills, "不得沿用舊藍色斑馬底")
-
-            body_top = TOP - DATE_H - TITLE_H - HDR_H
-            body_bottom = body_top - TICKET_ROW_H * 4
-            body_fills = [
-                to_hex(p.get_facecolor(), keep_alpha=False)
-                for p in rectangles
-                if p.get_facecolor()[-1] > 0
-                and p.get_y() < body_top
-                and p.get_y() + p.get_height() > body_bottom
-            ]
-            self.assertEqual(set(body_fills), {"#ffffff"},
-                             "罰單明細必須全部純白，不得斑馬紋")
-
-            header_texts = [
-                t for t in ax.texts if t.get_text() in TICKET_SUB_HEADERS
-            ]
-            self.assertEqual(len(header_texts), 6)
-            self.assertTrue(all(
-                to_hex(t.get_color(), keep_alpha=False) == "#ffffff"
-                for t in header_texts))
-
-            outer = [
-                p for p in rectangles
-                if to_hex(p.get_edgecolor(), keep_alpha=False) == "#743a46"
-                and p.get_linewidth() >= 1.0
-            ]
-            self.assertEqual(len(outer), 1, "只能有一個酒紅粗單線表格外框")
-            self.assertAlmostEqual(outer[0].get_x(), TABLE_L)
-            self.assertAlmostEqual(outer[0].get_width(), TABLE_W)
         finally:
             plt.close(fig)
+
+        # 其餘配色／填色／外框／表頭文字：改對 RecordingCanvas.ops 斷言，
+        # 等價於原本對 ax.patches／ax.texts 顏色、位置、欄數的檢查。
+        cv = RecordingCanvas()
+        drawTicketPage(
+            grid, table_title="○○分局罰單簽收表",
+            print_date="2026/07/25", disp_date="2026/07/25",
+            body_rows=4, page_num=1, total_pages=1,
+            show_summary=True, total_count=4, canvas=cv)
+        rect_ops = [op for op in cv.ops if isinstance(op, RectOp)]
+        fills = [op.facecolor.lower() for op in rect_ops if op.facecolor]
+        self.assertIn("#b9858e", fills, "欄名列必須是酒紅底")
+        self.assertIn("#f5eaec", fills, "簽收格必須是淡酒紅底")
+        self.assertNotIn("#eaf0f7", fills, "不得沿用舊藍色斑馬底")
+
+        body_top = TOP - DATE_H - TITLE_H - HDR_H
+        body_bottom = body_top - TICKET_ROW_H * 4
+        body_fills = [
+            op.facecolor.lower() for op in rect_ops
+            if op.facecolor
+            and op.y < body_top
+            and op.y + op.h > body_bottom
+        ]
+        self.assertEqual(set(body_fills), {"#ffffff"},
+                         "罰單明細必須全部純白，不得斑馬紋")
+
+        header_texts = [
+            op for op in cv.ops
+            if isinstance(op, TextOp) and op.s in TICKET_SUB_HEADERS
+        ]
+        self.assertEqual(len(header_texts), 6)
+        self.assertTrue(all(
+            op.color.lower() == "#ffffff" for op in header_texts))
+
+        outer = [
+            op for op in rect_ops
+            if op.edgecolor and op.edgecolor.lower() == "#743a46"
+            and op.linewidth >= 1.0
+        ]
+        self.assertEqual(len(outer), 1, "只能有一個酒紅粗單線表格外框")
+        self.assertAlmostEqual(outer[0].x, TABLE_L)
+        self.assertAlmostEqual(outer[0].w, TABLE_W)
 
     def test_group_boundaries_are_single_medium_lines(self):
         # 王小明 rowspan=3：r1/r2 的人員合併格內不得有橫線；r3 群組結束
         # 應以一條 GROUP 色／中線寬跨完整直欄，不能同時疊一條 GRID 細線。
-        import matplotlib.pyplot as plt
         from tabs.tab_print import DATE_H, HDR_H, TABLE_L, TABLE_W, TITLE_H, TOP
 
         rows = (self._rows("王小明", ["A1", "A2", "A3"], issuer_id="P1")
                 + self._rows("李大華", ["B1", "B2"], issuer_id="P2"))
         grid = buildTicketGrid(rows, body_rows=5)
-        fig = drawTicketPage(
+        cv = RecordingCanvas()
+        drawTicketPage(
             grid, table_title="○○分局罰單簽收表",
             print_date="2026/07/25", disp_date="2026/07/25",
-            body_rows=5, show_summary=True, total_count=5)
-        try:
-            ax = fig.axes[0]
-            band_w = TABLE_W / 3
-            table_top = TOP - DATE_H - TITLE_H - HDR_H
-            issuer_end = TABLE_L + band_w * _TICKET_SUB_RATIOS[0]
+            body_rows=5, show_summary=True, total_count=5, canvas=cv)
+        band_w = TABLE_W / 3
+        table_top = TOP - DATE_H - TITLE_H - HDR_H
+        issuer_end = TABLE_L + band_w * _TICKET_SUB_RATIOS[0]
 
-            def lines_at(y):
-                return [
-                    line for line in ax.lines
-                    if len(line.get_xdata()) == 2
-                    and len(set(round(v, 8) for v in line.get_ydata())) == 1
-                    and abs(line.get_ydata()[0] - y) < 1e-8
-                ]
-
-            for ridx in (1, 2):
-                y = table_top - TICKET_ROW_H * ridx
-                issuer_lines = [
-                    line for line in lines_at(y)
-                    if min(line.get_xdata()) < issuer_end - 1e-8
-                ]
-                self.assertEqual(
-                    issuer_lines, [],
-                    f"r{ridx} 是合併格內部，不得畫開立人員橫線")
-
-            group_y = table_top - TICKET_ROW_H * 3
-            full_band_lines = [
-                line for line in lines_at(group_y)
-                if abs(min(line.get_xdata()) - TABLE_L) < 1e-8
-                and abs(max(line.get_xdata()) - (TABLE_L + band_w)) < 1e-8
+        def lines_at(y):
+            return [
+                op for op in cv.ops
+                if isinstance(op, LineOp)
+                and abs(op.y0 - op.y1) < 1e-8
+                and abs(op.y0 - y) < 1e-8
             ]
-            self.assertEqual(len(full_band_lines), 1, "群組共享邊界只能畫一次")
+
+        for ridx in (1, 2):
+            y = table_top - TICKET_ROW_H * ridx
+            issuer_lines = [
+                op for op in lines_at(y)
+                if min(op.x0, op.x1) < issuer_end - 1e-8
+            ]
             self.assertEqual(
-                to_hex(full_band_lines[0].get_color(), keep_alpha=False),
-                "#a56b76")
-            self.assertGreater(full_band_lines[0].get_linewidth(), 0.4)
-        finally:
-            plt.close(fig)
+                issuer_lines, [],
+                f"r{ridx} 是合併格內部，不得畫開立人員橫線")
+
+        group_y = table_top - TICKET_ROW_H * 3
+        full_band_lines = [
+            op for op in lines_at(group_y)
+            if abs(min(op.x0, op.x1) - TABLE_L) < 1e-8
+            and abs(max(op.x0, op.x1) - (TABLE_L + band_w)) < 1e-8
+        ]
+        self.assertEqual(len(full_band_lines), 1, "群組共享邊界只能畫一次")
+        self.assertEqual(full_band_lines[0].color.lower(), "#a56b76")
+        self.assertGreater(full_band_lines[0].linewidth, 0.4)
 
     def test_long_ticket_no_is_clipped_not_bleeding_into_neighbor(self):
         # F2 regression：超長罰單編號（20 字元）在 min_size=8pt 觸底時仍可能
         # 比格寬還寬，text 必須被裁在自己格子的 bbox 內，不得沒有裁切
         # （沒裁切＝會畫出跨過欄線壓到鄰欄的字）。
+        import matplotlib.pyplot as plt
+        from tools.mpl_canvas import new_mpl_page
         from tabs.tab_print import TABLE_L, TABLE_W, _TICKET_SUB_RATIOS as ratios
 
         long_no = "A" * 20
         rows = self._rows("王小明", [long_no], issuer_id="P1")
         grid = buildTicketGrid(rows, body_rows=1)
 
-        import matplotlib.pyplot as plt
-        fig = drawTicketPage(
+        cv = RecordingCanvas()
+        drawTicketPage(
             grid, table_title="○○分局罰單簽收表",
             print_date="2026/07/25", disp_date="2026/07/25",
-            body_rows=1, page_num=1, total_pages=1)
-        try:
-            ax = fig.axes[0]
-            band_w = TABLE_W / 3
-            no_x0 = TABLE_L + band_w * ratios[0]
-            no_x1 = TABLE_L + band_w
+            body_rows=1, page_num=1, total_pages=1, canvas=cv)
+        band_w = TABLE_W / 3
+        no_x0 = TABLE_L + band_w * ratios[0]
+        no_x1 = TABLE_L + band_w
 
+        no_ops = [op for op in cv.ops
+                  if isinstance(op, TextOp) and op.s == long_no]
+        self.assertEqual(len(no_ops), 1, "應找到罰單編號文字物件")
+        clip_rect = no_ops[0].clip_rect
+        self.assertIsNotNone(clip_rect, "超長編號必須有明確的裁切範圍")
+        cx0, _cy0, cx1, _cy1 = clip_rect
+        self.assertAlmostEqual(min(cx0, cx1), no_x0, places=3)
+        self.assertAlmostEqual(max(cx0, cx1), no_x1, places=3)
+
+        # 裁切是否真的套到 matplotlib artist 上（不能只驗 op 本身）：
+        # 用真實 fig 驗證 Text artist 的 clip_on／clip_box（fig 改由呼叫端
+        # 經 `new_mpl_page()` 自建，`drawTicketPage()` 本身不再回傳 figure）。
+        fig2, cv_mpl = new_mpl_page(tab_print.fp)
+        try:
+            drawTicketPage(
+                grid, table_title="○○分局罰單簽收表",
+                print_date="2026/07/25", disp_date="2026/07/25",
+                body_rows=1, page_num=1, total_pages=1, canvas=cv_mpl)
+            ax = fig2.axes[0]
             no_texts = [t for t in ax.texts if t.get_text() == long_no]
             self.assertEqual(len(no_texts), 1, "應找到罰單編號文字物件")
             txt = no_texts[0]
@@ -520,7 +562,7 @@ class TestDrawTicketPage(TicketPrintTestCase):
             self.assertAlmostEqual(min(cx0, cx1), no_x0, places=3)
             self.assertAlmostEqual(max(cx0, cx1), no_x1, places=3)
         finally:
-            plt.close(fig)
+            plt.close(fig2)
 
     def test_merged_issuer_group_skips_only_internal_issuer_line(self):
         # I2／F3：issuer 合併區只移除合併內部的 issuer 水平線，保留 number
@@ -538,75 +580,71 @@ class TestDrawTicketPage(TicketPrintTestCase):
         self.assertEqual(grid[0][4].issuer_rowspan, 0)
         self.assertEqual(grid[0][5].issuer_rowspan, 1)
 
-        import matplotlib.pyplot as plt
         from tabs.tab_print import DATE_H, HDR_H, TABLE_L, TABLE_W, TITLE_H, TOP
 
-        fig = drawTicketPage(
+        cv = RecordingCanvas()
+        drawTicketPage(
             grid, table_title="○○分局罰單簽收表",
             print_date="2026/07/25", disp_date="2026/07/25",
-            body_rows=6, page_num=1, total_pages=1)
-        try:
-            ax = fig.axes[0]
-            band_w = TABLE_W / 3
-            table_top = TOP - DATE_H - TITLE_H - HDR_H
+            body_rows=6, page_num=1, total_pages=1, canvas=cv)
+        band_w = TABLE_W / 3
+        table_top = TOP - DATE_H - TITLE_H - HDR_H
 
-            def _boundary_y(ridx):
-                return table_top - TICKET_ROW_H * ridx
+        def _boundary_y(ridx):
+            return table_top - TICKET_ROW_H * ridx
 
-            def _has_line(x0, x1, y):
-                for l in ax.lines:
-                    xs, ys = l.get_xdata(), l.get_ydata()
-                    if len(xs) != 2 or len(set(ys)) != 1:
-                        continue
-                    if abs(ys[0] - y) > 1e-6:
-                        continue
-                    if abs(min(xs) - x0) < 1e-6 and abs(max(xs) - x1) < 1e-6:
-                        return True
-                return False
+        def _has_line(x0, x1, y):
+            for op in cv.ops:
+                if not isinstance(op, LineOp):
+                    continue
+                if abs(op.y0 - op.y1) > 1e-6:
+                    continue
+                if abs(op.y0 - y) > 1e-6:
+                    continue
+                if (abs(min(op.x0, op.x1) - x0) < 1e-6
+                        and abs(max(op.x0, op.x1) - x1) < 1e-6):
+                    return True
+            return False
 
-            issuer_ratio, number_ratio = _TICKET_SUB_RATIOS
-            band0_left = TABLE_L
-            issuer_x0, issuer_x1 = band0_left, band0_left + band_w * issuer_ratio
-            number_x0, number_x1 = issuer_x1, band0_left + band_w
+        issuer_ratio, number_ratio = _TICKET_SUB_RATIOS
+        band0_left = TABLE_L
+        issuer_x0, issuer_x1 = band0_left, band0_left + band_w * issuer_ratio
+        number_x0, number_x1 = issuer_x1, band0_left + band_w
 
-            # r1、r2（群組 A 內部）、r4（群組 B 內部）：不應有 issuer 線。
-            for ridx in (1, 2, 4):
-                ry = _boundary_y(ridx)
-                self.assertFalse(
-                    _has_line(issuer_x0, issuer_x1, ry),
-                    f"r{ridx}（合併群組內部）不應保留 issuer 水平線")
+        # r1、r2（群組 A 內部）、r4（群組 B 內部）：不應有 issuer 線。
+        for ridx in (1, 2, 4):
+            ry = _boundary_y(ridx)
+            self.assertFalse(
+                _has_line(issuer_x0, issuer_x1, ry),
+                f"r{ridx}（合併群組內部）不應保留 issuer 水平線")
 
-            def _covering_lines(x0, x1, y):
-                return [
-                    line for line in ax.lines
-                    if len(line.get_xdata()) == 2
-                    and len(set(line.get_ydata())) == 1
-                    and abs(line.get_ydata()[0] - y) < 1e-6
-                    and min(line.get_xdata()) <= x0 + 1e-6
-                    and max(line.get_xdata()) >= x1 - 1e-6
-                ]
+        def _covering_lines(x0, x1, y):
+            return [
+                op for op in cv.ops
+                if isinstance(op, LineOp)
+                and abs(op.y0 - op.y1) < 1e-6
+                and abs(op.y0 - y) < 1e-6
+                and min(op.x0, op.x1) <= x0 + 1e-6
+                and max(op.x0, op.x1) >= x1 - 1e-6
+            ]
 
-            # r3（A/B 交界）、r5（B/C 交界）：共享邊界應各用一條中階線
-            # 跨完整直欄；不得再拆 issuer／number 兩段或疊畫細線。
-            for ridx in (3, 5):
-                ry = _boundary_y(ridx)
-                group_lines = _covering_lines(band0_left, band0_left + band_w, ry)
-                self.assertEqual(
-                    len(group_lines), 1,
-                    f"r{ridx}（群組交界）只能有一條跨完整直欄的共享邊界")
-                self.assertEqual(
-                    to_hex(group_lines[0].get_color(), keep_alpha=False),
-                    "#a56b76")
+        # r3（A/B 交界）、r5（B/C 交界）：共享邊界應各用一條中階線
+        # 跨完整直欄；不得再拆 issuer／number 兩段或疊畫細線。
+        for ridx in (3, 5):
+            ry = _boundary_y(ridx)
+            group_lines = _covering_lines(band0_left, band0_left + band_w, ry)
+            self.assertEqual(
+                len(group_lines), 1,
+                f"r{ridx}（群組交界）只能有一條跨完整直欄的共享邊界")
+            self.assertEqual(group_lines[0].color.lower(), "#a56b76")
 
-            # number 子欄水平線：每張罰單編號各占一格；群組內是細線，
-            # 群組交界則由跨完整直欄的中階共享邊界涵蓋。
-            for ridx in range(1, 6):
-                ry = _boundary_y(ridx)
-                self.assertTrue(
-                    bool(_covering_lines(number_x0, number_x1, ry)),
-                    f"r{ridx} number 子欄水平線必須保留")
-        finally:
-            plt.close(fig)
+        # number 子欄水平線：每張罰單編號各占一格；群組內是細線，
+        # 群組交界則由跨完整直欄的中階共享邊界涵蓋。
+        for ridx in range(1, 6):
+            ry = _boundary_y(ridx)
+            self.assertTrue(
+                bool(_covering_lines(number_x0, number_x1, ry)),
+                f"r{ridx} number 子欄水平線必須保留")
 
 
 # ── queryTicketPrintRows（簽收日固定為 register_date）─────────

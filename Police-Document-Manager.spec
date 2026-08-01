@@ -17,20 +17,23 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['matplotlib.backends.backend_cairo', 'matplotlib.backends.backend_gtk3', 'matplotlib.backends.backend_gtk3agg', 'matplotlib.backends.backend_gtk3cairo', 'matplotlib.backends.backend_gtk4', 'matplotlib.backends.backend_gtk4agg', 'matplotlib.backends.backend_gtk4cairo', 'matplotlib.backends.backend_macosx', 'matplotlib.backends.backend_nbagg', 'matplotlib.backends.backend_pgf', 'matplotlib.backends.backend_ps', 'matplotlib.backends.backend_qt', 'matplotlib.backends.backend_qt5', 'matplotlib.backends.backend_qt5agg', 'matplotlib.backends.backend_qt5cairo', 'matplotlib.backends.backend_qtagg', 'matplotlib.backends.backend_qtcairo', 'matplotlib.backends.backend_svg', 'matplotlib.backends.backend_template', 'matplotlib.backends.backend_tkagg', 'matplotlib.backends.backend_tkcairo', 'matplotlib.backends.backend_webagg', 'matplotlib.backends.backend_webagg_core', 'matplotlib.backends.backend_wx', 'matplotlib.backends.backend_wxagg', 'matplotlib.backends.backend_wxcairo', 'tkinter',
+    # 簽收單列印頁自 v1.2.9 起改用 Qt 原生繪圖（QPainter／QPdfWriter），
+    # 產品路徑已無 matplotlib，故整包排除 matplotlib／numpy／PIL 及其相依
+    # （未壓縮合計約 72MB，實測 onefile 可省約 25MB）。比照獨立版 spec 的清單。
+    # ⚠️ 舊註解「PIL 整包不可排除（matplotlib/colors.py 在 module 層 from PIL
+    #    import Image）」已不適用——那條相依隨 matplotlib 一起消失。
+    #    matplotlib 仍留在開發環境，是 tools/ 底下比對基準用的（不進打包）。
+    #    產品路徑無 matplotlib 由 tools/check_no_matplotlib.py 把關（靜態掃描
+    #    ＋執行期攔截雙軌，後者涵蓋全部 tabs／ui_utils）。
+    excludes=['matplotlib', 'numpy', 'PIL', 'pylab', 'mpl_toolkits',
+             'contourpy', 'fontTools', 'kiwisolver', 'cycler', 'dateutil',
+             'pyparsing', 'tkinter',
              # 純 QWidget 程式，從未 import QtQuick／QML／OpenGL
              'PySide6.QtQuick', 'PySide6.QtQuickWidgets', 'PySide6.QtQml',
              'PySide6.QtOpenGL', 'PySide6.QtOpenGLWidgets',
              # 純本機 SQLite 程式，原始碼零網路使用；QtNetwork 綁定層（1.0MB）沒人
              # import，Qt6Network.dll 及其 tls／networkinformation 外掛由 pyi_prune 砍
-             'PySide6.QtNetwork',
-             # AVIF 影像格式支援（_avif.pyd 未壓縮 7.5MB，比 PIL 核心的 _imaging 還大）。
-             # 本專案影像只有 PNG／SVG，用不到；PIL 的外掛載入本來就允許缺席——
-             # AvifImagePlugin 自己 try/except 後設 SUPPORTED=False，Image.init() 也
-             # 對每個外掛 import 包 try/except ImportError，缺了不會炸。
-             'PIL._avif'],
-    # ⚠️ PIL 整包不可排除：matplotlib/colors.py 在 module 層就 from PIL import Image，
-    #    排掉會在載入列印頁時 ModuleNotFoundError（踩過）
+             'PySide6.QtNetwork'],
     noarchive=False,
     optimize=0,
 )
