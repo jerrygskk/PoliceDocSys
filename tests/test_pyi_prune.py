@@ -142,11 +142,26 @@ class TestSpecFiles(unittest.TestCase):
         for spec in _SPECS:
             self.assertTrue(os.path.isfile(os.path.join(_ROOT, spec)), spec)
 
-    def test_main_spec_does_not_exclude_whole_pil(self):
-        """matplotlib/colors.py 在 module 層 from PIL import Image（踩過）。"""
-        excludes = self._excludes("Police-Document-Manager.spec")
-        self.assertNotIn("PIL", excludes)
-        self.assertIn("PIL._avif", excludes)
+    def test_both_specs_exclude_matplotlib_stack(self):
+        """兩支 exe 都不得把 matplotlib／numpy／PIL 打包進去。
+
+        簽收單列印頁自 v1.2.9 起改用 Qt 原生繪圖（`lib/print_canvas.py` 的
+        `QtCanvas`），產品路徑已無 matplotlib，這三包連同相依整組排除，
+        完整版因此少 25MB。
+
+        ⚠️ 本測試取代了舊的 `test_main_spec_does_not_exclude_whole_pil`
+        （當時斷言「完整版**不可**排除 PIL」，理由是 `matplotlib/colors.py`
+        在 module 層 `from PIL import Image`）。那條相依隨 matplotlib 一起
+        消失，舊斷言已與現實相反——留著會擋住瘦身、改回去會讓 exe 胖回來。
+
+        另一半的保護在 `tools/check_no_matplotlib.py`（靜態掃描＋執行期攔截，
+        涵蓋全部 tabs／ui_utils）：這裡只管「有沒有排除」，那裡管「排除了會
+        不會炸」，兩邊都要過。
+        """
+        for spec in _SPECS:
+            excludes = self._excludes(spec)
+            for mod in ("matplotlib", "numpy", "PIL"):
+                self.assertIn(mod, excludes, f"{spec} 應排除 {mod}")
 
     def test_entry_spec_excludes_rescue_dialog(self):
         """規格禁止獨立版做資料庫還原，這是 profile 之外的第二層保險。"""

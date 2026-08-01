@@ -11,6 +11,8 @@ tmp/
 .tmp/
 .pytest_cache/
 dbfile.db
+# tools/seed_extreme_cases.py 產生的極端排版測試 DB（標題含換行），與 dbfile.db 同樣不入庫
+dbfile_multiline_title.db
 dbfile_backup_*.db
 backups/
 _shell/

@@ -2,10 +2,12 @@
 延遲載入（PEP 562 module-level __getattr__）：只在實際存取某個 Tab 類別時，
 才 import 對應子模組。
 
-目的：`tabs/tab_print.py` 於模組層引入 matplotlib（全專案唯一重量級 import
-來源，未壓縮約 49MB／耗時約 1 秒）。獨立版（ENTRY_PROFILE）不含列印頁，
-不應為了 import 套件而連帶付出這筆成本；大程式（FULL_PROFILE）仍會在建立
-列印頁時觸發載入，行為不變。
+目的：各分頁模組各有自己的 import 成本，獨立版（ENTRY_PROFILE）不含列印頁，
+不應為了 import 用不到的分頁而連帶付出成本；大程式（FULL_PROFILE）仍會在
+存取該分頁時才觸發 import，行為不變。⚠️ 階段 3 起 `tabs/tab_print.py` 已
+不再於模組層引入 matplotlib（產品路徑一律走 Qt 繪圖，見
+`lib/print_canvas.py`／`tools/check_no_matplotlib.py`），本檔延遲載入純為
+分頁隔離，與 matplotlib 無關。
 
 對外寫法完全相容：`from tabs import TabReward`、`import tabs; tabs.TabPrint`
 皆可照舊使用；差別只在於「未被存取的分頁模組不會被 import」。
