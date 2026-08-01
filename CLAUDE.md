@@ -89,6 +89,25 @@
 - **結尾**固定加 `Co-Authored-By:` 一行（Claude 用制式署名）。
 - **寫法**：多行訊息一律 `git commit -F - <<'EOF' … EOF`（Bash heredoc），
   **不要用 PowerShell here-string**（踩過多次）。
+- ⚠️ **只有 PowerShell 可用時（Codex 常見）別硬塞 heredoc**：把 Bash 多行字串當參數
+  丟給 PowerShell，引號會被 PowerShell 先解析一次而中止，**commit 沒改到、但前面的
+  `git reset` 之類可能已經跑掉**（實際踩過）。正解是**訊息落檔再 `-F` 讀檔**，
+  全程不經過 shell 引號：
+  ```powershell
+  $msg = @"
+  類型: 標題
+  
+  正文……
+  "@
+  [System.IO.File]::WriteAllText("$env:TEMP\cm.txt", $msg,
+      (New-Object System.Text.UTF8Encoding $false))
+  git commit -F "$env:TEMP\cm.txt"
+  Remove-Item "$env:TEMP\cm.txt"
+  ```
+  ⚠️ 兩個細節：①**必須無 BOM 的 UTF-8**（`Set-Content -Encoding utf8` 在
+  Windows PowerShell 5.1 會帶 BOM，BOM 會跟著跑進 commit 標題），故用
+  `UTF8Encoding $false`；②訊息檔用完即刪，不要留在專案目錄裡（會被誤 add）。
+  不要為了跑 heredoc 另外生一支 `.sh` 腳本——多一層檔案就多一個忘了刪與編碼出錯的機會。
 - **禁止**：`update files`／`fix bug`／`調整` 這類無資訊量的訊息；也不要把整段 diff
   貼進訊息（要看程式碼去看 diff，訊息負責交代意圖）。
 
