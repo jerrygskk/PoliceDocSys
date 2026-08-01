@@ -65,6 +65,9 @@ class ConvertDialog(QDialog):
         self._src_row = {}
         self._load_src()
         self._build_ui()
+        # 初始焦點給補填區的第一個必填欄，不得落在日期框（見 CLAUDE.md B 節）。
+        # 原本無明確指定，靠版面順序碰巧不會停在「查獲日期」上；欄位一經調動即失效。
+        (self.w_casetype if self.dst_kind == "crim" else self.w_dept).setFocus()
 
     # ── 載入來源列＋參照清單（含丟失欄顯示名）──────────────────────
     def _load_src(self):

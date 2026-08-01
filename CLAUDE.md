@@ -54,6 +54,12 @@
 - 改完**先 `py_compile` 驗證語法**，並主動自我迭代驗證：能單測就單測、能模擬（演算法／SQL round-trip）就跑一輪再交付。容器有 PySide6 可 import（跑非 GUI 純邏輯測試），但**無法開 GUI／截圖**——Tab 互動、Dialog、表格渲染請他上機測
 - **單元測試在 `tests/`**：完整既有 suite 用 `python -m unittest discover -s tests`，檔名 `test_*.py` 勿改名；兩個 pytest/pytest-qt pilot 在本次核准的 Codex 本機環境，用 `$env:QT_QPA_PLATFORM = 'offscreen'` 後執行 `C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests/test_pytest_qt_runtime.py tests/test_reward_gui_pilot.py -q`。⚠️ **Codex 本機專用；Claude 或一般環境不可假設此路徑存在，應改用已安裝相同依賴的 Python**；此絕對路徑只代表本次 Codex 本機已驗證 workflow。動到可單測純邏輯（解析／SQL round-trip／狀態計算／權限判斷）**一併新增或更新測試**。見 DEVELOPER §4。⚠️ **GUI 流程測試目前只有一條敘獎 pilot（`test_reward_gui_pilot.py`，登錄→編輯→待發→發文）**；擴充其餘 GUI 流程、抽 driver 或加 production 注入 seam，一律**須另立經核可的計畫**才動
 - ⚠️ **權限 gate 是每個新功能必檢項**：「受限身分不可做」的操作，只靠按鈕 `setEnabled(False)` 不夠——雙擊、行內編輯、Enter、右鍵、拖拉等替代路徑會繞過。①**所有**進入點補 guard（用 `_refEditable()`／`is_admin()` 等便捷判斷，勿字串比較）②上機以受限身分逐路徑驗證。此雷犯過，詳見 DEVELOPER §10「權限」
+- ⚠️ **視窗開啟時的初始焦點不得停在日期欄位**：任何 Dialog／視窗建好後都要明確
+  `setFocus()` 到第一個該填的欄位（通常是必填的文字框或下拉），**不可讓焦點落在
+  `QDateEdit`／`NullableDateEdit`**。日期框多半已預設今天，焦點停在上面時使用者
+  的鍵盤輸入或滾輪會直接改掉日期，且畫面變化細微不易察覺，等於靜默竄改資料。
+  慣例是在 `__init__` 末尾呼叫（既有例：`reward_dialog`／`ticket_dialog`／
+  `settle_dialog`）。新增視窗一律照做並上機確認焦點位置。
 - ⚠️ **本專案的公版樣板清單**（「有公版就直接套」的通則見全域設定）：全域樣式 `lib/theme.py`（`APPLE_STYLE`／`HINT_COLOR`／`TEXT_COLOR`）、按鈕 `ui_utils/ui_common.py`（`BTN_CONFIRM`／`BTN_CANCEL`／`BTN_DANGER`）、訊息與確認框（`msgInfo`／`msgWarning`／`msgCritical`／`confirmBox`）、表格（`ui_utils/table.py` 的 `setupPreviewTable`）、日期框（`NullableDateEdit`／`setupDateEditToToday`／全域滾輪 guard，見 PITFALLS QTW-10／QTW-13）、設定面板（`ui_utils/settings_panels.py` 的 `_SettingsPanel`／`_save_row`）。在新檔案裡寫死色碼／自訂按鈕樣式＝往後改主題會漏掉這一處（已有前例：對話框自帶一份區域 QSS）
 
 ### C. 版本 / Git / 發布（鐵則；完整流程與用語約定見 DEVELOPER §7「發布流程」）

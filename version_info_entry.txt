@@ -2,8 +2,8 @@
 # 由 bump_version.py 自動產生，請勿手改（用 bump_version.py 進版即可）
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 2, 8, 0),
-    prodvers=(1, 2, 8, 0),
+    filevers=(1, 2, 9, 0),
+    prodvers=(1, 2, 9, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -18,12 +18,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', '桃園市政府警察局中壢分局'),
           StringStruct('FileDescription', '公文快速登錄系統'),
-          StringStruct('FileVersion', '1.2.8'),
+          StringStruct('FileVersion', '1.2.9'),
           StringStruct('InternalName', 'Police-Entry-Manager.exe'),
           StringStruct('LegalCopyright', '© 2026 桃園市政府警察局中壢分局龍興派出所'),
           StringStruct('OriginalFilename', 'Police-Entry-Manager.exe'),
           StringStruct('ProductName', '公文快速登錄系統'),
-          StringStruct('ProductVersion', '1.2.8')
+          StringStruct('ProductVersion', '1.2.9')
         ])
     ]),
     VarFileInfo([VarStruct('Translation', [1028, 1200])])

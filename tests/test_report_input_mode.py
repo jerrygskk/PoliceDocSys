@@ -1192,5 +1192,65 @@ class TestResetLegacyKeyCleanup(unittest.TestCase):
         self.assertEqual(getSetting(path, "report_mode_ticket", None), "1")
 
 
+class TestSettleRewardProcessor(unittest.TestCase):
+    """敘獎在結算清單的「承辦人」欄：資料表無承辦人欄位，改取 recipients 首位。
+
+    整欄空白會被誤判成資料漏填（實際發生過），故以第一位受獎人當代表人。
+    """
+
+    def setUp(self):
+        import tempfile
+        from lib.db_schema import applySchema
+        self._tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self._tmp, "reward_settle.db")
+        conn = sqlite3.connect(self.path)
+        applySchema(conn)
+        rows = (
+            ("1", "單人", "王小明"),
+            ("2", "多人", "王小明,李小華,張三"),
+            ("3", "帶後綴", "陳大同-05"),
+            ("4", "無受獎人", ""),
+            ("5", "受獎人為NULL", None),
+        )
+        for doc_id, reason, recipients in rows:
+            conn.execute(
+                "INSERT INTO Document_Reward "
+                "(doc_id, register_date, reason, recipients) VALUES (?,'',?,?)",
+                (doc_id, reason, recipients))
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _processors(self):
+        from ui_utils.settle_dialog import load_unissued
+        return {r["doc_id"]: r["processor"] for r in load_unissued(self.path)["reward"]}
+
+    def test_single_recipient_used_as_processor(self):
+        self.assertEqual(self._processors()["1"], "王小明")
+
+    def test_first_recipient_of_many(self):
+        """多人時只取第一個半形逗號前的姓名。"""
+        self.assertEqual(self._processors()["2"], "王小明")
+
+    def test_suffix_trimmed_like_other_types(self):
+        """沿用 _trimName：顯示去掉 -NN 後綴，DB 原值不受影響。"""
+        self.assertEqual(self._processors()["3"], "陳大同")
+
+    def test_blank_and_null_recipients_stay_empty(self):
+        procs = self._processors()
+        self.assertEqual(procs["4"], "")
+        self.assertEqual(procs["5"], "")
+
+    def test_subject_still_shows_reason_and_all_recipients(self):
+        """承辦人欄改動不得影響主旨欄的「事由：人員」格式。"""
+        from ui_utils.settle_dialog import load_unissued
+        subjects = {r["doc_id"]: r["subject"]
+                    for r in load_unissued(self.path)["reward"]}
+        self.assertEqual(subjects["2"], "多人：王小明,李小華,張三")
+
+
 if __name__ == "__main__":
     unittest.main()

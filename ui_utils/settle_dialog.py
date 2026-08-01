@@ -97,12 +97,16 @@ SETTLE_META = (
         "key": "reward",
         "label": "敘獎",
         "color": "#0f6e56",
-        # 敘獎無承辦人欄（第二欄回空字串）；主旨欄放「事由：人員」。
+        # 敘獎資料表無承辦人欄位，第二欄取 recipients 的第一位（首個半形逗號前）
+        # 當代表人顯示，避免整欄空白被誤判為資料漏填；主旨欄仍為「事由：人員」。
         # ⚠️ 未發文哨兵是空字串 register_date=''；NULL 是軟刪除哨兵，不可混用
         #    （見 DEVELOPER §3 三態）。WHERE register_date='' 本身即並行防護：
         #    他機已刪（NULL）／已發文（有值）時 rowcount=0，自然跳過。
         "query": (
-            "SELECT doc_id, '', "
+            "SELECT doc_id, "
+            "       CASE WHEN INSTR(COALESCE(recipients,''), ',') > 0 "
+            "            THEN SUBSTR(recipients, 1, INSTR(recipients, ',') - 1) "
+            "            ELSE COALESCE(recipients,'') END, "
             "       (COALESCE(reason,'') || '：' || COALESCE(recipients,'')) "
             "FROM Document_Reward WHERE register_date='' "
             "ORDER BY CAST(doc_id AS INTEGER)"
@@ -545,6 +549,9 @@ class SettleDialog(QDialog):
         self._settled_date = None
         self._build()
         self._load()
+        # 初始焦點給送文者（結算唯一必填），不留在發文日期：日期框已預設今天，
+        # 焦點停在上面時鍵盤輸入或滾輪會直接改掉日期而使用者不易察覺。
+        self.cmb_sender.setFocus()
 
     # ── 建 UI ────────────────────────────────────────────────
     def _build(self):

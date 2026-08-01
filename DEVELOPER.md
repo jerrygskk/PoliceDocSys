@@ -32,7 +32,7 @@ main.py
 
 - **`main.py`（完整版）與 `standalone_main.py`（獨立版「公文快速登錄系統」）共用同一條 `runApplication(profile)`**：兩支入口都只是薄殼，各自帶自己的 `AppProfile` 呼叫它，流程本身不分支、不判斷是哪支 exe
 - **能力差異全部集中在 `lib/app_profile.py` 的 `AppProfile`**（`FULL_PROFILE`／`ENTRY_PROFILE` 兩份設定）：`tab_keys`／`menu_keys`／`menu_labels`／`browse_keys`／`preload_keys`／`settings_pages`／`system_panels`／`input_lock_flows`／`input_mode_flows`／`preheat_keys`／`banner_path`／`allows_db_rescue`。**模組本身不判斷 EXE 名稱、不寫散落的 standalone 布林**——新增能力差異一律加 profile 欄位，不寫 `if is_entry` 之類分支。詳見 §10「獨立版：公文快速登錄系統」
-- **Tab 由 `profile.tab_keys` 組裝**：`DocumentManager.TAB_CLASSES` 現為 `{key: (模組路徑, 類別名)}` 的**模組座標**，`create_tab()`／`_resolve_tab_class()` 在建立分頁當下才 `importlib` 動態載入並快取（避免獨立版僅因 import 就連帶付出完整版分頁的載入成本，如 `tab_print` 的 matplotlib）；`TAB_FACTORIES` 只登記需要額外收 profile 能力設定的分頁（`browse` 傳 `allowed_keys=profile.browse_keys`、`settings` 傳 `profile=profile`），其餘分頁一律走預設路徑，不在建立迴圈散落 if 判斷
+- **Tab 由 `profile.tab_keys` 組裝**：`DocumentManager.TAB_CLASSES` 現為 `{key: (模組路徑, 類別名)}` 的**模組座標**，`create_tab()`／`_resolve_tab_class()` 在建立分頁當下才 `importlib` 動態載入並快取（避免獨立版僅因 import 就連帶付出完整版分頁的載入成本）；`TAB_FACTORIES` 只登記需要額外收 profile 能力設定的分頁（`browse` 傳 `allowed_keys=profile.browse_keys`、`settings` 傳 `profile=profile`），其餘分頁一律走預設路徑，不在建立迴圈散落 if 判斷
 - **Profile 與角色顯隱是兩個階段**：啟動時可依 `profile.tab_keys` 對 `.ui` 的完整版頁籤由高到低 `removeTab()`，形成該程式固定的能力範圍；程式執行中角色切換只以 `setTabVisible()` 顯示／隱藏已建立頁籤，**不可再 `removeTab()` 或重排 index**。角色只能縮小目前 Profile 的可見集合，不能讓 Profile 未核准的頁籤出現
 
 ### 資料流
@@ -189,10 +189,12 @@ graph LR
   ```powershell
   $env:QT_QPA_PLATFORM = 'offscreen'
   C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s tests
-  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests -q
+  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests -q --ignore=tests/test_standalone_shell.py
+  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests/test_standalone_shell.py -q
   C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest tests.test_no_pii
   ```
-  其他環境不可假設此絕對路徑存在，應改用已安裝 `requirements-dev.txt` 相同依賴的 Python 執行相同三個 `-m` 命令。完整 pytest 會一併驗證 packaging／bundle／startup 與 GUI pilot。
+  其他環境不可假設此絕對路徑存在，應改用已安裝 `requirements-dev.txt` 相同依賴的 Python 執行相同命令。完整 pytest 會一併驗證 packaging／bundle／startup 與 GUI pilot。
+⚠️ **pytest 必須分兩段跑**：`tests/test_standalone_shell.py` 會在同一行程內反覆建立整個 `DocumentManager`，與其餘模組合跑時累積到一定量必定 native 崩潰（access violation）。兩段各自全綠、合併必崩，詳細證據與已試過無效的兩條修法見 PITFALLS **TST-5**。正式程式不受影響——重啟一律另起新行程（`tab_settings._restartApp`），一個行程一輩子只建一個 `DocumentManager`。
 - **需 PySide6 的測試**（受測模組 import 時載入 PySide6）：`test_db_utils`／`test_status`／`test_auth_manager`／`test_error_msg`／`test_audit`／`test_ref_sort`；純 stdlib：`test_archive_text`／`test_app_lock`／`test_db_backup`
 - **offscreen Qt 元件測試**（module 層設 `QT_QPA_PLATFORM=offscreen` 建 QApplication，實例化 widget 但不開視窗）：`test_nullable_date`／`test_ui_load`／`test_dialog_smoke`／`test_dbbrowse_sync`（整個瀏覽 Tab offscreen 實例化，驗 `_allRows`/`_docorder` 與表格列 1:1 不變式、`_diffUpdate` 增修刪、`setUpdatesEnabled` try/finally 防卡死、搜尋過濾一致性）
 - **涵蓋**：歸檔解析（含 PK 撞號雷）、流水號／重置／設定／歸檔定位、逾期與狀態色、權限與密碼、錯誤白話化、稽核 helper、操作紀錄解析、軟性互斥、自動備份、閒置逾時解析（`test_idle_timeouts`，0＝停用／壞值退預設）；`.ui` 全檔載入與對話框建構 smoke（offscreen）；罰單四檔（`test_ticket_data` domain／`test_ticket_tab` 登錄頁與欄寬伸縮／`test_ticket_browse` 瀏覽 gate／`test_ticket_print` 排序分頁合併）＋`test_combo_hint`（提示灰字六狀態）＋`test_window_geometry`；另 `test_no_pii` 防個資外洩（見 CLAUDE）
@@ -343,12 +345,55 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 ### 列印（tab_print.py）
 
-- ⚠️ **簽收表產生走前景＋modal「產生中」popup**（`runWithBusy`），非背景執行緒：matplotlib 靠全域狀態，在背景 `QThread` 與主執行緒搶用會偶發崩潰／圖面錯亂，故 `generate_pages` 一律主執行緒同步畫（單機 1～2 秒可接受）。**勿改回背景執行緒跑 matplotlib**
-- 用 **`QPrintPreviewDialog`** 跳原生預覽＋列印選項；不碰 PDF 檔案關聯（避 WinError 1155），頁面 **300 DPI 點陣化**送印（`_paint_pages` 把 PNG 畫到 QPrinter）。「儲存 PDF」走 matplotlib `backend_pdf`（向量），與列印獨立
+#### 繪圖引擎：Qt 原生（v1.2.9 起，已脫離 matplotlib）
+
+三個出口共用 `lib/print_canvas.py` 的 `Canvas` 介面（`text`／`rect`／`line`，normalized
+座標、y 向上）：預覽出 `QImage`、儲存 PDF 走 `QPdfWriter`、列印走 `QPrinter`
+**向量直印**（不再點陣化）。產品端一律 `QtCanvas`（QPainter）；matplotlib 版
+`MatplotlibCanvas` 降級搬到 `tools/mpl_canvas.py`，只當比對基準、不進打包。
+完整版 exe 因此 55.5 → 30.1 MB。
+
+⚠️ **維護這塊必須知道的四件事**（每一條都是踩過才寫的）：
+
+1. **版面決策與繪製裝置解耦**：換行／字級只用固定 1200dpi 基準算一次，三個出口
+   照同一組結果畫，**不得各自依自己的 dpi 重算**——Qt 會把字寬取整到整數 device
+   px，96dpi 下誤差大到讓螢幕預覽與紙本換行不同。
+2. **粗體必須明確 `setBold()`**，不可靠 family 名區分：本機 `msjh.ttc` 與
+   `msjhbd.ttc` 回傳的 family 名**完全相同**，靠名字切字重會靜默失效（整頁標題
+   與欄名曾整批變成一般字重）。
+3. **垂直置中沿用 matplotlib 的 `"lp"` 參考字串規則**，不是墨跡框置中、也不是 Qt
+   的 `AlignVCenter`——純 CJK 差 1.7pt。
+4. **驗收網三層，缺一不可**：`tools/print_baseline.py --check`（逐位元組比對基準
+   影像，鎖住版面沒位移）、`tools/render_diff.py`（Qt vs matplotlib 感知級比對，
+   附 `--selftest` 自我驗證）、`tools/check_no_matplotlib.py`（靜態 AST 掃描＋執行期
+   import 攔截雙軌，證明產品路徑無 matplotlib）。⚠️ `tools/engine_diff.py` 只驗
+   「打算畫什麼」，對繪製正確性零保證——上述第 2、3 條它照樣全綠。
+   ⚠️ 基準影像放 `docs/print_baseline/`（未入庫），且**內含真實人員姓名**（承辦人
+   取自 `Ref_Personnel`），一律不得上傳；換機器時在新機重建基準當新起點，不要拿
+   舊雜湊硬比（字型／Qt 版本／縮放一變雜湊必然全滅）。
+
+- ⚠️ **簽收表產生走前景＋modal「產生中」popup**（`runWithBusy`），非背景執行緒：
+  `generate_pages` 一律主執行緒同步畫（單機 1～2 秒可接受）。QPainter／QPdfWriter
+  同樣不應在背景 `QThread` 與主執行緒搶用
+- 用 **`QPrintPreviewDialog`** 跳原生預覽＋列印選項；不碰 PDF 檔案關聯（避 WinError 1155）
 - 跨版本相容：`setPageSize` 用 `QPageSize` 物件、頁面範圍用 `painter.viewport()`（避 6.x enum 命名空間差異）
 - **預設彩色＋長邊雙面**：開預覽前對 `QPrinter` 設 `setColorMode(Color)`＋`setDuplex(DuplexLongSide)`，使用者仍可改（實際支援取決於印表機）
 - **欄內換行用真實字型度量**（`_text_width_pt`，dpi=72 `RendererAgg`）：`_wrap_clamp` 不再用「中文當滿格＋0.86 係數」估算（偏窄，會害欄寬還夠的主旨／案類提早折行）。可用寬＝欄寬扣約 1.2×PAD。⚠️ 編號欄 `_fit_font` 仍用舊估算（單行縮字、影響小）
 - **刑案類型欄固定 10pt**（`_draw_page` 中 `is_crim and cidx==2`）：案類名長短不一，固定避免參差又壓迫。一般「業務單位」與交辦不受影響、維持 12→10 自動縮
+
+#### 罰單簽收表版面（`drawTicketPage`，與其他四張不同 renderer）
+
+每頁三組並排、共六欄（開立人員｜罰單編號 ×3），每組固定 20 列，末頁下方一次性
+「本頁／本日總計＋簽收人」區。開立人員依 `TicketCell.issuer_rowspan` 合併儲存格。
+
+- **v1.2.9 起標題包在粗外框內**：粗外框從標題帶頂端包到簽收格底端，本表上邊界因此
+  與其他四張齊平（先前標題浮在框外，上邊界低一個 `TITLE_H`≈14.8mm）。列印日期與
+  發文日期仍在框外
+- **兩層網底**：標題帶 `TICKET_TITLE_BG`（重色白字）→ 欄名列 `TICKET_HEADER_BG`
+  （＝總計區同色的淡粉底、深字）→ 明細純白。⚠️ **欄名列不用白字**：淺底白字在
+  雷射列印會糊，筆畫多的中文尤其明顯
+- 明細整塊鋪白底再畫線，不逐列 patch（避免斑馬紋與相鄰邊界疊畫）
+- 配色與框線位置由 `tests/test_ticket_print.py` 釘住，改色或改框請一併更新該檔
 
 ### 簽收表標題自訂（tab_print／tab_settings／settings_dialogs）
 
@@ -443,6 +488,12 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
    - ⚠️ **編輯彈窗也要擋（曾漏）**：刑案／一般編輯彈窗（`CriminalEditDialog`／`GeneralEditDialog`）進入點不只陳報頁，還有瀏覽頁／歸檔頁。自助模式下**一般使用者**不可手動編輯陳報日期／發文人員（避免繞過結算），故 `_BaseEditDialog._lockReportFieldsIfSelfService()`（載入資料後於兩彈窗 `__init__` 呼叫）在「自助模式 **且** `not is_manager()`」時把 `w_report_date`／`w_sender` `setEnabled(False)`。**管理者／歸檔管理者不擋**（仍可手動補正）。停用欄位仍保留載入值，`_on_save` 讀回原值寫回為 no-op，未發文哨兵不變式維持，儲存邏輯不需改。測試 `tests/test_dialog_smoke.py`（一般使用者反灰／管理者不擋／非自助可編輯／反灰儲存保留原值四情境）。
 2. **列印頁（`tab_print`）**：`_settle_group`（`insertWidget(1)`，僅自助模式 `setVisible`）含「結算發文」鈕＋未發文計數 `lbl_unissued`（`count_unissued` 回 `{key: n}` dict，v1.2.1 起）；`_onShown` 呼叫 `_refresh_settle_group`。按鈕開 `SettleDialog`，`settled()` 為真則以 `settledDate()` 的實際成功日期＋`_on_generate()` 自動產生簽收表（結算→簽收表一條龍）。
 3. **結算彈窗（`ui_utils/settle_dialog.py` 的 `SettleDialog`）**：採**單一表格＋`SETTLE_META` registry**；成員為刑案／一般／敘獎／罰單，每型態各一筆 meta（label／色／未發文 query／`count_query`／結算 UPDATE／with_sender）。表格列出未發文案件（類型色標欄、預設全勾、點列切換、類型 chip＋關鍵字過濾疊加、全選 checkbox 三態只作用於顯示中列、底部即時計數）。勾選案件時送文者必選；選取後以**同一 transaction** 批次更新。刑案／一般遇到並行衝突 rowcount=0 時自然跳過、流程照走；其 UPDATE 的 CAS 同時檢查案由仍非空，避免載入後遭軟刪除的空殼被復活；**罰單 meta 帶 `strict=True`，任一衝突即整批 rollback**。**結算不寫稽核 LOG**（發文日期與發文人員本身就寫在資料列上，另記一筆是重複）；CRUD mutation 仍在同一 transaction 寫入 `writeAudit()`。⚠️ **勾選狀態才是結算範圍**，關鍵字過濾（`isRowHidden`）只是找列輔助——隱藏但仍勾選者照結、照計數（「將結算＋排除」必須恆等於總筆數）。⚠️ 表格 mouseover 反白須明寫 `QTableWidget::item:hover { background-color: transparent; }`（見 PITFALLS QSS 組）。
+⚠️ **敘獎的「承辦人」欄取受獎人首位**（v1.2.9）：`Document_Reward` 沒有承辦人欄位，
+該欄原本固定回空字串，整欄空白會被誤判成資料漏填（實際發生過）。現改取 `recipients`
+第一個半形逗號前的姓名當代表人（SQL 內 `INSTR`／`SUBSTR` 裁切，純顯示、不改寫入），
+主旨欄仍完整列出「事由：全部人員」。純讀取，結算 UPDATE 一字未動。
+⚠️ **初始焦點給送文者下拉、不給發文日期**：日期已預設今天，焦點停在 `QDateEdit`
+上時鍵盤或滾輪會靜默改掉日期（通則見 CLAUDE.md B 節，適用所有視窗）。
 4. **歸檔頁（`tab_archive`）＋瀏覽頁（`tab_dbbrowse`）**：待歸清單／指紋查詢（`_queryUnarchived`／`_tableSignature`）加 `report_date IS NOT NULL AND != ''`＝**未發文不進歸檔**（未發文的公文流程尚未走完）。瀏覽頁陳報日期欄 NULL 顯示橘字「未發文」（`#e67e22`）；敘獎子頁則由 `register_date=''` 表示尚未發文。歸檔本就不含敘獎（無 PDF），免改。
 
 > ⚠️ 切換模式**不回溯**既有資料：切成自助後既有已發文公文仍是已發文；切回送文者後已存在的未發文（NULL）公文仍需靠結算或手動補日期才會離開「未發文」狀態。這是刻意行為（模式是作業型態、非資料遷移）。
@@ -540,7 +591,7 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 1. **寫文件內文**：技術章節補進 DEVELOPER.md；使用者有感的改動 README 也同步；HELP／QUICKSTART 對照 §2「跨功能影響對照表」逐列確認（歷來最常漏）
 2. **寫 handover**（需跨對話交接才寫，`docs/handover.md` 不入庫）
 3. **寫 release note**（`release_note_v{版號}.md`，不入庫；內容寫給使用者看，技術細節留 DEVELOPER.md）
-4. **推送前完整 gate**：依 §4 的 Python 選擇方式執行完整 `python -m unittest discover -s tests`、Windows offscreen `python -m pytest tests -q`、`python -m unittest tests.test_no_pii`；**三項全部通過後才可推送與建立 tag**
+4. **推送前完整 gate**：依 §4 的 Python 選擇方式執行完整 `python -m unittest discover -s tests`、Windows offscreen pytest **兩段**（`python -m pytest tests -q --ignore=tests/test_standalone_shell.py` 與 `python -m pytest tests/test_standalone_shell.py -q`，⚠️ 合併成一條會穩定 native 崩潰，原因見 PITFALLS **TST-5**）、`python -m unittest tests.test_no_pii`（⚠️ 須在主 checkout 跑，worktree 會靜默 skip）；**全部通過後才可推送與建立 tag**
 5. **版號進版並推上去**：bump＋commit，建立 tag `v{版號}`，再 push commit 與 tag（逐檔 add 等鐵則見 CLAUDE.md C 節）
 6. **build**：刪除既有 `build/`／`dist/` 後 onefile 全新 build（見下方指令），**兩支 exe 都要重建**；兩支 fresh build 完成後立即於同次執行 `python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager`，不得沿用舊 `build/` 或 `PKG-00.toc`。回報成功/失敗（失敗才貼錯誤末段）
 7. **發 GitHub Release**：5 asset，指令與 asset 取得方式見本節末「發 GitHub Release」
@@ -572,7 +623,7 @@ python -m PyInstaller --clean --noconfirm Police-Entry-Manager.spec
 
 `force_qt_binaries()` 則相反：把「Python 綁定層已被 excludes 排除、但仍是連結期硬相依」的 Qt DLL 強制收回來（目前是 `Qt6OpenGL.dll`／`Qt6OpenGLWidgets.dll`）。
 
-> **怎麼判斷一支 DLL 能不能砍**：不是看原始碼有沒有 import 那個名字，而是解析包內每個 PE 的 import table、反查「誰在連結它」，沒有任何使用者才是真的能砍（`tools/check_bundle_deps.py` 的 `pe_imports()` 可直接拿來做這件事）。本次 PDF／網路那串就是這樣定案的。剩下的大宗是 `Qt6OpenGL.dll`（1.98MB，被 `Qt6UiTools` 連結期綁住，除非廢掉 `QUiLoader`）與完整版 numpy 的 OpenBLAS（20.4MB，除非列印頁脫離 matplotlib），兩者都屬另立計畫的範圍。
+> **怎麼判斷一支 DLL 能不能砍**：不是看原始碼有沒有 import 那個名字，而是解析包內每個 PE 的 import table、反查「誰在連結它」，沒有任何使用者才是真的能砍（`tools/check_bundle_deps.py` 的 `pe_imports()` 可直接拿來做這件事）。本次 PDF／網路那串就是這樣定案的。剩下的大宗是 `Qt6OpenGL.dll`（1.98MB，被 `Qt6UiTools` 連結期綁住，除非廢掉 `QUiLoader`）。完整版 numpy 的 OpenBLAS（20.4MB）已於 v1.2.9 隨列印頁脫離 matplotlib 一併消失。
 
 ⚠️ **改動排除清單後必跑這兩支**（不跑就是拿打包版當測試場）：
 
@@ -586,7 +637,7 @@ python tools/check_bundle_deps.py
 
 ### 新增分頁時要改的地方
 
-分頁類別是動態載入（見 §5），PyInstaller 靜態分析掃不到，兩份 spec 的 `hiddenimports` 都要補 `tabs.tab_xxx`——**獨立版只補屬於 `ENTRY_PROFILE.tab_keys` 的分頁**，多列會把列印頁連同 matplotlib 一起拉回來，少列則點到該分頁才炸（PITFALLS PKG 組）。
+分頁類別是動態載入（見 §5），PyInstaller 靜態分析掃不到，兩份 spec 的 `hiddenimports` 都要補 `tabs.tab_xxx`——**獨立版只補屬於 `ENTRY_PROFILE.tab_keys` 的分頁**，少列則點到該分頁才炸（PITFALLS PKG 組）。（v1.2.9 前多列還會把 matplotlib 一起拉回來，該風險已隨列印頁改 Qt 原生繪圖消失。）
 
 ### 兩份 spec 的差異
 
@@ -596,11 +647,11 @@ python tools/check_bundle_deps.py
 | 版本資訊 | `version_info.txt` | `version_info_entry.txt` |
 | 橫幅圖 | `banner.png` | `reward_ticket_banner.png` |
 | 分頁 | 10 個 | 敘獎／罰單／瀏覽／設定 4 個 |
-| matplotlib／numpy／PIL | 收（列印頁要用） | **整包排除**，體積減半的關鍵 |
+| matplotlib／numpy／PIL | **整包排除**（v1.2.9 起列印頁改 Qt 原生繪圖，產品路徑已無 matplotlib） | 整包排除 |
 | `ui_utils.rescue_dialog` | 收 | **排除**（規格禁止獨立版做資料庫還原，這是 `profile.allows_db_rescue` 之外的第二層保險）|
 
-- ⚠️ 若哪天獨立版要加列印功能，`matplotlib`／`numpy`／`PIL` 那幾行要一併拿掉
-- ⚠️ **PIL 不可整包排除**：`matplotlib/colors.py` 在 module 層就 `from PIL import Image`（踩過）。只排除 `PIL._avif`（AVIF 支援，7.5MB，PIL 外掛缺席本來就是合法狀態）
+- ⚠️ 兩支現在都不含 matplotlib；獨立版要加列印功能不必再改這幾行
+- ⚠️ 舊規則「PIL 不可整包排除（`matplotlib/colors.py` module 層 `from PIL import Image`）」**已失效**——該相依隨 matplotlib 一起消失，故 PIL 現可整包排除。matplotlib 仍留在開發環境，供 `tools/mpl_canvas.py` 當比對基準用，不進打包（由 `tools/check_no_matplotlib.py` 把關）
 - 兩支 exe 版號永遠同步（`tools/bump_version.py` 一次產生兩份 version_info），勿手改
 - `dbfile.db` 不打包；兩支 exe 可放同一資料夾共用一份
 - **建置後檢查 Windows 詳細資料**：
@@ -610,20 +661,21 @@ python tools/check_bundle_deps.py
 
 ### 體積參考（2026-07 兩輪瘦身）
 
-| | 原始 | 第一輪 | 第二輪（v1.2.8-v2） |
-|---|---|---|---|
-| 完整版 | 81.0 MB | 57.2 MB | **55.5 MB** |
-| 獨立版 | 52.3 MB | 32.7 MB | **26.6 MB** |
+| | 原始 | 第一輪 | 第二輪（v1.2.8-v2） | 第三輪（v1.2.9） |
+|---|---|---|---|---|
+| 完整版 | 81.0 MB | 57.2 MB | 55.5 MB | **30.1 MB** |
+| 獨立版 | 52.3 MB | 32.7 MB | **26.6 MB** | 26.6 MB（不變） |
 
 第二輪砍的是 PDF／網路整串與備用外掛（兩支共用），獨立版另砍 OpenSSL 並重壓開機橫幅，故降幅較大。
 
-大程式剩餘最大單項是 numpy 的 OpenBLAS（未壓縮 20.4MB），要處理得先讓列印頁脫離 matplotlib，屬於另立計畫的範圍。
+第三輪（v1.2.9）只動完整版：列印頁改 Qt 原生繪圖後，matplotlib／numpy／PIL 整組移出打包，一次少 25.3 MB（−45.7%）。獨立版本來就不含這三者，故不變。
+
+第三輪（v1.2.9）讓列印頁脫離 matplotlib，連帶把 numpy 的 OpenBLAS（未壓縮 20.4MB）整包移出完整版，是歷來單次降幅最大的一次。剩餘最大單項為 `Qt6OpenGL.dll`（1.98MB，被 `Qt6UiTools` 連結期綁住，除非廢掉 `QUiLoader`）。
 
 ### 注意事項
 
 - `dbfile.db` 不打包，與 exe 同資料夾（真實資料）
 - 共用 icon（`arrow`／`icon_pdf`／`icon_archive`／`icon_paper`／`icon_help`）及 `res/buttons/*.svg`（`:/btn/`）、`res/tabs/*.svg`（`:/tab/`）已透過 `resources_rc.py` 內嵌、不需 `--add-data`；改了要重編 qrc（`pyside6-rcc res/resources.qrc -o res/resources_rc.py`）。`res/buttons/*.svg`／`res/tabs/*.svg` 由 `tools/gen_buttons.py` 產出
-- matplotlib 只用 `backend_agg`（PNG）+ `backend_pdf`（存 PDF），其餘全排除
 - **build 前先砍 `build/`／`dist/`**（`--clean` 只清 PyInstaller 快取，不清舊產物）。⚠️ **build 一律用 PowerShell tool 執行**
 - ⚠️ **跨年度重啟**：onefile 版重啟新程序前必設 `PYINSTALLER_RESET_ENVIRONMENT=1`（否則 `Failed to load Python DLL`／`unicodedata` 缺，`_restartApp()` 已處理，見 PITFALLS PKG 組）
 - 打包報 `No module named res`／`lib.xxx` → 補進對應 spec 的 `hiddenimports`
@@ -672,11 +724,11 @@ CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入�
 
 | 版本 | 摘要 |
 |------|------|
+| v1.2.9 | **簽收單列印引擎改用 Qt 原生繪圖＋罰單簽收表版面對齊＋結算清單修正**。①列印頁三個出口（預覽／儲存 PDF／列印）全面改走 `lib/print_canvas.py` 的 `QtCanvas`（QPainter／QPdfWriter／QPrinter 向量直印），產品路徑不再有 matplotlib；matplotlib 版降級為 `tools/mpl_canvas.py` 只當比對基準。**版面刻意零變動**（`_wrap_clamp`／`_fit_font`／`_rows_per_page` 演算法一字未改），以三層驗收網把關：逐位元組基準比對、Qt vs matplotlib 感知級比對、無 matplotlib 靜態＋執行期雙軌檢查。⚠️ 期間踩到兩個 op log 比對抓不到的雷：粗體靠 family 名切換靜默全滅（`msjh.ttc` 與 `msjhbd.ttc` family 名相同，須明確 `setBold()`）、垂直置中須沿用 matplotlib 的 `"lp"` 參考字串規則（純 CJK 差 1.7pt）。②完整版 exe 55.5 → **30.1 MB（−25.3 MB，−45.7%）**：matplotlib／numpy／PIL 連同 OpenBLAS 整組移出打包；獨立版不變（本來就不含）。③罰單簽收表粗外框改從標題帶頂端起算，把標題包進框內，**上邊界與其他四張齊平**（原本標題浮在框外、低一個 `TITLE_H`≈14.8mm）；配色改為上深下淺兩層網底（標題帶重色白字、欄名列與總計區同一淡粉底深字），欄名列不用白字以免雷射列印糊字。④結算發文清單的敘獎「承辦人」欄改取受獎人首位（`Document_Reward` 無承辦人欄位，原本整欄空白會被誤判成資料漏填），純顯示裁切、不改寫入。⑤結算視窗初始焦點改給「送文者」下拉；併立新規則：**任何視窗初始焦點不得停在日期欄位**（日期已預設今天，焦點停留時鍵盤或滾輪會靜默改掉日期），`convert_dialog` 一併補上明確 `setFocus()`。完整套件 unittest 819／pytest 868＋29（分兩段跑，見 §4）。 |
 | v1.2.8-v2 | **同版號重新發布（tag `v1.2.8-v2`，`lib/version.py` 仍為 1.2.8）：打包瘦身與開機加速，無任何功能／schema 變動**。①排除清單（`tools/pyi_prune.py`，兩份 spec 共用）新增 PDF／網路整串：`qpdf` 外掛→`Qt6Pdf.dll`→`Qt6Network.dll`，連同 `tls`／`networkinformation`／`generic` 三個外掛資料夾；判定依據是解析包內每個 PE 的 import table 反查「誰在連結它」，確認彼此以外無使用者，**不是**看原始碼有沒有 import。②另砍備用平台外掛（`qdirect2d`／`qoffscreen`／`qminimal`）與冷門影像格式（`qicns`／`qtga`／`qwbmp`／`qgif`）；`qjpeg`／`qico`／`qsvg`／`qsvgicon` 明確保留。③新增 `prune(drop_openssl=True)`，**獨立版限定**砍 `libcrypto-3.dll`／`libssl-3.dll`（唯一使用者 `_hashlib` 由該 spec `excludes` 排除，`hashlib.sha256` 自動退回內建 `_sha2`）；完整版另有 `_ssl` 也吃 libcrypto 故維持不開。④兩份 spec 同步排除 `PySide6.QtNetwork` 綁定層，避免留下缺連結期相依的 pyd。⑤移除 `LoadWorker._run()` 的 `DEBUG_DELAY`：每個載入步驟 `sleep(0.05)` 是早期觀察進度條用的暫時措施（註解寫著上線前改 0，一直沒改），開機平白多花 0.3～0.45 秒。⑥獨立版開機橫幅重壓 1641×656 → 875×349（實際只顯示 700×279），1444KB → 345KB。⑦體積：完整版 60.1 → 55.5 MB、獨立版 34.3 → 26.6 MB。⚠️ 因版號未進位，exe 版本資訊仍顯示 1.2.8，只能靠 Release 頁與檔名區分。完整套件 unittest 814／pytest 863＋29。 |
 | v1.2.8 | **敘獎發文頁併回結算發文＋陳報預覽版面修正**。①敘獎發文（原 Tab4）整頁移除，發文回歸列印頁「結算發文」（`SETTLE_META` 加回敘獎 entry 含 `count_query`）；大 Tab 由 11 個減為 10 個、index 全面前移，`Layout10.ui` 留空號不重編。②敘獎重新掛回陳報模式（`REPORT_MODE_KEYS` 加 `report_mode_reward`）：送文者模式登錄即發文（發文日期＋發文人員必填）、自助取號模式兩欄反灰待結算補值；⚠️ reward **不吃**舊的全域 `report_input_mode` 回退（`LEGACY_MODE_FALLBACK_KINDS` 只含 crim／gen／ticket），避免舊庫殘值誤啟自助模式。③唯讀鎖由七把減為六把（移除 `input_lock_reward_issue`），現場舊庫殘值不清。④敘獎與罰單的候選人員名條改照 `Ref_Personnel.sort_order`，取消依使用次數重排，連帶移除整組計數機制與每次重建時的全表統計查詢。⑤陳報兩張預覽表改固定欄寬（`cap_mode=False`）、欄寬依實機 125% 截圖反推的字數基準（全形 17px／半形 8px／PAD 24），伸縮欄改為「陳報主旨」、`previewLayout` 分配 3:2；兩個日期欄縮為 5 半形只顯示 `MM-DD`（完整日期掛 tooltip），除主旨外一律不顯示省略號。⑥修掉三個版面雷：切換刑案／一般時右半部整塊位移、視窗 resize 不重算欄寬（右側留白）、一開啟就冒水平捲軸（Qt 會把欄夾到 header `minimumSectionSize`，改以實際欄寬回頭校正）。⑦敘獎登錄與罰單登錄兩頁表單骨架對齊，自助模式提示改用可見 QLabel 提示條。⑧文件整理：§8 版本記錄只留三版、其餘搬 HISTORY.md，修正敘獎發文頁移除後殘留的分頁編號；`PACKED.zip` 內容物改用中文檔名＋版號。完整套件 unittest 808／pytest 859＋29。 |
-| v1.2.7 | **依角色隱藏主功能 TAB**。①主視窗上方分頁改依目前登入身分精簡：一般使用者 9 個（隱藏「檔案歸檔」「操作紀錄」）、歸檔管理員 10 個（隱藏「操作紀錄」）、管理者 11 個全開；隱藏的分頁不占分頁列空間，其餘自動向左遞補，改善 125% 縮放下分頁列過度擁擠。②可見矩陣為不依賴 GUI 的純邏輯（`lib/app_profile.py` 的 `visibleTabKeys()`），只能縮小目前 Profile 的可見集合、不會讓 Profile 未核准的分頁出現，未知角色一律退回一般使用者最小範圍；執行期只用 `setTabVisible()`，`tab_index_by_key` 與 HELP 的固定 index 映射完全不變（不得再 `removeTab()`／重排）。③主選單維持 11 個入口不隱藏：選到目前身分看不到的功能時不跳訊息框，直接切到「資料庫設定」並在登入卡片標示原目標功能名稱；登入成功且新身分可用才自動開啟該分頁，權限仍不足則留在設定頁。待前往目標在未登入即離開設定頁時清除、登入失敗停留登入頁時保留。④登出、變更密碼後自動登出與閒置登出共用同一條 `role_changed` 路徑：目前頁面即將被隱藏才先退回設定登入頁，仍可見的業務頁不強制切換；靜默導向時同步 `_prev_tab_index`，設定頁未存排序的離頁提示不受影響。⑤HELP 與速查卡補上三身分可見分頁、設定頁兼作登入入口與受限入口導向登入的說明；README 補一段使用者說明。完整套件 unittest 790／pytest 868。 |
 
-本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.8-v2／v1.2.8／v1.2.7）；**v1.2.5 以前的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
+本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.9／v1.2.8-v2／v1.2.8）；**v1.2.5 以前的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
 
 ---
 
@@ -891,6 +943,6 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 - **設定頁 .ui 固定六頁不刪頁**（`tab_settings._PAGE_KEY_ORDER`，見 §5「系統設定子頁」）：未核准的頁（`trash`／`backup` 等）**不建物件、不接 signal**，`_page_loaders` 只登記 `profile.settings_pages` 核准的頁。⚠️ **`_applyRolePermissions` 必須先檢查 profile 再決定 nav 按鈕可見性**：資源回收筒／備份還原兩顆 nav 鈕在該 profile 未核准時要持續 `setVisible(False)`，若只憑角色判斷（如「is_admin 就顯示」）會把已核准隱藏的按鈕在角色切換時重新 `setVisible(True)`，繞過 profile 白名單
 - **DB 損毀時的處置分岔**（`main.handleCorruptDb`）：完整版走既有開機救援（`ui_utils.rescue_dialog.runStartupRescue`）；**獨立版只提示「請改用完整的公文收發管理系統進行備份還原」，不開任何還原視窗**（`profile.allows_db_rescue=False`）。第二層保險在獨立版 spec（`excludes` 含 `ui_utils.rescue_dialog`，見 §7）：獨立版連救援視窗的程式碼都不收，即使程式改壞也開不出還原畫面
 - **載入畫面橫幅由 `profile.banner_path` 決定**：完整版 `res/buttons/banner.png`、獨立版 `res/buttons/reward_ticket_banner.png`，`LoadingScreen(banner_path=)` 不再靠 EXE 名稱猜
-- **輕量化**：分頁延遲載入（`tabs/__init__.py` PEP 562）讓獨立版不必為了 import 就連帶付出完整版分頁的代價，獨立版打包不含 matplotlib／numpy／PIL（§7 獨立版 spec 整包排除）；實測 EXE 80.2MB→52.3MB，2026-07 進一步瘦身至 32.7MB，`import main` 冷啟動 1.65s→0.27s
+- **輕量化**：分頁延遲載入（`tabs/__init__.py` PEP 562）讓獨立版不必為了 import 就連帶付出完整版分頁的代價，兩支打包皆不含 matplotlib／numpy／PIL（§7，v1.2.9 起完整版也排除）；獨立版實測 EXE 80.2MB→52.3MB，2026-07 兩輪瘦身至 26.6MB，`import main` 冷啟動 1.65s→0.27s
 - **app lock 沿用單一鎖檔**：兩支 exe 共用同一份 `dbfile.lock`，同時開啟會互相輪流覆寫心跳；其中一支關閉後鎖檔殘留提示最久約五分鐘（`app_lock.STALE_SECONDS`）。**這是已知限制，不是 bug**，不做雙鎖檔或分辨「哪支 exe」的機制
 - **版號**：與大程式共用 `lib/version.py` 單一來源，`tools/bump_version.py` 進版一次同時產出 `version_info.txt`／`version_info_entry.txt` 兩份，兩支 exe 版號永遠同步

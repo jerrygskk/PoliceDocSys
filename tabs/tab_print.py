@@ -559,8 +559,12 @@ TICKET_SUMMARY_H = ROW_H
 TICKET_BODY_H = TOP - DATE_H - TITLE_H - HDR_H - BOT - TICKET_SUMMARY_H
 TICKET_ROW_H = TICKET_BODY_H / TICKET_ROWS_PER_BAND
 
-TICKET_HEADER_BG = "#B9858E"
-TICKET_HEADER_TEXT = "#FFFFFF"
+# 上深下淺兩層網底（比照標準表）：標題帶用原欄名列色，欄名列再淡一階。
+# 底色與文字色成對，改一個要一併確認另一個的對比。
+TICKET_TITLE_BG = "#B9858E"
+TICKET_TITLE_TEXT = "#FFFFFF"
+TICKET_HEADER_BG = "#F5EAEC"      # 同總計區底色（TICKET_SUMMARY_BG）
+TICKET_HEADER_TEXT = "#333333"
 TICKET_OUTER_BORDER = "#743A46"
 TICKET_GROUP_BORDER = "#A56B76"
 TICKET_GRID_BORDER = "#D7C4C8"
@@ -595,8 +599,14 @@ def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
     cv.text(1-R-PAD, TOP - DATE_H/2, f'發文日期：{disp_date}',
             size=10, bold=True, ha='right', va='center', color='#333333')
     cy = TOP - DATE_H
+    title_top = cy
+    # 標題帶：粗外框往上延伸把標題包進來（原本標題浮在框外，導致本表上邊界
+    # 比其他四張低一個 TITLE_H）。底色比欄名列深一階，形成上下兩層階層。
+    cv.rect(TABLE_L, cy-TITLE_H, TABLE_W, TITLE_H,
+            facecolor=TICKET_TITLE_BG, linewidth=0, zorder=1)
     cv.text(TABLE_L + TABLE_W/2, cy - TITLE_H/2, table_title,
-            size=14, bold=True, ha='center', va='center', color='#333333')
+            size=14, bold=True, ha='center', va='center',
+            color=TICKET_TITLE_TEXT)
     cy -= TITLE_H
     header_top = cy
 
@@ -610,9 +620,11 @@ def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
             xs.append(xs[-1] + band_w * r)
         return xs
 
-    # 欄名列是唯一深色網底；標題與日期留在表格粗外框之外。
+    # 欄名列：比標題帶淺一階，兩層之間以中階線分隔。
     cv.rect(TABLE_L, cy-HDR_H, TABLE_W, HDR_H,
             facecolor=TICKET_HEADER_BG, linewidth=0, zorder=1)
+    cv.line(TABLE_L, cy, TABLE_L+TABLE_W, cy,
+            color=TICKET_GROUP_BORDER, linewidth=_TICKET_GROUP_LW, zorder=2)
     for b in range(3):
         sub_xs = _sub_xs(TABLE_L + band_w * b)
         for hdr, sx, ratio in zip(TICKET_SUB_HEADERS, sub_xs, _TICKET_SUB_RATIOS):
@@ -729,8 +741,9 @@ def drawTicketPage(grid, *, table_title, print_date, disp_date, body_rows,
                 '簽收人：',
                 size=12, bold=True, ha='left', va='center', color='#333333')
 
-    # 唯一粗框：只從欄名列頂端包到簽收格底端；標題／日期在框外。
-    cv.rect(TABLE_L, summary_bottom, TABLE_W, header_top - summary_bottom,
+    # 唯一粗框：從標題帶頂端包到簽收格底端（列印日期／發文日期仍在框外），
+    # 上邊界因此與其他四張簽收表齊平。
+    cv.rect(TABLE_L, summary_bottom, TABLE_W, title_top - summary_bottom,
             edgecolor=TICKET_OUTER_BORDER, facecolor=None,
             linewidth=_TICKET_OUTER_LW, zorder=3)
 

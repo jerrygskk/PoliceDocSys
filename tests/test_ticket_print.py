@@ -334,9 +334,10 @@ class TestDrawTicketPage(TicketPrintTestCase):
         ]
         self.assertEqual(right_half_horizontal_lines, [])
 
-    def test_outer_box_starts_at_header_and_leaves_title_outside(self):
-        # Task 6：唯一粗外框只包「欄名列頂端～簽收格底端」；
-        # 標題與日期都在框外，頁面四周也不得另加 frame。
+    def test_outer_box_wraps_title_and_aligns_with_other_sheets(self):
+        # 唯一粗外框從「標題帶頂端」包到簽收格底端，使本表上邊界與其他四張
+        # 簽收表齊平（原本標題浮在框外，上邊界低一個 TITLE_H）；
+        # 列印日期／發文日期仍在框外，頁面四周也不得另加 frame。
         from tabs.tab_print import DATE_H, HDR_H, TITLE_H, TOP
 
         title_top = TOP - DATE_H
@@ -361,10 +362,10 @@ class TestDrawTicketPage(TicketPrintTestCase):
         box = outer_boxes[0]
         box_top_y = box.y + box.h
         self.assertAlmostEqual(
-            box_top_y, header_top, places=3,
-            msg="外框上緣只能到欄名列頂端，標題必須留在框外")
-        self.assertGreater(box_top_y, table_top)
-        self.assertLess(box_top_y, title_top)
+            box_top_y, title_top, places=3,
+            msg="外框上緣須到標題帶頂端（標題包在框內），與其他四張表齊平")
+        self.assertGreater(box_top_y, header_top)
+        self.assertAlmostEqual(box_top_y, TOP - DATE_H, places=3)
 
         # 5 條內部直線（2 條組間分隔線＋3 條組內子欄分隔線）須穿過欄名列，
         # 上緣須到達 header_top（標題帶不分欄，欄名列須分欄）。
@@ -389,8 +390,12 @@ class TestDrawTicketPage(TicketPrintTestCase):
         from tabs.tab_print import DATE_H, HDR_H, TABLE_L, TABLE_W, TITLE_H, TOP
 
         expected_palette = {
-            "TICKET_HEADER_BG": "#B9858E",
-            "TICKET_HEADER_TEXT": "#FFFFFF",
+            # 上深下淺兩層網底：標題帶重色白字，欄名列與總計區同一淡粉底、深字
+            # （淺底白字在雷射列印會糊，故欄名列不用白字）。
+            "TICKET_TITLE_BG": "#B9858E",
+            "TICKET_TITLE_TEXT": "#FFFFFF",
+            "TICKET_HEADER_BG": "#F5EAEC",
+            "TICKET_HEADER_TEXT": "#333333",
             "TICKET_OUTER_BORDER": "#743A46",
             "TICKET_GROUP_BORDER": "#A56B76",
             "TICKET_GRID_BORDER": "#D7C4C8",
@@ -433,8 +438,8 @@ class TestDrawTicketPage(TicketPrintTestCase):
             show_summary=True, total_count=4, canvas=cv)
         rect_ops = [op for op in cv.ops if isinstance(op, RectOp)]
         fills = [op.facecolor.lower() for op in rect_ops if op.facecolor]
-        self.assertIn("#b9858e", fills, "欄名列必須是酒紅底")
-        self.assertIn("#f5eaec", fills, "簽收格必須是淡酒紅底")
+        self.assertIn("#b9858e", fills, "標題帶必須是酒紅底")
+        self.assertIn("#f5eaec", fills, "欄名列與簽收格必須是淡酒紅底")
         self.assertNotIn("#eaf0f7", fills, "不得沿用舊藍色斑馬底")
 
         body_top = TOP - DATE_H - TITLE_H - HDR_H
@@ -454,7 +459,16 @@ class TestDrawTicketPage(TicketPrintTestCase):
         ]
         self.assertEqual(len(header_texts), 6)
         self.assertTrue(all(
-            op.color.lower() == "#ffffff" for op in header_texts))
+            op.color.lower() == "#333333" for op in header_texts),
+            "欄名改為淡底深字（淺底白字列印會糊）")
+
+        title_texts = [
+            op for op in cv.ops
+            if isinstance(op, TextOp) and op.s == "○○分局罰單簽收表"
+        ]
+        self.assertEqual(len(title_texts), 1)
+        self.assertEqual(title_texts[0].color.lower(), "#ffffff",
+                         "標題帶為重色底，文字須維持白字")
 
         outer = [
             op for op in rect_ops
