@@ -133,6 +133,25 @@ class TestRewardBrowse(unittest.TestCase):
         self.assertEqual(table.item(0, 3).text(), "未發文")
         self.assertEqual(table.item(0, 3).foreground().color().name(), "#e67e22")
 
+    def test_reward_reason_keeps_full_text_for_width_based_elision(self):
+        reason = "這是一段超過十四個顯示單位的完整敘獎事由"
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "UPDATE Document_Reward SET reason=? WHERE doc_id='2'", (reason,))
+        conn.commit()
+        conn.close()
+
+        tab = self._tab()
+        tab.buildInitial("reward")
+        table = tab._ui["reward"]["table"]
+        reason_col = next(
+            idx for idx, col in enumerate(TABLE_META["reward"]["cols"])
+            if col.get("view_col") == "reason")
+        item = table.item(0, reason_col)
+
+        self.assertEqual(item.text(), reason)
+        self.assertEqual(item.toolTip(), reason)
+
     def test_handlers_and_actual_operations_both_gate_permissions(self):
         tab = self._tab()
         tab._docorder = {"reward": ["10"]}

@@ -950,9 +950,7 @@ class TabDBBrowse(BaseTab):
                 else:
                     if table.cellWidget(pos, c_idx) is not None:
                         table.removeCellWidget(pos, c_idx)
-                    display_text = _truncateSubject(
-                        text, _SUBJECT_LIMIT_WITHOUT_ICON)
-                    sit = QTableWidgetItem(display_text)
+                    sit = QTableWidgetItem(text)
                     subject_font = sit.font()
                     subject_font.setPointSize(14)
                     sit.setFont(subject_font)
