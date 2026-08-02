@@ -31,6 +31,36 @@ _BUSY_ROW_THRESHOLD = 100
 
 # 待歸檔清單選中列的左側指示 bar 顏色（搭配藍底深藍字辨識選定公文）
 _SEL_BAR_COLOR = "#3f6fb5"
+_RESTORE_RENAME_ATTEMPTS = 3
+
+
+def _restoreArchiveFilename(new_path, old_path, db_error):
+    """DB 寫入失敗後盡力把 PDF 還原原名，失敗時保留完整例外鏈。
+
+    old path 若已被其他程序重建，絕不以 ``os.rename`` 覆寫；持續失敗以
+    ``ExceptionGroup`` 同時帶回原始 DB 錯誤與每次檔名還原錯誤。
+    """
+    if os.path.abspath(new_path) == os.path.abspath(old_path):
+        return None
+
+    restore_errors = []
+    for _attempt in range(_RESTORE_RENAME_ATTEMPTS):
+        if os.path.exists(old_path):
+            if not os.path.exists(new_path):
+                return None
+            restore_errors.append(FileExistsError(
+                f"原檔名已被重建，為避免覆寫而停止還原：{old_path}"))
+            break
+        try:
+            os.rename(new_path, old_path)
+            return None
+        except Exception as exc:
+            restore_errors.append(exc)
+
+    return ExceptionGroup(
+        "資料庫寫入失敗，且 PDF 檔名無法還原",
+        [db_error, *restore_errors],
+    )
 
 
 class _LinkClickFilter(QObject):
@@ -1073,6 +1103,8 @@ class TabArchive(BaseTab):
     def _archivePaperOnly(self, key):
         """只歸紙本：將選定公文標記 is_reported=1，不需 PDF、不寫 is_electronic。
         公文續留未歸檔清單（is_electronic 仍空，等日後補 PDF）。"""
+        if not AuthManager.instance().is_manager():
+            return
         meta = META[key]
         doc_id = self._selected.get(key)
         if not doc_id:
@@ -1090,6 +1122,8 @@ class TabArchive(BaseTab):
                 f"將{kind}編號 {doc_id} 紙本歸檔？",
                 informative=f"主旨：{subj or '（無）'}\n掃描檔仍未歸檔，待後續補登。",
                 confirm_text="標記紙本", default_confirm=True):
+            return
+        if not AuthManager.instance().is_manager():
             return
         conn = None
         try:
@@ -1115,6 +1149,8 @@ class TabArchive(BaseTab):
 
     def _doArchive(self, key):
         """確認歸檔：用『可編輯預覽四格』目前的值組檔名，重新命名 PDF + 寫回 is_electronic。"""
+        if not AuthManager.instance().is_manager():
+            return
         meta = META[key]
         u = self._ui[key]
         old_path = self._curPdf.get(key)
@@ -1151,6 +1187,8 @@ class TabArchive(BaseTab):
                             f"新檔名：{new_name}",
                 confirm_text="歸檔", default_confirm=True, min_width=560):
             return
+        if not AuthManager.instance().is_manager():
+            return
         # 防禦縱深：確認新路徑仍落在原 PDF 所在資料夾內（new_name 已過 _sanitize 清掉
         # 路徑分隔字元，理應如此；此處再以 commonpath 二次驗證，杜絕任何路徑穿越）。
         base_dir = os.path.abspath(os.path.dirname(old_path))
@@ -1175,16 +1213,20 @@ class TabArchive(BaseTab):
         conn = None
         try:
             conn = self._getConn()
-            conn.execute(
+            cur = conn.execute(
                 f"UPDATE {meta['base']} SET is_electronic=?, is_reported=1 WHERE doc_id=?",
                 (new_name, pk))
+            if cur.rowcount != 1:
+                raise LookupError(f"歸檔資料不存在：{pk}")
             conn.commit()
         except Exception as e:
-            try:
-                os.rename(new_path, old_path)   # DB 失敗→還原檔名
-            except Exception:
-                pass
-            reportError("寫入資料庫失敗", e)
+            if conn:
+                conn.rollback()
+            restore_error = _restoreArchiveFilename(new_path, old_path, e)
+            if restore_error is None:
+                reportError("寫入資料庫失敗", e)
+            else:
+                reportError("寫入資料庫失敗且檔名無法還原", restore_error)
             return
         finally:
             if conn:

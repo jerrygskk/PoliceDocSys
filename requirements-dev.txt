@@ -1,19 +1,26 @@
 # 開發／測試依賴。
 # 完整既有 suite：python -m unittest discover -s tests
-# 完整 pytest suite（含 packaging／bundle／startup 與 GUI pilot）：
+# 正式 pytest gate（含 packaging／bundle／startup 與 GUI pilot）固定分兩段：
 #   $env:QT_QPA_PLATFORM = 'offscreen'
-#   python -m pytest tests -q
+#   python -m pytest tests -q -m "not shell" --ignore=tests/test_no_pii.py
+#   python -m pytest tests -q -m shell --ignore=tests/test_no_pii.py
+#   python -m unittest tests.test_no_pii
 # 其中 test_pytest_qt_runtime.py 與 test_reward_gui_pilot.py 是兩支 offscreen GUI pilot，
 # 但不是完整 pytest suite 的全部。
-# 版本為 2026-07-22 已驗證組合。完整測試環境必須先安裝本檔依賴；
+# 依賴清單於 2026-08-02 同步。完整測試環境必須先安裝本檔依賴；
 # 缺 pytest 等套件時，test module 可能在 discovery 的 import 階段直接失敗。
 
 # Runtime／完整既有 suite
 PySide6==6.11.1
-matplotlib==3.11.1
 pypdf==6.10.0
 reportlab==4.4.9
 
-# 完整 pytest suite
+# 列印基準／感知比對工具（產品 runtime 不 import）。依核可計畫固定 3.11.1；
+# 2026-08-02 已以此版本重建 101 項 manifest 並重跑重現性驗證。升版仍須重建
+# manifest、重跑三輪並由維護者重新目視候選圖。
+matplotlib==3.11.1
+
+# 正式 pytest gate／可選 xdist 實驗與趨勢量測
 pytest==9.1.1
 pytest-qt==4.5.0
+pytest-xdist==3.8.0

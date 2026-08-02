@@ -10,9 +10,10 @@ from lib import ticket_utils
 
 from lib import db_schema, db_seed
 from lib.ticket_utils import (
-    TicketDuplicateError, TicketNotFoundError, TicketValidationError,
+    TicketConflictError, TicketDuplicateError, TicketNotFoundError,
+    TicketValidationError,
     createTicket, deleteTicket, normalizeTicketNo, ticketExists,
-    updateTicket, updateTicketFromBrowse,
+    ticketSortKey, updateTicket, updateTicketFromBrowse,
 )
 from ui_utils.settle_dialog import load_unissued
 
@@ -39,8 +40,35 @@ class TicketDbTestCase(unittest.TestCase):
             (staff_id, staff_name, sort_order))
         self.conn.commit()
 
+    def _ticket_values(self, doc_id="1"):
+        row = self.conn.execute(
+            "SELECT create_date,register_date,sender_id,issuer_id,ticket_no "
+            "FROM Document_Ticket WHERE doc_id=?", (doc_id,)
+        ).fetchone()
+        return tuple(row) if row is not None else None
+
 
 class TestTicketNaturalSort(TicketDbTestCase):
+    def test_ticket_sort_key_preserves_full_hand_checked_tuple_order(self):
+        rows = [
+            (2, "王小明", "A1"),
+            (1, "李大華", "A10"),
+            (1, "李大華", "A2"),
+            (1, None, "B1"),
+            (1, "王小明", "A1"),
+        ]
+
+        self.assertEqual(
+            sorted(rows, key=lambda row: ticketSortKey(*row)),
+            [
+                (1, None, "B1"),
+                (1, "李大華", "A2"),
+                (1, "李大華", "A10"),
+                (1, "王小明", "A1"),
+                (2, "王小明", "A1"),
+            ],
+        )
+
     def test_natural_key_sorts_numeric_segments_case_insensitively(self):
         natural_key = getattr(ticket_utils, "ticketNoNaturalKey", None)
         self.assertIsNotNone(natural_key, "ticket_utils 應提供罰單自然排序單一來源")
@@ -389,7 +417,8 @@ class TestTicketUpdate(TicketDbTestCase):
 
     def test_update_keeps_dates_and_sender(self):
         updateTicket(self.conn, doc_id="1", issuer_id="P002",
-                     ticket_no=" d4rd19999 ", role="user")
+                     ticket_no=" d4rd19999 ", role="user",
+                     original_values=self._ticket_values())
         self.assertEqual(
             self.conn.execute(
                 "SELECT create_date, register_date, sender_id, issuer_id, ticket_no "
@@ -400,6 +429,12 @@ class TestTicketUpdate(TicketDbTestCase):
             "SELECT action FROM Audit_Log ORDER BY log_id")]
         self.assertEqual(actions, [])
 
+    def test_update_requires_load_time_original_values(self):
+        with self.assertRaises(TypeError):
+            updateTicket(
+                self.conn, doc_id="1", issuer_id="P002",
+                ticket_no="D4RD19999", role="user")
+
     def test_update_rejects_duplicate_and_unknown_issuer(self):
         createTicket(
             self.conn, issuer_id="P001", ticket_no="D4RD15264",
@@ -407,27 +442,102 @@ class TestTicketUpdate(TicketDbTestCase):
             create_date="2026-07-21", role="user")
         with self.assertRaises(TicketDuplicateError):
             updateTicket(self.conn, doc_id="1", issuer_id="P001",
-                         ticket_no="d4rd15264", role="user")
+                         ticket_no="d4rd15264", role="user",
+                         original_values=self._ticket_values())
         with self.assertRaises(TicketValidationError):
             updateTicket(self.conn, doc_id="1", issuer_id="P999",
-                         ticket_no="D4RD15263", role="user")
+                         ticket_no="D4RD15263", role="user",
+                         original_values=self._ticket_values())
 
     def test_update_same_number_is_allowed(self):
         updateTicket(self.conn, doc_id="1", issuer_id="P001",
-                     ticket_no="d4rd15263", role="user")
+                     ticket_no="d4rd15263", role="user",
+                     original_values=self._ticket_values())
         self.assertEqual(
             self.conn.execute(
                 "SELECT ticket_no FROM Document_Ticket WHERE doc_id='1'"
             ).fetchone()[0], "D4RD15263")
 
     def test_update_missing_or_deleted_raises_not_found(self):
+        original = self._ticket_values()
         with self.assertRaises(TicketNotFoundError):
             updateTicket(self.conn, doc_id="99", issuer_id="P001",
-                         ticket_no="D4RD15263", role="user")
+                         ticket_no="MISSING99", role="user",
+                         original_values=original)
         deleteTicket(self.conn, doc_id="1", role="user")
         with self.assertRaises(TicketNotFoundError):
             updateTicket(self.conn, doc_id="1", issuer_id="P001",
-                         ticket_no="D4RD15263", role="user")
+                         ticket_no="D4RD15263", role="user",
+                         original_values=original)
+
+    def test_update_original_value_cas_preserves_other_computer_change(self):
+        original = (
+            "2026-07-20", "2026-07-20", "P002", "P001", "D4RD15263")
+        self.conn.execute(
+            "UPDATE Document_Ticket SET issuer_id='P002',ticket_no='REMOTE99' "
+            "WHERE doc_id='1'")
+        self.conn.commit()
+
+        with self.assertRaises(LookupError) as ctx:
+            updateTicket(
+                self.conn, doc_id="1", issuer_id="P001", ticket_no="LOCAL88",
+                role="user", original_values=original)
+
+        self.assertIn("其他電腦修改", str(ctx.exception))
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT issuer_id,ticket_no FROM Document_Ticket WHERE doc_id='1'"
+            ).fetchone(),
+            ("P002", "REMOTE99"))
+
+    def test_update_original_value_cas_reports_deleted_separately(self):
+        original = (
+            "2026-07-20", "2026-07-20", "P002", "P001", "D4RD15263")
+        deleteTicket(self.conn, doc_id="1", role="user")
+        self.conn.commit()
+
+        with self.assertRaises(TicketNotFoundError) as ctx:
+            updateTicket(
+                self.conn, doc_id="1", issuer_id="P001", ticket_no="LOCAL88",
+                role="user", original_values=original)
+
+        self.assertIn("刪除", str(ctx.exception))
+
+    def test_update_cas_compares_each_original_business_field(self):
+        original = (
+            "2026-07-20", "2026-07-20", "P002", "P001", "D4RD15263")
+        changes = (
+            ("create_date", "2026-07-21"),
+            ("register_date", "2026-07-21"),
+            ("sender_id", "P001"),
+            ("issuer_id", "P002"),
+            ("ticket_no", "REMOTE99"),
+        )
+        for column, remote_value in changes:
+            with self.subTest(column=column):
+                self.conn.execute(
+                    "UPDATE Document_Ticket SET create_date=?,register_date=?,"
+                    "sender_id=?,issuer_id=?,ticket_no=? WHERE doc_id='1'",
+                    original,
+                )
+                self.conn.execute(
+                    f"UPDATE Document_Ticket SET {column}=? WHERE doc_id='1'",
+                    (remote_value,),
+                )
+                self.conn.commit()
+
+                with self.assertRaises(TicketConflictError):
+                    updateTicket(
+                        self.conn, doc_id="1", issuer_id="P002",
+                        ticket_no="LOCAL88", role="user",
+                        original_values=original)
+                self.conn.rollback()
+
+                self.assertEqual(
+                    self.conn.execute(
+                        f"SELECT {column} FROM Document_Ticket WHERE doc_id='1'"
+                    ).fetchone()[0],
+                    remote_value)
 
 
 class TestTicketUpdateFromBrowse(TicketDbTestCase):
@@ -444,18 +554,27 @@ class TestTicketUpdateFromBrowse(TicketDbTestCase):
         updateTicketFromBrowse(
             self.conn, doc_id="1", create_date="2026-07-20",
             register_date="2026-07-22", sender_id="P002",
-            issuer_id="P002", ticket_no=" d4rd15263 ", role="admin")
+            issuer_id="P002", ticket_no=" d4rd15263 ", role="admin",
+            original_values=self._ticket_values())
         self.assertEqual(
             self.conn.execute(
                 "SELECT create_date, register_date, sender_id, issuer_id, ticket_no "
                 "FROM Document_Ticket WHERE doc_id='1'").fetchone(),
             ("2026-07-20", "2026-07-22", "P002", "P002", "D4RD15263"))
 
+    def test_browse_update_requires_load_time_original_values(self):
+        with self.assertRaises(TypeError):
+            updateTicketFromBrowse(
+                self.conn, doc_id="1", create_date="2026-07-20",
+                register_date="", sender_id=None,
+                issuer_id="P001", ticket_no="D4RD15263", role="admin")
+
     def test_browse_update_keeps_pending_sentinel(self):
         updateTicketFromBrowse(
             self.conn, doc_id="1", create_date="2026-07-20",
             register_date="", sender_id=None,
-            issuer_id="P001", ticket_no="D4RD15263", role="admin")
+            issuer_id="P001", ticket_no="D4RD15263", role="admin",
+            original_values=self._ticket_values())
         self.assertEqual(
             self.conn.execute(
                 "SELECT register_date, sender_id FROM Document_Ticket "
@@ -468,7 +587,8 @@ class TestTicketUpdateFromBrowse(TicketDbTestCase):
             updateTicketFromBrowse(
                 self.conn, doc_id="1", create_date="2026-07-20",
                 register_date=None, sender_id=None,
-                issuer_id="P001", ticket_no="D4RD15263", role="admin")
+                issuer_id="P001", ticket_no="D4RD15263", role="admin",
+                original_values=self._ticket_values())
         # 使用者可見訊息不得外露內部哨兵語彙。
         self.assertNotIn("NULL", str(ctx.exception).upper())
 
@@ -480,7 +600,8 @@ class TestTicketUpdateFromBrowse(TicketDbTestCase):
                     updateTicketFromBrowse(
                         self.conn, doc_id="1", create_date="2026-07-20",
                         register_date="2026-07-25", sender_id=missing,
-                        issuer_id="P001", ticket_no="D4RD15263", role="admin")
+                        issuer_id="P001", ticket_no="D4RD15263", role="admin",
+                        original_values=self._ticket_values())
                 message = str(ctx.exception)
                 for leak in ("SQL", "Document_Ticket", "CHECK", "constraint",
                              "sender_id", "NULL"):
@@ -495,7 +616,8 @@ class TestTicketUpdateFromBrowse(TicketDbTestCase):
         updateTicketFromBrowse(
             self.conn, doc_id="1", create_date="2026-07-20",
             register_date="", sender_id="   ",
-            issuer_id="P001", ticket_no="D4RD15263", role="admin")
+            issuer_id="P001", ticket_no="D4RD15263", role="admin",
+            original_values=self._ticket_values())
         self.assertEqual(
             self.conn.execute(
                 "SELECT register_date, sender_id FROM Document_Ticket "
@@ -507,17 +629,93 @@ class TestTicketUpdateFromBrowse(TicketDbTestCase):
             updateTicketFromBrowse(
                 self.conn, doc_id="1", create_date="",
                 register_date="", sender_id=None,
-                issuer_id="P001", ticket_no="D4RD15263", role="admin")
+                issuer_id="P001", ticket_no="D4RD15263", role="admin",
+                original_values=self._ticket_values())
         with self.assertRaises(TicketValidationError):
             updateTicketFromBrowse(
                 self.conn, doc_id="1", create_date="2026-07-20",
                 register_date="", sender_id="P999",
-                issuer_id="P001", ticket_no="D4RD15263", role="admin")
+                issuer_id="P001", ticket_no="D4RD15263", role="admin",
+                original_values=self._ticket_values())
         with self.assertRaises(TicketNotFoundError):
             updateTicketFromBrowse(
                 self.conn, doc_id="99", create_date="2026-07-20",
                 register_date="", sender_id=None,
-                issuer_id="P001", ticket_no="D4RD19999", role="admin")
+                issuer_id="P001", ticket_no="D4RD19999", role="admin",
+                original_values=self._ticket_values())
+
+    def test_browse_original_value_cas_preserves_other_computer_change(self):
+        original = ("2026-07-20", "", None, "P001", "D4RD15263")
+        self.conn.execute(
+            "UPDATE Document_Ticket SET create_date='2026-07-21',"
+            "issuer_id='P002',ticket_no='REMOTE99' WHERE doc_id='1'")
+        self.conn.commit()
+
+        with self.assertRaises(LookupError) as ctx:
+            updateTicketFromBrowse(
+                self.conn, doc_id="1", create_date="2026-07-22",
+                register_date="2026-07-22", sender_id="P002",
+                issuer_id="P001", ticket_no="LOCAL88", role="admin",
+                original_values=original)
+
+        self.assertIn("其他電腦修改", str(ctx.exception))
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT create_date,register_date,sender_id,issuer_id,ticket_no "
+                "FROM Document_Ticket WHERE doc_id='1'"
+            ).fetchone(),
+            ("2026-07-21", "", None, "P002", "REMOTE99"))
+
+    def test_browse_original_value_cas_reports_deleted_separately(self):
+        original = ("2026-07-20", "", None, "P001", "D4RD15263")
+        deleteTicket(self.conn, doc_id="1", role="admin")
+        self.conn.commit()
+
+        with self.assertRaises(TicketNotFoundError) as ctx:
+            updateTicketFromBrowse(
+                self.conn, doc_id="1", create_date="2026-07-22",
+                register_date="", sender_id=None,
+                issuer_id="P001", ticket_no="LOCAL88", role="admin",
+                original_values=original)
+
+        self.assertIn("刪除", str(ctx.exception))
+
+    def test_browse_cas_compares_each_original_business_field(self):
+        original = (
+            "2026-07-20", "2026-07-20", "P002", "P001", "D4RD15263")
+        changes = (
+            ("create_date", "2026-07-21"),
+            ("register_date", "2026-07-21"),
+            ("sender_id", "P001"),
+            ("issuer_id", "P002"),
+            ("ticket_no", "REMOTE99"),
+        )
+        for column, remote_value in changes:
+            with self.subTest(column=column):
+                self.conn.execute(
+                    "UPDATE Document_Ticket SET create_date=?,register_date=?,"
+                    "sender_id=?,issuer_id=?,ticket_no=? WHERE doc_id='1'",
+                    original,
+                )
+                self.conn.execute(
+                    f"UPDATE Document_Ticket SET {column}=? WHERE doc_id='1'",
+                    (remote_value,),
+                )
+                self.conn.commit()
+
+                with self.assertRaises(TicketConflictError):
+                    updateTicketFromBrowse(
+                        self.conn, doc_id="1", create_date="2026-07-22",
+                        register_date="2026-07-22", sender_id="P002",
+                        issuer_id="P001", ticket_no="LOCAL88", role="admin",
+                        original_values=original)
+                self.conn.rollback()
+
+                self.assertEqual(
+                    self.conn.execute(
+                        f"SELECT {column} FROM Document_Ticket WHERE doc_id='1'"
+                    ).fetchone()[0],
+                    remote_value)
 
 
 class TestIntegrityErrorIsNotAlwaysDuplicate(TicketDbTestCase):
@@ -555,7 +753,8 @@ class TestIntegrityErrorIsNotAlwaysDuplicate(TicketDbTestCase):
                                self._passthrough):
             with self.assertRaises(sqlite3.IntegrityError) as ctx:
                 updateTicket(self.conn, doc_id="1", issuer_id="P999",
-                             ticket_no="D4RD15263", role="user")
+                             ticket_no="D4RD15263", role="user",
+                             original_values=self._ticket_values())
         self.assertNotIsInstance(ctx.exception, TicketDuplicateError)
         self.assertIn("FOREIGN KEY", str(ctx.exception))
 
@@ -570,7 +769,8 @@ class TestIntegrityErrorIsNotAlwaysDuplicate(TicketDbTestCase):
                 updateTicketFromBrowse(
                     self.conn, doc_id="1", create_date="2026-07-20",
                     register_date="2026-07-22", sender_id="P999",
-                    issuer_id="P001", ticket_no="D4RD15263", role="admin")
+                    issuer_id="P001", ticket_no="D4RD15263", role="admin",
+                    original_values=self._ticket_values())
         self.assertNotIsInstance(ctx.exception, TicketDuplicateError)
         self.assertIn("FOREIGN KEY", str(ctx.exception))
 

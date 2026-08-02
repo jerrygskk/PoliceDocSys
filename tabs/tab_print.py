@@ -16,7 +16,7 @@ from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from lib.base_tab import BaseTab
 from lib.db_utils import getResourcePath, printTitle, printTitlesUnset
-from lib.ticket_utils import TICKET_RECEIPT_DATE_COL, ticketNoNaturalKey
+from lib.ticket_utils import TICKET_RECEIPT_DATE_COL, ticketSortKey
 from ui_utils import loadUi, msgInfo, msgWarning
 from ui_utils import runWithBusy
 
@@ -456,8 +456,8 @@ def _toTicketCell(row):
 def sortTicketRows(rows):
     """依開立人員順序、姓名與共用罰單自然 key 排序。"""
     cells = [_toTicketCell(r) for r in rows]
-    cells.sort(key=lambda c: (c.issuer_sort_order, c.issuer_name or "",
-                               ticketNoNaturalKey(c.ticket_no)))
+    cells.sort(key=lambda c: ticketSortKey(
+        c.issuer_sort_order, c.issuer_name, c.ticket_no))
     return cells
 
 
@@ -474,13 +474,16 @@ class TicketPage:
     total_pages: int = 1
 
 
-def paginateTicketRows(rows):
+def paginateTicketRows(rows, *, presorted=False):
     """排序後以固定三組、每組 20 筆分頁；每頁都保留簽收格。
 
     0 筆回傳空清單（沿用既有 `_build_sections` 慣例：查無資料的類別不產生
     section／頁面）。
     """
-    sorted_rows = sortTicketRows(rows)
+    sorted_rows = (
+        [_toTicketCell(row) for row in rows]
+        if presorted else sortTicketRows(rows)
+    )
     total = len(sorted_rows)
     if total == 0:
         return []
@@ -770,9 +773,8 @@ def queryTicketPrintRows(db_path, date_text):
         cur = conn.execute(sql, (date_text,))
         cols = [d[0] for d in cur.description]
         rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-        rows.sort(key=lambda row: (
-            row["issuer_sort_order"], row["issuer_name"] or "",
-            ticketNoNaturalKey(row["ticket_no"])))
+        rows.sort(key=lambda row: ticketSortKey(
+            row["issuer_sort_order"], row["issuer_name"], row["ticket_no"]))
         return rows
     finally:
         conn.close()
@@ -844,7 +846,8 @@ def _build_sections(db_path, date_str):
     ticket_rows = queryTicketPrintRows(db_path, date_str)
     if ticket_rows:
         sections.append({'key': 'ticket', 'kind': 'ticket', 'side': '罰單簽收',
-            'title': printTitle(db_path, 'ticket'), 'rows': ticket_rows, 'scheme': 'ticket'})
+            'title': printTitle(db_path, 'ticket'), 'rows': ticket_rows,
+            'rows_sorted': True, 'scheme': 'ticket'})
     return sections
 
 
@@ -870,7 +873,8 @@ def _standard_section_specs(section, per, note_text, print_date, disp_date):
 def _ticket_section_specs(section, print_date, disp_date):
     """罰單專用 renderer 的規格展開：每頁固定三組 × 20 筆且每頁有簽收格；
     不消費 `per`（那是既有四種簽收表的逐頁容量）。"""
-    ticket_pages = paginateTicketRows(section['rows'])
+    ticket_pages = paginateTicketRows(
+        section['rows'], presorted=section.get('rows_sorted', False))
     specs = []
     for tpg in ticket_pages:
         grid = buildTicketGrid(tpg.items, body_rows=TICKET_ROWS_PER_BAND)

@@ -4,11 +4,32 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import re
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "print_baseline.py"
+
+
+def test_declared_matplotlib_pin_matches_manifest_and_runtime():
+    requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
+    match = re.search(r"(?m)^matplotlib==([^\s]+)$", requirements)
+    assert match is not None
+    declared_version = match.group(1)
+    manifest = json.loads(
+        (ROOT / "tests" / "print_baseline_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    import matplotlib
+
+    assert declared_version == manifest["environment"]["matplotlib_version"]
+    assert declared_version == matplotlib.__version__
 
 
 def _load_module():
@@ -59,6 +80,7 @@ def test_environment_metadata_records_portable_render_dependencies():
 
     assert set(metadata) == {
         "fonts",
+        "matplotlib_version",
         "qt_version",
         "pyside6_version",
         "windows_scaling_percent",
@@ -70,6 +92,7 @@ def test_environment_metadata_records_portable_render_dependencies():
         assert font["version"]
     assert metadata["qt_version"]
     assert metadata["pyside6_version"]
+    assert metadata["matplotlib_version"]
     assert isinstance(metadata["windows_scaling_percent"], int)
     assert metadata["windows_scaling_percent"] > 0
 
@@ -118,7 +141,7 @@ def test_check_prints_recorded_and_current_environment_side_by_side(
     )
     monkeypatch.setattr(
         baseline,
-        "collect",
+        "_collect_with_mpl_config",
         lambda _db_dir: {"2026-01-01": {"__empty__": ("EMPTY", b"")}},
     )
     monkeypatch.setattr(baseline, "environment_metadata", lambda: current)
@@ -149,3 +172,139 @@ def test_missing_baseline_prints_complete_rebuild_commands(
         f"python tools/print_baseline.py --db-dir {db_dir} --save --force"
         in output
     )
+
+
+def test_check_uses_manifest_when_candidate_image_directory_is_absent(
+    tmp_path, monkeypatch
+):
+    baseline = _load_module()
+    base_dir = tmp_path / "candidate-images"
+    manifest = tmp_path / "manifest.json"
+    environment = {
+        "fonts": {},
+        "matplotlib_version": "test",
+        "qt_version": "test",
+        "pyside6_version": "test",
+        "windows_scaling_percent": 125,
+    }
+    manifest.write_text(
+        json.dumps(
+            {
+                "environment": environment,
+                "cases": {"2026-01-01": {"__empty__": "EMPTY"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "BASE_DIR", str(base_dir))
+    monkeypatch.setattr(baseline, "MANIFEST", str(manifest))
+    monkeypatch.setattr(baseline, "DIFF_DIR", str(base_dir / "diff"))
+    monkeypatch.setattr(
+        baseline, "CASES", [("dbfile.db", "2026-01-01", "empty")]
+    )
+    monkeypatch.setattr(
+        baseline,
+        "_collect_with_mpl_config",
+        lambda _db_dir: {"2026-01-01": {"__empty__": ("EMPTY", b"")}},
+    )
+    monkeypatch.setattr(baseline, "environment_metadata", lambda: environment)
+
+    assert baseline.cmd_check(tmp_path) == 0
+    assert not base_dir.exists()
+
+
+def test_each_collect_run_uses_a_distinct_cleaned_mpl_config_directory(
+    tmp_path, monkeypatch
+):
+    baseline = _load_module()
+    seen = []
+
+    def capture(_db_dir):
+        path = Path(os.environ["MPLCONFIGDIR"])
+        assert path.is_dir()
+        seen.append(path)
+        return {}
+
+    monkeypatch.setattr(baseline, "_collect_with_mpl_config", capture)
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "caller-config"))
+
+    assert baseline.collect(tmp_path) == {}
+    assert baseline.collect(tmp_path) == {}
+
+    assert len(set(seen)) == 2
+    assert all(not path.exists() for path in seen)
+    assert os.environ["MPLCONFIGDIR"] == str(tmp_path / "caller-config")
+
+
+def test_check_enters_one_mpl_config_before_metadata_and_render(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({"environment": {}, "cases": {}}), encoding="utf-8"
+    )
+    caller_config = tmp_path / "caller-mpl-config"
+    caller_config.mkdir()
+    probe = r'''
+import json
+import os
+from pathlib import Path
+import sys
+
+import tools.print_baseline as baseline
+
+baseline.MANIFEST = sys.argv[1]
+baseline.BASE_DIR = sys.argv[2]
+baseline.DIFF_DIR = str(Path(sys.argv[2]) / "diff")
+baseline.CASES = []
+seen = []
+real_metadata = baseline.environment_metadata
+
+def metadata():
+    result = real_metadata()
+    import matplotlib
+    seen.append(["metadata", os.environ["MPLCONFIGDIR"], matplotlib.get_configdir()])
+    return result
+
+def render(_db_dir):
+    import matplotlib
+    seen.append(["render", os.environ["MPLCONFIGDIR"], matplotlib.get_configdir()])
+    return {}
+
+baseline.environment_metadata = metadata
+baseline._collect_with_mpl_config = render
+result = baseline.cmd_check(Path.cwd())
+paths = [entry[1] for entry in seen]
+print(json.dumps({
+    "result": result,
+    "seen": seen,
+    "paths_exist_after": [Path(path).exists() for path in paths],
+    "restored_env": os.environ.get("MPLCONFIGDIR"),
+}, ensure_ascii=False))
+'''
+    env = os.environ.copy()
+    env["MPLCONFIGDIR"] = str(caller_config)
+    env["PYTHONIOENCODING"] = "utf-8"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            probe,
+            str(manifest),
+            str(tmp_path / "missing-candidate-images"),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    observed = json.loads(result.stdout.strip().splitlines()[-1])
+
+    assert [entry[0] for entry in observed["seen"]] == ["metadata", "render"]
+    mpl_paths = [entry[1] for entry in observed["seen"]]
+    real_config_paths = [entry[2] for entry in observed["seen"]]
+    assert len(set(mpl_paths)) == 1
+    assert real_config_paths == mpl_paths
+    assert mpl_paths[0] != str(caller_config)
+    assert observed["paths_exist_after"] == [False, False]
+    assert observed["restored_env"] == str(caller_config)

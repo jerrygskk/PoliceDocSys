@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui     import QColor
 
 from lib.db_utils    import getConn, loadActivePersonnel
-from lib.ticket_utils import ticketNoNaturalKey
+from lib.ticket_utils import ticketSortKey
 from lib.archive_text import _trimName
 from ui_utils.ui_common import (
     BTN_CANCEL, BTN_CONFIRM, confirmBox, msgInfo, msgWarning, reportError,
@@ -133,8 +133,7 @@ SETTLE_META = (
             "WHERE register_date='' "
             "  AND ticket_no IS NOT NULL AND ticket_no != ''"
         ),
-        "sort_key": lambda row: (
-            row[3], row[1] or "", ticketNoNaturalKey(row[2])),
+        "sort_key": lambda row: ticketSortKey(row[3], row[1], row[2]),
         "update": ("UPDATE Document_Ticket SET register_date=?, sender_id=? "
                    "WHERE doc_id=? AND register_date=''"),
         "with_sender": True,

@@ -253,6 +253,175 @@ class TestFullSettingsUnchanged(_SettingsBase):
             mock_dlg.assert_called_once()
 
 
+class TestResetRuntimeGuards(_SettingsBase):
+    """重置流程在 modal 巢狀事件迴圈中降權後不得繼續副作用。"""
+
+    def test_direct_call_as_non_admin_stops_before_read_or_dialog(self):
+        s = self._make_settings()
+        AuthManager.instance()._role = "archive"
+
+        with patch("tabs.tab_settings.getConn") as get_conn, \
+                patch("tabs.tab_settings.ResetDialog") as dialog:
+            dialog.return_value.exec.return_value = 0
+            s._doReset()
+
+        get_conn.assert_not_called()
+        dialog.assert_not_called()
+
+    def test_downgrade_inside_reset_dialog_stops_before_audit_or_backup(self):
+        s = self._make_settings()
+        self._login_as(s, "admin")
+
+        class DowngradeDialog:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def exec(self):
+                AuthManager.instance()._role = "archive"
+                return 1
+
+        with patch("tabs.tab_settings.ResetDialog", DowngradeDialog), \
+                patch("tabs.tab_settings.writeAudit") as write_audit, \
+                patch("tabs.tab_settings.shutil.copy2") as copy_backup, \
+                patch("tabs.tab_settings.confirmBox", return_value=False), \
+                patch("tabs.tab_settings.performYearEndReset") as reset, \
+                patch("tabs.tab_settings.msgInfo"), \
+                patch.object(s, "_restartApp"):
+            s._doReset()
+
+        write_audit.assert_not_called()
+        copy_backup.assert_not_called()
+        reset.assert_not_called()
+
+    def test_downgrade_in_final_backup_prompt_stops_before_reset(self):
+        s = self._make_settings()
+        self._login_as(s, "admin")
+
+        def downgrade_and_skip(*args, **kwargs):
+            AuthManager.instance()._role = "archive"
+            return False
+
+        with patch("tabs.tab_settings.ResetDialog") as dialog, \
+                patch("tabs.tab_settings.confirmBox", side_effect=downgrade_and_skip), \
+                patch("tabs.tab_settings.shutil.copy2"), \
+                patch("tabs.tab_settings.performYearEndReset") as reset, \
+                patch("tabs.tab_settings.msgInfo"), \
+                patch.object(s, "_restartApp"):
+            dialog.return_value.exec.return_value = 1
+            s._doReset()
+
+        reset.assert_not_called()
+
+
+class TestSortDowngradeGuards(_SettingsBase):
+    def _seed_personnel(self):
+        conn = sqlite3.connect(self.db)
+        conn.executemany(
+            "INSERT INTO Ref_Personnel("
+            "staff_id,staff_name,is_active,sort_order) VALUES(?,?,1,?)",
+            (("P001", "甲員", 1), ("P002", "乙員", 2)),
+        )
+        conn.commit()
+        conn.close()
+
+    def _admin_with_rows(self):
+        self._seed_personnel()
+        s = self._make_settings()
+        self._login_as(s, "admin")
+        return s
+
+    def _db_order(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            return [row[0] for row in conn.execute(
+                "SELECT staff_id FROM Ref_Personnel ORDER BY sort_order")]
+        finally:
+            conn.close()
+
+    def test_move_row_direct_call_after_downgrade_does_not_mutate_memory(self):
+        s = self._admin_with_rows()
+        before = [row[0] for row in s._sort_state["personnel"]["rows"]]
+        AuthManager.instance()._role = "archive"
+
+        s._moveRow("personnel", 0, 1)
+
+        state = s._sort_state["personnel"]
+        self.assertEqual([row[0] for row in state["rows"]], before)
+        self.assertFalse(state["dirty"])
+
+    def test_drop_callback_after_downgrade_does_not_mutate_memory(self):
+        s = self._admin_with_rows()
+        before = [row[0] for row in s._sort_state["personnel"]["rows"]]
+        AuthManager.instance()._role = "archive"
+
+        s._onDragDrop("personnel", 0, 1)
+
+        state = s._sort_state["personnel"]
+        self.assertEqual([row[0] for row in state["rows"]], before)
+        self.assertFalse(state["dirty"])
+
+    def test_save_sort_after_downgrade_returns_false_without_db_write(self):
+        s = self._admin_with_rows()
+        state = s._sort_state["personnel"]
+        state["rows"].reverse()
+        state["dirty"] = True
+        AuthManager.instance()._role = "archive"
+
+        self.assertFalse(s._saveSort("personnel"))
+        self.assertEqual(self._db_order(), ["P001", "P002"])
+        self.assertTrue(state["dirty"])
+
+    def test_save_sort_as_admin_returns_true_and_persists(self):
+        s = self._admin_with_rows()
+        state = s._sort_state["personnel"]
+        state["rows"].reverse()
+        state["dirty"] = True
+
+        self.assertTrue(s._saveSort("personnel"))
+        self.assertEqual(self._db_order(), ["P002", "P001"])
+        self.assertFalse(state["dirty"])
+
+    def test_prompt_does_not_continue_when_confirm_downgrades_and_save_fails(self):
+        s = self._admin_with_rows()
+        state = s._sort_state["personnel"]
+        s._moveRow("personnel", 0, 1)
+
+        def downgrade(*args, **kwargs):
+            AuthManager.instance()._role = "archive"
+            return True
+
+        with patch("tabs.tab_settings.confirmBox", side_effect=downgrade):
+            self.assertFalse(s._promptUnsaved(context="switch"))
+
+        self.assertTrue(state["dirty"])
+        self.assertEqual(self._db_order(), ["P001", "P002"])
+
+    def test_logout_discards_dirty_sort_without_prompt_and_reloads_db_order(self):
+        s = self._admin_with_rows()
+        s._moveRow("personnel", 0, 1)
+
+        with patch("tabs.tab_settings.confirmBox") as confirm:
+            AuthManager.instance().logout()
+
+        state = s._sort_state["personnel"]
+        confirm.assert_not_called()
+        self.assertEqual([row[0] for row in state["rows"]], ["P001", "P002"])
+        self.assertFalse(state["dirty"])
+        self.assertFalse(state["save_btn"].isEnabled())
+
+    def test_switch_to_archive_discards_dirty_sort_without_prompt(self):
+        s = self._admin_with_rows()
+        s._moveRow("personnel", 0, 1)
+        AuthManager.instance()._role = "archive"
+
+        with patch("tabs.tab_settings.confirmBox") as confirm:
+            s._onRoleChanged("archive")
+
+        state = s._sort_state["personnel"]
+        confirm.assert_not_called()
+        self.assertEqual([row[0] for row in state["rows"]], ["P001", "P002"])
+        self.assertFalse(state["dirty"])
+
 class TestInputLockPanelFlowIsolation(unittest.TestCase):
     """InputLockPanel(flow_keys=...) 存檔不得動未列出流程的既有值。"""
 

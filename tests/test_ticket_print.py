@@ -18,8 +18,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
-
-from matplotlib.patches import FancyBboxPatch
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -34,9 +33,10 @@ import tabs.tab_print as tab_print
 from tabs.tab_print import (
     TICKET_BODY_H, TICKET_ROWS_PER_BAND, TICKET_ROW_H, TICKET_SUB_HEADERS,
     TICKET_SUMMARY_H, TicketCell, TicketPage, ROW_H, _TICKET_SUB_RATIOS,
-    buildTicketGrid, drawTicketPage, paginateTicketRows, queryTicketPrintRows,
-    sortTicketRows,
+    _build_sections, _ticket_section_specs, buildTicketGrid, drawTicketPage,
+    paginateTicketRows, queryTicketPrintRows, sortTicketRows,
 )
+from lib.ticket_utils import ticketSortKey
 
 def _paginate_rows(rows):
     return paginateTicketRows(rows)
@@ -386,6 +386,7 @@ class TestDrawTicketPage(TicketPrintTestCase):
         # 色碼改回既有四表藍色、明細恢復斑馬紋，或 renderer 再使用
         # FancyBboxPatch 模擬立體框，本測試都必須失敗。
         import matplotlib.pyplot as plt
+        from matplotlib.patches import FancyBboxPatch
         from tools.mpl_canvas import new_mpl_page
         from tabs.tab_print import DATE_H, HDR_H, TABLE_L, TABLE_W, TITLE_H, TOP
 
@@ -771,6 +772,14 @@ class TestQueryTicketPrintRows(unittest.TestCase):
             [row["ticket_no"] for row in rows],
             ["A1", "A01", "A2", "A10B2", "A10B10"],
         )
+
+    def test_print_pipeline_sorts_each_ticket_row_only_once(self):
+        with patch("tabs.tab_print.ticketSortKey", wraps=ticketSortKey) as sort_key:
+            sections = _build_sections(self.db_path, "2026-07-23")
+            ticket = next(section for section in sections if section["key"] == "ticket")
+            _ticket_section_specs(ticket, "2026-07-23", "115/07/23")
+
+        self.assertEqual(sort_key.call_count, len(ticket["rows"]))
 
     def test_query_sort_accepts_legacy_missing_issuer_names(self):
         conn = sqlite3.connect(self.db_path)

@@ -164,13 +164,21 @@ graph LR
 │                    settings_dialogs／settings_panels／help_dialog／help_content／ui_common／
 │                    button_imgs／settle_dialog／reward_dialog／ticket_dialog；門面見 `__init__.py`）
 ├── tools/           開發／維運工具（入庫，從專案根執行；不被核心模組 import）：
-│                    bump_version／gen_buttons／gen_quickstart／gen_shell_db
+│                    bump_version／check_bundle_deps／check_excludes／check_no_matplotlib／
+│                    engine_diff／fake_seed_data／gen_buttons／gen_quickstart／gen_shell_db／
+│                    mpl_canvas／print_baseline／pyi_prune／pytest_trend／qt_pdf_export／
+│                    render_diff／seed_print_baseline／seed_screenshot_data
 └── tests/           unittest 回歸測試＋pytest（含 packaging／bundle／startup 與 GUI pilot）
 ```
 
 - ⚠️ 一次性／現場交付腳本（`fix_audit_setup.py`／`fix_cat_status.py`／`seed_*.py`）刻意**不入庫、留根目錄**：`fix_*` 打包成 exe 發給現場放 `dbfile.db` 旁執行（靠「找腳本旁的 db」邏輯，不可改），`seed_*` 為本機壓測／塞假料丟棄腳本（git add 時跳過，見 CLAUDE）
 - `lib/`、`res/` 都是 package（有 `__init__.py`）：用 `from lib.db_utils import …`／`from res import resources_rc`
-- `tools/` 各腳本錨定 repo 根但**一律從專案根目錄執行**；皆不 import 核心模組
+- `tools/` 各腳本錨定 repo 根並**一律從專案根目錄執行**；產品核心不反向 import
+  開發工具。兩支 seed 工具會 import `lib/db_schema.py`／`lib/db_seed.py`，確保 schema
+  仍以產品程式碼為唯一來源
+- 公開截圖候選資料以 `python tools/seed_screenshot_data.py <.tmp 內輸出路徑>` 建立；
+  人名與公文內容共用 `tools/fake_seed_data.py`。候選姓名仍須由維護者對照真實名單
+  核准，截圖也須人工目視，不得宣稱已證明姓名不對應真人
 - `version_info_entry.txt`（獨立版打包 `--version-file`）與 `version_info.txt` 同由 `tools/bump_version.py` 一次產生，兩支 exe 版號永遠同步，勿手改
 
 ### 路徑解析（getResourcePath，打包相容）
@@ -183,18 +191,35 @@ graph LR
 
 ### 單元測試（tests/）
 
-既有回歸套件以 **unittest** 為主，涵蓋純邏輯、資料庫與 offscreen Qt 元件；offscreen 測試會實例化元件，但不開互動式 GUI 視窗。完整 **pytest** 套件另涵蓋 packaging／bundle／startup 契約與 pytest-qt GUI pilot，不取代 unittest 完整套件。
+正式測試 gate 以 **pytest** 為唯一完整 runner，涵蓋既有 unittest 測試、純邏輯、資料庫、offscreen Qt、packaging／bundle／startup 契約與 pytest-qt GUI pilot。`unittest discover` 僅保留為無 pytest 環境備援，不屬正式發布 gate。
 
 - **跑法**（專案根）：檔名 `test_*.py`（探索預設，勿改名）。本次核准的 Windows／Codex runtime 以同一支 Python 執行完整 unittest、pytest 與 PII gate：
   ```powershell
   $env:QT_QPA_PLATFORM = 'offscreen'
-  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s tests
-  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests -q --ignore=tests/test_standalone_shell.py
-  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests/test_standalone_shell.py -q
+  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests -q -m "not shell" --ignore=tests/test_no_pii.py
+  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests -q -m shell --ignore=tests/test_no_pii.py
   C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest tests.test_no_pii
   ```
   其他環境不可假設此絕對路徑存在，應改用已安裝 `requirements-dev.txt` 相同依賴的 Python 執行相同命令。完整 pytest 會一併驗證 packaging／bundle／startup 與 GUI pilot。
-⚠️ **pytest 必須分兩段跑**：`tests/test_standalone_shell.py` 會在同一行程內反覆建立整個 `DocumentManager`，與其餘模組合跑時累積到一定量必定 native 崩潰（access violation）。兩段各自全綠、合併必崩，詳細證據與已試過無效的兩條修法見 PITFALLS **TST-5**。正式程式不受影響——重啟一律另起新行程（`tab_settings._restartApp`），一個行程一輩子只建一個 `DocumentManager`。
+⚠️ **pytest 必須分非 shell／shell 兩段跑**：`shell` 層包含會建立應用程式行程或完整 shell 的測試；其中 `tests/test_standalone_shell.py` 會在同一行程內反覆建立整個 `DocumentManager`，與其餘模組合跑時累積到一定量必定 native 崩潰（access violation）。兩段各自全綠、合併必崩，詳細證據與已試過無效的兩條修法見 PITFALLS **TST-5**。正式程式不受影響——重啟一律另起新行程（`tab_settings._restartApp`），一個行程一輩子只建一個 `DocumentManager`。五個主層 marker 為 `pure`／`db`／`qt`／`shell`／`packaging`，每個 node 恰屬一層；分類由根 `conftest.py` 的明確模組表與契約測試共同把關。pytest 的 basetemp、cache 與各 xdist worker 的 matplotlib 設定皆放在專案 `.tmp`。
+
+- **xdist 裁決**：`pytest-xdist` 只供分層量測。`pure+db` 與 `qt` 已通過 `-n 2
+  --dist loadscope` 重複實驗；`shell` 第 7 輪發生 native worker crash，裁決退回 serial，
+  `packaging` 也維持 serial。正式發布 gate 不加 `-n`，仍使用上方非 shell／shell
+  兩段 serial 指令，不因前兩層實驗通過而改回合併或平行全跑。⚠️ serial 仍非絕對
+  穩定：2026-08-02 依發布順序連跑兩段三次，shell 段 1 次 native crash、2 次通過。
+  發布時 shell 段若 native crash，先單獨 serial 重跑一次；連續兩次 crash 才視為回歸，
+  不得把第一次 crash 記成通過，也不得改用 xdist 硬繞
+
+- **無 pytest 環境備援**：只能執行 `python -m unittest discover -s tests`；pytest-only、packaging 與 GUI pilot 可能被跳過，因此不得拿這個結果取代正式 gate。
+- **趨勢紀錄**：根 `conftest.py` 在指定 `PYTEST_RUN_RECORD` 時輸出實際執行 node IDs 與最慢 20 筆；`python -m tools.pytest_trend --collection <collection.json> --layer pure_db=<run.json> --previous <history.jsonl> --output <history.jsonl>` 可追加完整 collection、各層數量／耗時、durations 與相對前次變化。長期結論寫入經審閱的實驗報告，`.tmp` 單次輸出只作原始證據。
+- **PII gate**：`tests/test_no_pii.py` 的文字檔清單只取自 `git ls-files`，因此不掃
+  untracked／ignored 檔（含正式 `dbfile.db`）。每個 tracked path 依序讀取：①解析後
+  target 與各層 parent 都未離開 repo 的現存工作樹 bytes（涵蓋 unstaged）②index blob
+  （涵蓋 staged-new 在工作樹刪除的情況）③`HEAD` blob。外部 symlink／junction 不會
+  被跟隨讀取。denylist 缺少或有效項目為空會明確顯示 skipped，**不可把 skip 當
+  pass**。有清單且未命中時只准回報「未命中本機已知 denylist」，不得延伸成候選
+  姓名已證明非真人
 - **需 PySide6 的測試**（受測模組 import 時載入 PySide6）：`test_db_utils`／`test_status`／`test_auth_manager`／`test_error_msg`／`test_audit`／`test_ref_sort`；純 stdlib：`test_archive_text`／`test_app_lock`／`test_db_backup`
 - **offscreen Qt 元件測試**（module 層設 `QT_QPA_PLATFORM=offscreen` 建 QApplication，實例化 widget 但不開視窗）：`test_nullable_date`／`test_ui_load`／`test_dialog_smoke`／`test_dbbrowse_sync`（整個瀏覽 Tab offscreen 實例化，驗 `_allRows`/`_docorder` 與表格列 1:1 不變式、`_diffUpdate` 增修刪、`setUpdatesEnabled` try/finally 防卡死、搜尋過濾一致性）
 - **涵蓋**：歸檔解析（含 PK 撞號雷）、流水號／重置／設定／歸檔定位、逾期與狀態色、權限與密碼、錯誤白話化、稽核 helper、操作紀錄解析、軟性互斥、自動備份、閒置逾時解析（`test_idle_timeouts`，0＝停用／壞值退預設）；`.ui` 全檔載入與對話框建構 smoke（offscreen）；罰單四檔（`test_ticket_data` domain／`test_ticket_tab` 登錄頁與欄寬伸縮／`test_ticket_browse` 瀏覽 gate／`test_ticket_print` 排序分頁合併）＋`test_combo_hint`（提示灰字六狀態）＋`test_window_geometry`；另 `test_no_pii` 防個資外洩（見 CLAUDE）
@@ -380,6 +405,9 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
    ```
    輸出資料夾已有資料庫時 seed 會拒絕覆寫，請另選空的暫存資料夾。換機器時應在新機
    重建基準當新起點，不要拿舊雜湊硬比（字型／Qt／PySide6／縮放一變，雜湊可能全滅）。
+   `requirements-dev.txt` 依核可計畫固定 matplotlib 3.11.1；2026-08-02 已在指定
+   Python 實際安裝該版，重建現行 101 項 manifest 並重跑重現性驗證。這個 pin 是
+   重現已驗證環境，不是永久禁止升版；升版須重建 manifest、三輪比對並重新人工目視。
    ⚠️ 雜湊全綠只證明前後一致，不證明圖面正確；重建候選仍須由維護者逐張目視確認，
    Codex 的 offscreen 自動檢查不能替代這道人工核准。
 
@@ -602,7 +630,7 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 1. **寫文件內文**：技術章節補進 DEVELOPER.md；使用者有感的改動 README 也同步；HELP／QUICKSTART 對照 §2「跨功能影響對照表」逐列確認（歷來最常漏）
 2. **寫 handover**（需跨對話交接才寫，`docs/handover.md` 不入庫）
 3. **寫 release note**（`release_note_v{版號}.md`，不入庫；內容寫給使用者看，技術細節留 DEVELOPER.md）
-4. **推送前完整 gate**：依 §4 的 Python 選擇方式執行完整 `python -m unittest discover -s tests`、Windows offscreen pytest **兩段**（`python -m pytest tests -q --ignore=tests/test_standalone_shell.py` 與 `python -m pytest tests/test_standalone_shell.py -q`，⚠️ 合併成一條會穩定 native 崩潰，原因見 PITFALLS **TST-5**）、`python -m unittest tests.test_no_pii`（⚠️ 須在主 checkout 跑，worktree 會靜默 skip）；**全部通過後才可推送與建立 tag**
+4. **推送前完整 gate**：依 §4 的 Python 選擇方式執行 Windows offscreen pytest **兩段**（`python -m pytest tests -q -m "not shell" --ignore=tests/test_no_pii.py` 與 `python -m pytest tests -q -m shell --ignore=tests/test_no_pii.py`，⚠️ 合併成一條會穩定 native 崩潰，原因見 PITFALLS **TST-5**）、再獨立執行 `python -m unittest tests.test_no_pii`；執行前須確認本機 denylist 存在且有有效項目，缺少／空白會明確 skipped，**不可把 skip 當通過**。全部通過後才可推送與建立 tag。`unittest discover` 僅是無 pytest 時的備援，不是發布 gate。
 5. **版號進版並推上去**：bump＋commit，建立 tag `v{版號}`，再 push commit 與 tag（逐檔 add 等鐵則見 CLAUDE.md C 節）
 6. **build**：刪除既有 `build/`／`dist/` 後 onefile 全新 build（見下方指令），**兩支 exe 都要重建**；兩支 fresh build 完成後立即於同次執行 `python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager`，不得沿用舊 `build/` 或 `PKG-00.toc`。回報成功/失敗（失敗才貼錯誤末段）
 7. **發 GitHub Release**：5 asset，指令與 asset 取得方式見本節末「發 GitHub Release」

@@ -42,6 +42,15 @@ def ticketNoNaturalKey(ticket_no: str) -> tuple:
     return segmented, normalized
 
 
+def ticketSortKey(issuer_sort_order, issuer_name, ticket_no) -> tuple:
+    """罰單共用排序：人員順序、姓名、大小寫無關的自然罰單號。"""
+    return (
+        issuer_sort_order,
+        issuer_name or "",
+        ticketNoNaturalKey(ticket_no),
+    )
+
+
 class TicketValidationError(ValueError):
     """罰單欄位驗證失敗（編號格式、必填、參照人員不存在等）。"""
     pass
@@ -54,6 +63,11 @@ class TicketDuplicateError(TicketValidationError):
 
 class TicketNotFoundError(LookupError):
     """查無該筆罰單有效資料（不存在或已被刪除）。"""
+    pass
+
+
+class TicketConflictError(LookupError):
+    """儲存時原值已變動，拒絕覆蓋其他電腦較新的資料。"""
     pass
 
 
@@ -147,6 +161,24 @@ def _raiseDuplicateIfUnique(exc, ticket_no):
     raise exc
 
 
+def _resolveOriginalValues(original_values):
+    values = tuple(original_values)
+    if len(values) != 5:
+        raise ValueError("original_values 必須包含五個罰單原始欄位。")
+    return values
+
+
+def _raiseTicketUpdateMiss(conn, doc_id):
+    active = conn.execute(
+        "SELECT 1 FROM Document_Ticket WHERE doc_id=? AND " + TICKET_ACTIVE_SQL,
+        (doc_id,),
+    ).fetchone()
+    if active is None:
+        raise TicketNotFoundError(
+            f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
+    raise TicketConflictError("本筆罰單資料已被其他電腦修改，本次未儲存。")
+
+
 def _detail(conn, *, doc_id, create_date, register_date, sender_id,
             issuer_id, ticket_no):
     """組稽核 detail 內容（人員一律存當下姓名快照）。"""
@@ -214,21 +246,17 @@ def createTicket(conn, *, issuer_id, ticket_no, self_service, sender_id,
     return doc_id
 
 
-def updateTicket(conn, *, doc_id, issuer_id, ticket_no, role):
+def updateTicket(conn, *, doc_id, issuer_id, ticket_no, role,
+                 original_values):
     """罰單登錄頁的編輯：只改舉發人員與罰單編號。
 
     `create_date`／`register_date`／`sender_id` 一律保留原值（不因編輯而把
-    未發文改成已發文，或竄改登錄日期）。`last_modified` 由 trigger 維護。
+    未發文改成已發文，或竄改登錄日期）。呼叫端必須傳入對話框載入時的
+    五欄 `original_values`；漏傳直接 `TypeError`，不可在儲存時重查快照。
+    `last_modified` 由 trigger 維護。
     """
     doc_id = str(doc_id)
-    row = conn.execute(
-        "SELECT create_date, register_date, sender_id "
-        "FROM Document_Ticket WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL,
-        (doc_id,)).fetchone()
-    if row is None:
-        raise TicketNotFoundError(
-            f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
-    create_date, register_date, sender_id = row
+    original_values = _resolveOriginalValues(original_values)
 
     normalized = normalizeTicketNo(ticket_no)
     issuer_id = _requirePerson(conn, issuer_id, "開立人員")
@@ -237,26 +265,30 @@ def updateTicket(conn, *, doc_id, issuer_id, ticket_no, role):
     try:
         cur = conn.execute(
             "UPDATE Document_Ticket SET issuer_id = ?, ticket_no = ? "
-            "WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL,
-            (issuer_id, normalized, doc_id))
+            "WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL + " "
+            "AND create_date IS ? AND register_date IS ? AND sender_id IS ? "
+            "AND issuer_id IS ? AND ticket_no IS ?",
+            (issuer_id, normalized, doc_id, *original_values))
     except sqlite3.IntegrityError as exc:
         _raiseDuplicateIfUnique(exc, normalized)
     if cur.rowcount != 1:
-        raise TicketNotFoundError(
-            f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
+        _raiseTicketUpdateMiss(conn, doc_id)
 
 
 def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
-                           sender_id, issuer_id, ticket_no, role):
+                           sender_id, issuer_id, ticket_no, role,
+                           original_values):
     """資料庫瀏覽頁的 admin 編輯：可改全部業務欄位。
 
     `register_date` 必須明確區分 `''`（未發文）與有效日期，**不接受 `None`**
     ——`NULL` 是刪除狀態的哨兵，只能經由 `deleteTicket()` 產生。
     另在 helper 層把關「已發文必有發文人員」（有發文日期就必然有發文者：
     發文者登錄模式當場指定、自助結算整批寫入），資料表 CHECK 不改動——既有
-    資料庫的 CHECK 不會因改 schema 而重建，只有這裡擋得住。
+    資料庫的 CHECK 不會因改 schema 而重建，只有這裡擋得住。呼叫端必須傳入
+    對話框載入時的五欄 `original_values`，不得於儲存時重查快照。
     """
     doc_id = str(doc_id)
+    original_values = _resolveOriginalValues(original_values)
     if register_date is None:
         raise TicketValidationError(
             "發文日期資料無效；尚未發文請留空白，如需刪除請使用刪除功能。")
@@ -277,14 +309,15 @@ def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
         cur = conn.execute(
             "UPDATE Document_Ticket SET create_date = ?, register_date = ?, "
             "sender_id = ?, issuer_id = ?, ticket_no = ? "
-            "WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL,
+            "WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL + " "
+            "AND create_date IS ? AND register_date IS ? AND sender_id IS ? "
+            "AND issuer_id IS ? AND ticket_no IS ?",
             (create_date, register_date, sender_id, issuer_id, normalized,
-             doc_id))
+             doc_id, *original_values))
     except sqlite3.IntegrityError as exc:
         _raiseDuplicateIfUnique(exc, normalized)
     if cur.rowcount != 1:
-        raise TicketNotFoundError(
-            f"查無罰單資料（編號 {doc_id}），可能已被其他使用者刪除。")
+        _raiseTicketUpdateMiss(conn, doc_id)
 
 
 def deleteTicket(conn, *, doc_id, role):

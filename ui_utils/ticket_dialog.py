@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from lib.auth_manager import AuthManager
 from lib.db_utils import getConn, loadActivePersonnel
 from lib.ticket_utils import (
-    TICKET_ACTIVE_SQL, TICKET_NO_MAX_LEN, TicketDuplicateError,
+    TICKET_ACTIVE_SQL, TICKET_NO_MAX_LEN, TicketConflictError, TicketDuplicateError,
     TicketNotFoundError, TicketValidationError, updateTicket,
     updateTicketFromBrowse,
 )
@@ -38,6 +38,8 @@ from .widgets import NullableDateEdit
 # 併發刪除白話提示（開啟時列已不存在／儲存時查無列共用）
 _ROW_GONE_TITLE = "資料已刪除"
 _ROW_GONE_MSG = "本筆罰單資料已被刪除，畫面將更新。"
+_CONFLICT_TITLE = "資料已更新"
+_CONFLICT_MSG = "本筆罰單資料已被其他電腦修改，本次未儲存。"
 
 
 class TicketEditDialog(_BaseEditDialog):
@@ -158,6 +160,8 @@ class TicketEditDialog(_BaseEditDialog):
             self._row_missing = True
             return
         create_date, register_date, sender_id, sender_name, issuer_id, ticket_no = row
+        self._orig_values = (
+            create_date, register_date, sender_id, issuer_id, ticket_no)
         self._orig_register_date = register_date
         if self.source == "browse":
             if create_date:
@@ -227,6 +231,7 @@ class TicketEditDialog(_BaseEditDialog):
                     issuer_id=self.w_issuer.currentData(),
                     ticket_no=self.w_ticket_no.text(),
                     role=AuthManager.instance().current_role,
+                    original_values=self._orig_values,
                 )
             else:
                 updateTicket(
@@ -235,6 +240,7 @@ class TicketEditDialog(_BaseEditDialog):
                     issuer_id=self.w_issuer.currentData(),
                     ticket_no=self.w_ticket_no.text(),
                     role=AuthManager.instance().current_role,
+                    original_values=self._orig_values,
                 )
             conn.commit()
         except TicketDuplicateError as exc:
@@ -247,6 +253,14 @@ class TicketEditDialog(_BaseEditDialog):
             conn.rollback()
             msgWarning("資料有誤", str(exc))
             self.w_ticket_no.setFocus()
+            return
+        except TicketConflictError:
+            conn.rollback()
+            msgWarning(_CONFLICT_TITLE, _CONFLICT_MSG)
+            self._load_data()
+            if self._row_missing:
+                msgWarning(_ROW_GONE_TITLE, _ROW_GONE_MSG)
+                self.reject()
             return
         except TicketNotFoundError:
             conn.rollback()

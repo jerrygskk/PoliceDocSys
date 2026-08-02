@@ -24,12 +24,14 @@ manifest 放在 `tests/print_baseline_manifest.json`。比對失敗時會把有�
 """
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import io
 import json
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -46,7 +48,7 @@ DIFF_DIR = os.path.join(BASE_DIR, "diff")
 # 把罰單編號的防溢出裁切整個停用，61 張影像**仍全部相同**——那條路徑
 # 根本沒被走到。逐位元組比對只證明「已涵蓋的路徑沒變」，不證明「沒有
 # 路徑壞掉」，所以必須有踩得到每條分支的測資。資料由
-# `tools/seed_extreme_cases.py` 產生。
+# `tools/seed_print_baseline.py` 產生。
 _DB = "dbfile.db"
 _DB_ML = "dbfile_multiline_title.db"   # 標題含換行（全域設定，須獨立一份）
 
@@ -89,8 +91,33 @@ def _case_key(db, date_str):
 FROZEN_PRINT_DATE = "2026/07/31"
 
 
+@contextmanager
+def _isolated_mpl_config():
+    """讓一整次 command 在任何 matplotlib import 前使用獨立設定目錄。"""
+    temp_config = tempfile.TemporaryDirectory(prefix="policedocsys-mpl-")
+    config_path = temp_config.name
+    old_config = os.environ.get("MPLCONFIGDIR")
+    os.environ["MPLCONFIGDIR"] = config_path
+    print(f"[MPL] 本次設定目錄：{config_path}")
+    try:
+        yield config_path
+    finally:
+        if old_config is None:
+            os.environ.pop("MPLCONFIGDIR", None)
+        else:
+            os.environ["MPLCONFIGDIR"] = old_config
+        temp_config.cleanup()
+        print(f"[MPL] 已清理設定目錄：{config_path}")
+
+
 def collect(db_dir):
-    """跑完所有案例，回傳 {案例識別: {頁碼: (sha, png_bytes)}}。
+    """以獨立 MPL 設定跑完所有案例，回傳影像 hash 與 bytes。"""
+    with _isolated_mpl_config():
+        return _collect_with_mpl_config(db_dir)
+
+
+def _collect_with_mpl_config(db_dir):
+    """在 command 配置的單次 matplotlib 設定目錄內產生影像。
 
     明確走 `tools/mpl_canvas.py` 的 matplotlib 路徑（見檔頭說明）：
     分頁／排序邏輯沿用 `tabs.tab_print._build_page_specs()`（與產品共用
@@ -174,6 +201,7 @@ def _windows_scaling_percent():
 def environment_metadata():
     """回傳會影響逐位元組輸出的可攜環境描述。"""
     import PySide6
+    import matplotlib
     from PySide6.QtCore import qVersion
     import tabs.tab_print as tp
 
@@ -182,6 +210,7 @@ def environment_metadata():
 
     return {
         "fonts": {"regular": font(tp._REG), "bold": font(tp._BOLD)},
+        "matplotlib_version": matplotlib.__version__,
         "qt_version": qVersion(),
         "pyside6_version": PySide6.__version__,
         "windows_scaling_percent": _windows_scaling_percent(),
@@ -217,7 +246,9 @@ def cmd_save(db_dir, force=False):
               f"的驗收失效；確定要重建才加 --force。")
         return 2
     os.makedirs(BASE_DIR, exist_ok=True)
-    data = collect(db_dir)
+    with _isolated_mpl_config():
+        metadata = environment_metadata()
+        data = _collect_with_mpl_config(db_dir)
     cases = {}
     for case, pages in data.items():
         cases[case] = {k: sha for k, (sha, _b) in pages.items()}
@@ -225,7 +256,7 @@ def cmd_save(db_dir, force=False):
             if blob:
                 with open(os.path.join(BASE_DIR, f"{case}_{key}.png"), "wb") as f:
                     f.write(blob)
-    manifest = {"environment": environment_metadata(), "cases": cases}
+    manifest = {"environment": metadata, "cases": cases}
     with open(MANIFEST, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
     total = sum(len(v) for v in cases.values())
@@ -237,7 +268,7 @@ def cmd_save(db_dir, force=False):
 
 
 def cmd_check(db_dir):
-    if not os.path.isdir(BASE_DIR) or not os.path.exists(MANIFEST):
+    if not os.path.exists(MANIFEST):
         print(f"[X] 找不到完整基準：{BASE_DIR} / {MANIFEST}")
         print("請依序重建：")
         print(f"  python tools/seed_print_baseline.py {db_dir}")
@@ -248,8 +279,9 @@ def cmd_check(db_dir):
 
     base = manifest.get("cases", {})
     recorded_environment = manifest.get("environment", {})
-    current_environment = environment_metadata()
-    now = collect(db_dir)
+    with _isolated_mpl_config():
+        current_environment = environment_metadata()
+        now = _collect_with_mpl_config(db_dir)
     shutil.rmtree(DIFF_DIR, ignore_errors=True)
 
     bad = []
@@ -302,7 +334,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
-    if args.check and (not os.path.isdir(BASE_DIR) or not os.path.exists(MANIFEST)):
+    if args.check and not os.path.exists(MANIFEST):
         return cmd_check(args.db_dir)
     missing = sorted(
         {db for db, _d, _x in resolve_cases(args.db_dir) if not os.path.exists(db)}

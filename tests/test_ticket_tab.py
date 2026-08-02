@@ -697,10 +697,15 @@ class TestTicketCrossPageRefresh(TicketTabBase):
 
         from lib.ticket_utils import updateTicketFromBrowse
         conn = sqlite3.connect(self.db)
+        original_values = conn.execute(
+            "SELECT create_date,register_date,sender_id,issuer_id,ticket_no "
+            "FROM Document_Ticket WHERE doc_id=?", (doc_id,)
+        ).fetchone()
         updateTicketFromBrowse(
             conn, doc_id=doc_id, create_date="2026-07-01",
             register_date="2026-07-01", sender_id="P002",
-            issuer_id="P003", ticket_no="ZZ9999", role="admin")
+            issuer_id="P003", ticket_no="ZZ9999", role="admin",
+            original_values=original_values)
         conn.commit()
         conn.close()
 

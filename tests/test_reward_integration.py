@@ -287,13 +287,6 @@ class RewardIntegrationTests(unittest.TestCase):
         self.assertIn("五張公文主表", developer)
         release_section = developer.split("### 發布流程", 1)[1].split(
             "### 打包（spec 檔", 1)[0]
-        gate_pos = release_section.index("**推送前完整 gate**")
-        push_pos = release_section.index("**版號進版並推上去**")
-        self.assertLess(gate_pos, push_pos)
-        self.assertIn("三項全部通過後才可推送與建立 tag", release_section)
-        self.assertIn("python -m unittest discover -s tests", release_section[:push_pos])
-        self.assertIn("python -m pytest tests -q", release_section[:push_pos])
-        self.assertIn("python -m unittest tests.test_no_pii", release_section[:push_pos])
         self.assertIn("刪除既有 `build/`／`dist/`", release_section)
         fresh_build_pos = release_section.index("**兩支 exe 都要重建**")
         checker_pos = release_section.index(

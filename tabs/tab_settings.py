@@ -534,12 +534,16 @@ class TabSettings(BaseTab):
 
     def _onDragDrop(self, key, src_row, dst_row):
         """整列移動：記憶體 rows 重排，重繪表格，選中移動後的列"""
+        if not self._refEditable():
+            return
         self._moveRow(key, src_row, dst_row)
 
     def _moveRow(self, key, src, dst):
         """共用搬移邏輯：記憶體 rows 重排＋設 dirty＋亮儲存排序鈕＋重繪＋選取目標列。
         拖拉（_onDragDrop）、序號欄編輯（_onSeqItemChanged，Task 3）、
         新增指定位置（_addPersonnel 等，Task 4）共用同一套搬移邏輯。"""
+        if not self._refEditable():
+            return
         st   = self._sort_state[key]
         rows = st["rows"]
         rows.insert(dst, rows.pop(src))
@@ -737,6 +741,12 @@ class TabSettings(BaseTab):
 
     # ── 身份切換監聽：登出時回到密碼驗證畫面 ─────────────────────
     def _onRoleChanged(self, role):
+        # 角色一旦不再是最高權限管理者，排序暫存直接放棄並重讀 DB；
+        # 不進未存確認框，避免 modal 期間降權後仍保留可寫的 dirty 畫面。
+        if not AuthManager.instance().is_admin():
+            for key, state in self._sort_state.items():
+                if state["dirty"]:
+                    self._loadRefGeneric(key)
         if role in ('admin', 'archive'):
             self._applyRolePermissions()
             self._outer_stack.setCurrentIndex(1)
@@ -798,6 +808,8 @@ class TabSettings(BaseTab):
 
     # ── 跨年度重置 ──────────────────────────────────────────────
     def _doReset(self):
+        if not AuthManager.instance().is_admin():
+            return
         conn = None
         try:
             conn = getConn(self.db_path)
@@ -814,6 +826,8 @@ class TabSettings(BaseTab):
             self.db_path, self.tab_widget,
             doc_summary=_resetSummary(doc_counts))
         if not dlg.exec():
+            return
+        if not AuthManager.instance().is_admin():
             return
 
         # 1.5 先寫稽核紀錄（在備份之前，使歷史 log 隨備份保存；
@@ -869,6 +883,8 @@ class TabSettings(BaseTab):
                                f"另存備份失敗（自動備份仍存在）：\n{e}", self.tab_widget)
 
         # 4. 執行重置（破壞性，transaction 保護）
+        if not AuthManager.instance().is_admin():
+            return
         try:
             performYearEndReset(self.db_path)
         except Exception as e:
@@ -1033,6 +1049,8 @@ class TabSettings(BaseTab):
     def _saveSort(self, key):
         """把記憶體順序寫回 DB sort_order（連續整數），清 dirty，設 _ref_dirty。
         成功後鈕反灰即表示已存，不另跳「已儲存」提示。"""
+        if not self._refEditable():
+            return False
         tbl_name, idc, _, _, _ = self._REF_CFG[key]
         st = self._sort_state[key]
         conn = None
@@ -1045,13 +1063,14 @@ class TabSettings(BaseTab):
             conn.commit()
         except Exception as e:
             reportError("儲存失敗", e)
-            return
+            return False
         finally:
             if conn:
                 conn.close()
         st["dirty"] = False
         st["save_btn"].setEnabled(False)
         self._ref_dirty = True
+        return True
 
     def _hasUnsavedSort(self):
         return any(s["dirty"] for s in self._sort_state.values())
@@ -1106,7 +1125,8 @@ class TabSettings(BaseTab):
         if ret:
             for k, s in self._sort_state.items():
                 if s["dirty"]:
-                    self._saveSort(k)
+                    if not self._saveSort(k):
+                        return False
             # 面板存檔（成功即儲存鈕回灰，無成功彈窗）；
             # 任一存檔被擋（驗證失敗/必填空白）→ 中止切換、留在頁面修正
             for p in dirty_panels:

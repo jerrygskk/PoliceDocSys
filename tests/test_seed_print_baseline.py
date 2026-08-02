@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""虛構列印基準資料庫產生工具的行為測試。"""
+"""候選列印基準資料庫產生工具的行為測試。"""
 from __future__ import annotations
 
 import hashlib
@@ -15,6 +15,16 @@ GENERAL_DB = "dbfile.db"
 MULTILINE_DB = "dbfile_multiline_title.db"
 
 
+def _load_seed_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("seed_print_baseline", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -23,7 +33,7 @@ def _scalar(conn: sqlite3.Connection, sql: str, params=()):
     return conn.execute(sql, params).fetchone()[0]
 
 
-def test_seed_tool_builds_complete_deterministic_fictional_databases(tmp_path):
+def test_seed_tool_builds_complete_deterministic_candidate_databases(tmp_path):
     outputs = []
     for dirname in ("first", "second"):
         output_dir = tmp_path / dirname
@@ -35,7 +45,8 @@ def test_seed_tool_builds_complete_deterministic_fictional_databases(tmp_path):
             encoding="utf-8",
         )
         assert result.returncode == 0, result.stdout + result.stderr
-        assert "已建立虛構列印基準資料庫" in result.stdout
+        assert "已建立候選列印基準資料庫" in result.stdout
+        assert "待維護者對照真實名單核准" in result.stdout
         assert sorted(path.name for path in output_dir.iterdir()) == [
             GENERAL_DB,
             MULTILINE_DB,
@@ -75,12 +86,12 @@ def test_seed_tool_builds_complete_deterministic_fictional_databases(tmp_path):
         assert conn.execute(
             "SELECT staff_id,staff_name FROM Ref_Personnel ORDER BY sort_order"
         ).fetchall() == [
-            ("P01", "測試甲"),
-            ("P02", "測試乙"),
-            ("P03", "測試丙"),
-            ("P04", "測試丁"),
-            ("P05", "測試戊"),
-            ("P06", "測試己"),
+            ("P01", "王小明"),
+            ("P02", "李小華"),
+            ("P03", "陳大華"),
+            ("P04", "林小美"),
+            ("P05", "張大同"),
+            ("P06", "吳小芳"),
         ]
 
         expected_counts = {
@@ -166,6 +177,13 @@ def test_seed_tool_builds_complete_deterministic_fictional_databases(tmp_path):
             "SELECT count(*) FROM Document_Ticket "
             "WHERE register_date='2026-08-11' AND issuer_id='P01'",
         ) >= 20
+        recipients = _scalar(
+            conn,
+            "SELECT recipients FROM Document_Reward "
+            "WHERE register_date='2026-08-10' ORDER BY doc_id LIMIT 1",
+        )
+        assert recipients == "王小明,李小華,陳大華"
+        assert "、" not in recipients and "," in recipients
 
     with sqlite3.connect(multiline_path) as conn:
         titles = dict(
@@ -184,3 +202,14 @@ def test_seed_tool_builds_complete_deterministic_fictional_databases(tmp_path):
             conn,
             "SELECT count(*) FROM Document_Ticket WHERE register_date='2026-08-11'",
         ) == 27
+
+
+def test_seed_exposes_common_fake_data_schema_for_other_seed_tools():
+    seed = _load_seed_module()
+
+    assert seed.FAKE_DATA.personnel[0].staff_id == "P01"
+    assert seed.FAKE_DATA.personnel[0].name == "王小明"
+    assert seed.FAKE_DATA.documents.task_subject.startswith("請各組彙整")
+    assert seed.FAKE_DATA.documents.criminal_reason.startswith("查獲")
+    assert seed.FAKE_DATA.documents.general_subject.startswith("檢送")
+    assert seed.FAKE_DATA.documents.reward_reason.startswith("辦理")
