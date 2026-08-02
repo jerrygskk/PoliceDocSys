@@ -1,7 +1,10 @@
 @echo off
-rem 本檔必須維持 UTF-8 無 BOM：下方 PowerShell 段落靠自我讀取執行，
-rem 存成 ANSI 或加上 BOM 會讓第一行失效，且錯誤訊息看不出原因。
-rem 換行一律 CRLF（由 .gitattributes 釘住）。
+rem Keep this file UTF-8 without BOM and CRLF line endings: the PowerShell
+rem block below is executed by reading this very file. Saving as ANSI or with
+rem a BOM breaks the first line with no usable error message.
+rem IMPORTANT: the cmd section above "# POWERSHELL-BEGIN" must stay ASCII-only.
+rem cmd reads it with the OEM code page (CP950 here), and UTF-8 Chinese bytes
+rem can decode into "&" or "|", which cmd then treats as a command separator.
 setlocal
 
 set "PSD_SOURCE_DIR=%~dp0"
