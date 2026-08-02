@@ -164,6 +164,8 @@ graph LR
 ├── ui_utils/        共用 UI 工具（table／widgets／status／sticky_scroll／edit_dialog／
 │                    settings_dialogs／settings_panels／help_dialog／help_content／ui_common／
 │                    button_imgs／settle_dialog／reward_dialog／ticket_dialog；門面見 `__init__.py`）
+├── packaging/       **隨 Release 出貨、由使用者執行**的檔案（入庫，非開發工具、不從專案根跑）：
+│                    create_shared_shortcuts.bat（SMB 分享捷徑建立工具，放進 PACKED.zip）
 ├── tools/           開發／維運工具（入庫，從專案根執行；不被核心模組 import）：
 │                    bump_version／check_bundle_deps／check_excludes／check_no_matplotlib／
 │                    engine_diff／fake_seed_data／gen_buttons／gen_quickstart／gen_shell_db／
@@ -662,27 +664,39 @@ python tools/check_bundle_deps.py
 - ⚠️ **跨年度重啟**：onefile 版重啟新程序前必設 `PYINSTALLER_RESET_ENVIRONMENT=1`（否則 `Failed to load Python DLL`／`unicodedata` 缺，`_restartApp()` 已處理，見 PITFALLS PKG 組）
 - 打包報 `No module named res`／`lib.xxx` → 補進對應 spec 的 `hiddenimports`
 - **exe 檔案資訊**由 spec 的 `version=` 帶入（`version_info.txt`／`version_info_entry.txt`）；該檔由 `tools/bump_version.py` 進版時連同版號產生（已收進 git），改顯示文字改該腳本頂部常數
-- GitHub release 的 **asset 檔名用英文**（單獨上傳的兩支 exe、`dbfile.db`、`PACKED.zip`、速查卡）；**只有 `PACKED.zip` 內容物用中文檔名**（見下節）
+- GitHub release 的 **asset 檔名用英文**（單獨上傳的兩支 exe、`dbfile.db`、`PACKED.zip`、速查卡）；`PACKED.zip` 內兩支 exe 也保留固定英文原名，另含共用資料庫與捷徑建立 BAT（見下節）
 
 ### 發 GitHub Release（5 個 asset）
 
 CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入獨立版 exe，速查卡改帶版號）：
 
-1. `Police-Document-Manager_v{版號}.exe`（本次 build 的 onefile；⚠️ **上傳前把 `dist/Police-Document-Manager.exe` 複製成帶版號的檔名**再傳，例：`Police-Document-Manager_v1.2.0.exe`，方便使用者辨識版本。`gh` 以本機檔名當 asset 名，故改檔名即改 asset 名。**PACKED.zip 內的兩支 exe 改用中文檔名＋版號**（見下），與這裡單獨上傳的英文 asset 不同）
+1. `Police-Document-Manager_v{版號}.exe`（本次 build 的 onefile；⚠️ **上傳前把 `dist/Police-Document-Manager.exe` 複製成帶版號的檔名**再傳，例：`Police-Document-Manager_v1.2.0.exe`，方便使用者辨識版本。`gh` 以本機檔名當 asset 名，故改檔名即改 asset 名。PACKED.zip 內則保留 build 的固定英文原名，不帶版號）
 2. `dbfile.db`（**乾淨空殼**——用 `python tools/gen_shell_db.py <暫存路徑> --force` 產生。schema 來自 `lib/db_schema.py`、種子來自 `lib/db_seed.py`，兩者是唯一來源，產出即與程式碼一致。例：`python tools/gen_shell_db.py 暫存/dbfile.db --force`。**不要用工作區根目錄那份**（真實測試資料）；`gen_shell_db.py` 的暫存產物是發版來源。）
-3. `PACKED.zip`（= 空白 `dbfile.db` + 主程式 exe + 獨立登錄 exe **三檔扁平放根目錄**，無子資料夾；兩支 exe 用**中文檔名＋版號**，見下）
+3. `PACKED.zip`（= `Police-Document-Manager.exe` + `Police-Entry-Manager.exe` + 空白 `dbfile.db` + `create_shared_shortcuts.bat` **四檔同層放根目錄**，無子資料夾；exe 固定英文名、不帶版號，見下）
 4. `Police-Entry-Manager_v{版號}.exe`（獨立版「公文快速登錄系統」的 onefile；同樣**複製成帶版號的檔名**再傳）
 5. `Quick_Start_v{版號}.pdf`（速查卡）——⚠️ `docs/` 已 gitignore，發版前先跑 `python tools/gen_quickstart.py` 重產到 `docs/Quick_Start.pdf`，**複製成 `Quick_Start_v{版號}.pdf`** 再上傳（內容單一來源 `ui_utils/help_content.py` 的 `QUICKSTART`）
 
-- **PACKED.zip 內用中文檔名＋版號**（使用者解壓後直接看得懂哪支是哪支；`dbfile.db` **不可改名**，程式固定找這個檔名）：
+- **PACKED.zip 內四檔皆用固定檔名**（BAT、兩支 exe 與 `dbfile.db` 必須同層；兩支程式固定依自身目錄找 `dbfile.db`，BAT 固定依英文 exe 名建立捷徑）：
   ```powershell
-  cp dist/Police-Document-Manager.exe "暫存/公文收發管理系統_v{版號}.exe"
-  cp dist/Police-Entry-Manager.exe    "暫存/公文快速登錄系統_v{版號}.exe"
-  Compress-Archive -Path "暫存\dbfile.db","暫存\公文收發管理系統_v{版號}.exe","暫存\公文快速登錄系統_v{版號}.exe" `
+  cp dist/Police-Document-Manager.exe 暫存/Police-Document-Manager.exe
+  cp dist/Police-Entry-Manager.exe    暫存/Police-Entry-Manager.exe
+  cp packaging/create_shared_shortcuts.bat 暫存/create_shared_shortcuts.bat
+  Compress-Archive -Path "暫存\dbfile.db","暫存\Police-Document-Manager.exe","暫存\Police-Entry-Manager.exe","暫存\create_shared_shortcuts.bat" `
     -DestinationPath 暫存\PACKED.zip -Force
   ```
-  解壓後三檔並放即可執行；兩支共用同一份 `dbfile.db`。
-  ⚠️ exe **改檔名不影響執行**：程式只用 `sys.executable` 的**目錄**去找 `dbfile.db` 與鎖檔，不看自身檔名（`app_profile.exe_name` 僅供 `version_info` 的 `OriginalFilename` 用，屬檔案內容資訊，不參與執行）。副作用是 Windows 檔案內容資訊仍顯示英文原名，可接受。
+  管理者把解壓後四檔一起放進 SMB 分享，再雙擊 BAT 一次；BAT 以自身位置解析 UNC，建立「公文收發管理系統」與「公文快速登錄系統」兩支捷徑。伺服器、分享與資料夾名稱皆不寫死，但名稱不可含 `%`。BAT 先驗證四檔與網路路徑；若同名 `.lnk` 已是資料夾或其他非檔案項目，須先移除衝突項目，之後直接覆寫兩支捷徑。若中途因分享斷線而失敗，可能只更新其中一支；恢復連線後重跑 BAT 即可收斂。兩支程式共用同一份 `dbfile.db`。
+
+  **BAT 支援的三種擺法**（`packaging/create_shared_shortcuts.bat`，出貨物、非開發工具）：
+
+  | 擺法 | 解析方式 | 捷徑建在 |
+  |------|----------|----------|
+  | 分享下的內層資料夾（`\\伺服器\分享\公文系統\`） | 直接用 UNC | **上一層**（使用者不必進內層） |
+  | 分享根目錄（`\\伺服器\分享\`） | 直接用 UNC | **同一層**（沒有可用的上層，故就地建立） |
+  | 映射網路磁碟（`Z:\公文系統\`） | `WScript.Network.EnumNetworkDrives()` 反解回 UNC | 同上兩種規則 |
+  | 伺服器本機路徑（`D:\shares\公文系統\`） | `Win32_Share` 反查所屬分享，組回 `\\本機\分享\…` | 同上兩種規則 |
+
+  ⚠️ 本機反查**只認一般磁碟分享（`Type=0`）並排除 `C$`／`D$`／`ADMIN$` 等管理共用**——管理共用一定存在且涵蓋整顆磁碟，不排除的話任何本機路徑都會被解成 `\\本機\D$\…`，做出一般使用者根本打不開的捷徑。
+  ⚠️ 本檔以「cmd 呼叫 PowerShell 讀自己、執行 `# POWERSHELL-BEGIN` 之後的內容」運作：**不產生 `.ps1`，因此不受 ExecutionPolicy 限制**（警用電腦常見 RemoteSigned），這是刻意設計，勿改成外部腳本。相對代價是**編碼與換行是功能依賴**——必須 UTF-8 無 BOM＋CRLF，已由 `.gitattributes` 的 `*.bat text eol=crlf` 釘住；用記事本另存成 ANSI 或帶 BOM 會讓第一行失效且錯誤訊息看不出原因。
 - **兩支 exe 與速查卡都帶版號**：
   ```
   cp dist/Police-Document-Manager.exe 暫存/Police-Document-Manager_v{版號}.exe

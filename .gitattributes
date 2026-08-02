@@ -1,0 +1,2 @@
+# 出貨用批次檔靠自我讀取執行 PowerShell 段落，換行必須固定 CRLF、編碼維持 UTF-8 無 BOM
+*.bat text eol=crlf
