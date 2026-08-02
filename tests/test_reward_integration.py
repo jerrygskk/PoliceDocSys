@@ -1,3 +1,12 @@
+# tests/test_reward_integration.py
+"""敘獎相關的**程式契約**：分頁／主選單映射、.ui 順序、SVG 與 qrc、TabBar 寬度資料流、
+速查卡只渲染核准索引、送出鈕樣式白名單。
+
+⚠️ 本檔原本還兼任 HELP／速查卡／DEVELOPER.md 的**文字契約**（一支測試讀四個來源），
+文案潤飾就會紅在「敘獎整合測試」名下。文字契約已拆出：
+HELP／速查卡 → `test_help_content_contract.py`；DEVELOPER.md →
+`test_release_documentation_contract.py`。**新的文件契約請加到那兩支，不要加回本檔。**
+"""
 import ast
 import re
 import unittest
@@ -200,135 +209,6 @@ class RewardIntegrationTests(unittest.TestCase):
                          ["_future_bad_tab_width"] * 3)
         window.close()
         del app
-
-    def test_help_and_quickstart_indexes(self):
-        from ui_utils.help_content import (HELP_PAGES, HELP_TIPS, HELP_TITLES,
-                                           QUICKSTART, render_review_text)
-        self.assertEqual(set(HELP_TITLES), set(range(10)))
-        self.assertEqual(set(HELP_PAGES), set(range(10)))
-        self.assertEqual(set(HELP_TIPS), set(range(10)))
-        self.assertEqual(HELP_TITLES[3], "敘獎登錄")
-        self.assertEqual(HELP_TITLES[4], "罰單登錄")
-        self.assertEqual(HELP_TITLES[5], "簽收單列印")
-        self.assertEqual(set(QUICKSTART), set(range(9)))
-        source = (ROOT / "tools" / "gen_quickstart.py").read_text(encoding="utf-8")
-        self.assertIn("PAGE1 = [0, 1, 2]", source)
-        self.assertIn("PAGE2 = [3, 4, 5]", source)
-        self.assertIn("PAGE3 = [6, 7, 8]", source)
-        self.assertIn("九個分頁速查", source)
-        reward_help = render_review_text(3)
-        ticket_help = render_review_text(4)
-        report_help = render_review_text(2)
-        print_help = render_review_text(5)
-        browse_help = render_review_text(6)
-        settings_help = render_review_text(8)
-        self.assertIn("登錄日期由系統自動填入今天", reward_help)
-        self.assertIn("自助取號模式", reward_help)
-        self.assertIn("送文者輸入模式", reward_help)
-        self.assertNotIn("敘獎發文", reward_help)
-        # 模式名稱必須與設定頁 radio 的字面一致（使用者要照著去設定頁找選項），
-        # 不可自創「發文者登錄模式」之類的同義詞。
-        self.assertIn("送文者輸入模式", ticket_help)
-        self.assertIn("自助取號模式", ticket_help)
-        self.assertIn("開立人員", ticket_help)
-        self.assertIn("取代", ticket_help)
-        self.assertIn("清空", ticket_help)
-        self.assertIn("罰單編號僅接受半形英文字母與數字", ticket_help)
-        self.assertIn("不可還原", ticket_help)
-        self.assertIn("文號（doc_id）直接作廢、不會再被使用；原罰單編號仍可重新登錄", ticket_help)
-        ticket_quickstart = "\n".join(QUICKSTART[4][1] + QUICKSTART[4][2])
-        self.assertIn("文號（doc_id）作廢不可再用，原罰單編號仍可重新登錄", ticket_quickstart)
-        self.assertIn("本頁不設身分限制", ticket_help)
-        self.assertIn("登錄日期＝取得文號日", report_help)
-        self.assertIn("陳報日期＝實際發文日", report_help)
-        self.assertIn("未發文的刑案／一般／敘獎／罰單案件", print_help)
-        self.assertIn("結算發文只補上發文日期，不會變更登錄日期", print_help)
-        self.assertIn("四項皆為送文者輸入模式但仍有未發文殘留資料時", print_help)
-        self.assertIn("四項皆為送文者輸入模式但仍有未發文殘留資料時",
-                      QUICKSTART[5][2])
-        self.assertEqual(set(HELP_TIPS[3]), {
-            "btn_reward_submit", "btn_reward_clear", "reward_personnel_list",
-        })
-        self.assertEqual(set(HELP_TIPS[4]), {
-            "ticket_add", "ticket_clear_issuer", "ticket_candidates_list",
-        })
-        # 罰單與敘獎同受陳報模式影響，說明不可再宣稱「只影響刑案與一般」
-        self.assertIn(
-            "自助取號模式影響刑案與一般陳報，以及敘獎登錄與罰單登錄", settings_help)
-        self.assertNotIn("敘獎登錄與敘獎發文不受陳報模式影響", settings_help)
-        self.assertNotIn("一併於結算時補齊", settings_help)
-        self.assertIn("罰單簽收歸屬日一律依發文日期", settings_help)
-        self.assertIn("與目前採送文者輸入模式或自助取號模式無關", settings_help)
-        self.assertNotIn("歷史單據的列印結果會隨目前模式而不同", settings_help)
-        self.assertIn("一般使用者唯讀", browse_help)
-        self.assertIn("歸檔管理可修改、不可刪除", browse_help)
-        self.assertIn("管理者可修改、可刪除", browse_help)
-
-        from pypdf import PdfReader
-        # docs/ 為 gitignored 產物（發版前 gen_quickstart 重產再上傳，見 DEVELOPER §7）；
-        # 缺檔環境（fresh clone／CI）不驗頁數，避免依賴未入庫產物而 error。
-        pdf_path = ROOT / "docs" / "Quick_Start.pdf"
-        if pdf_path.exists():
-            self.assertEqual(len(PdfReader(pdf_path).pages), 3)
-
-        developer = (ROOT / "DEVELOPER.md").read_text(encoding="utf-8")
-        self.assertNotIn("新 Tab 若有日期／發文欄位要接自助取號模式", developer)
-        self.assertIn(
-            "會發文的輸入頁才依需求接陳報模式（`REPORT_MODE_KEYS` 逐流程一把",
-            developer)
-        self.assertIn("成員為刑案／一般／敘獎／罰單", developer)
-        self.assertIn("罰單 meta 帶 `strict=True`，任一衝突即整批 rollback", developer)
-        self.assertIn("`input_lock_reward`／`input_lock_ticket`", developer)
-        self.assertNotIn("`tab_reward_issue.handleIssue`", developer)
-        self.assertIn("`report_mode_reward`", developer)
-        self.assertIn("`print_title_ticket`", developer)
-        self.assertIn("| **罰單登錄**（`Document_Ticket`／`print_title_ticket`）", developer)
-        self.assertIn("所有 CRUD 寫入唯一走 `lib/ticket_utils.py`；結算發文由 `SETTLE_META` 在共用 transaction 更新", developer)
-        self.assertIn("五張公文主表", developer)
-        release_section = developer.split("### 發布流程", 1)[1].split(
-            "### 打包（spec 檔", 1)[0]
-        self.assertIn("刪除既有 `build/`／`dist/`", release_section)
-        fresh_build_pos = release_section.index("**兩支 exe 都要重建**")
-        checker_pos = release_section.index(
-            "兩支 fresh build 完成後立即於同次執行")
-        self.assertLess(fresh_build_pos, checker_pos)
-        self.assertIn("兩支 fresh build 完成後立即於同次執行",
-                      release_section)
-        self.assertIn("不得沿用舊 `build/` 或 `PKG-00.toc`", release_section)
-        self.assertIn(
-            "python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager",
-            release_section[checker_pos:])
-        self.assertIn("候選 PE 只要來源缺失或無法解析即 **fail-closed**", developer)
-        self.assertIn("唯一依 `Document_Ticket.register_date`", developer)
-        views_section = developer.split("### Views", 1)[1].split("\n---\n", 1)[0]
-        for view_name in ("View_Task_Full", "View_Criminal_Full",
-                          "View_General_Full", "Document_Ticket_Full"):
-            self.assertIn(view_name, views_section)
-        self.assertIn("`idx_task/crim/gen/reward/ticket_lastmod`", developer)
-
-    def test_help_and_quickstart_explain_role_based_tabs(self):
-        from ui_utils.help_content import HELP_PAGES, QUICKSTART
-
-        def text_values(value):
-            if isinstance(value, str):
-                return [value]
-            if isinstance(value, dict):
-                return [
-                    text
-                    for item in value.values()
-                    for text in text_values(item)
-                ]
-            if isinstance(value, (list, tuple)):
-                return [text for item in value for text in text_values(item)]
-            return [str(value)]
-
-        help_text = "\n".join(text_values(HELP_PAGES))
-        quickstart_text = "\n".join(text_values(QUICKSTART))
-        for text in (help_text, quickstart_text):
-            self.assertIn("一般使用者", text)
-            self.assertIn("歸檔管理員", text)
-            self.assertIn("操作紀錄", text)
-            self.assertIn("資料庫設定", text)
 
     def test_quickstart_build_renders_only_approved_indexes(self):
         from reportlab.platypus import Spacer

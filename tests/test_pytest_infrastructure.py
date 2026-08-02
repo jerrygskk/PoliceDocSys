@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_MARKER_MODULES = {
     "pure": {
         "test_app_lock.py", "test_app_profile.py", "test_archive_text.py",
-        "test_error_msg.py", "test_no_pii.py", "test_pytest_infrastructure.py",
+        "test_environment_contract.py", "test_error_msg.py",
+        "test_no_pii.py", "test_pytest_infrastructure.py",
         "test_ref_sort.py", "test_release_documentation_contract.py",
         "test_status.py",
     },
@@ -37,6 +38,7 @@ EXPECTED_MARKER_MODULES = {
     "qt": {
         "test_archive_runtime_guards.py", "test_base_tab.py", "test_combo_hint.py",
         "test_date_wheel_guard.py", "test_dbbrowse_sync.py", "test_dialog_smoke.py",
+        "test_help_content_contract.py",
         "test_loading_screen_banner.py", "test_nullable_date.py",
         "test_pytest_qt_runtime.py", "test_report_mode_switch.py",
         "test_reward_browse.py", "test_reward_gui_pilot.py",

@@ -196,14 +196,15 @@ graph LR
 
 正式測試 gate 以 **pytest** 為唯一完整 runner，涵蓋既有 unittest 測試、純邏輯、資料庫、offscreen Qt、packaging／bundle／startup 契約與 pytest-qt GUI pilot。`unittest discover` 僅保留為無 pytest 環境備援，不屬正式發布 gate。
 
-- **跑法**（專案根）：檔名 `test_*.py`（探索預設，勿改名）。本次核准的 Windows／Codex runtime 以同一支 Python 執行完整 unittest、pytest 與 PII gate：
+- **跑法**（專案根）：檔名 `test_*.py`（探索預設，勿改名）。正式 gate 用本機**系統 Python**（3.12.10，已裝齊 `requirements-dev.txt`），完整 unittest、pytest 與 PII gate 都走這一支：
   ```powershell
   $env:QT_QPA_PLATFORM = 'offscreen'
-  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests -q -m "not shell" --ignore=tests/test_no_pii.py
-  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m pytest tests -q -m shell --ignore=tests/test_no_pii.py
-  C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest tests.test_no_pii
+  C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe -m pytest tests -q -m "not shell" --ignore=tests/test_no_pii.py
+  C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe -m pytest tests -q -m shell --ignore=tests/test_no_pii.py
+  C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe -m unittest tests.test_no_pii
   ```
   其他環境不可假設此絕對路徑存在，應改用已安裝 `requirements-dev.txt` 相同依賴的 Python 執行相同命令。完整 pytest 會一併驗證 packaging／bundle／startup 與 GUI pilot。
+- ⚠️ **不要再用 Codex runtime 那支直譯器跑 gate**（`C:\Users\user\.cache\codex-runtimes\...\python.exe`）：2026-08-03 查核，該環境**沒有 pytest／PySide6／matplotlib**，`-m pytest` 直接 `No module named pytest`，一段 gate 都跑不了。它只有 pypdf／reportlab，而 2026-08-03 之前 `requirements-dev.txt` 那兩行釘的正是**它的**版本——等於清單混了兩個環境，哪一支都對不上。兩支直譯器的差異肉眼看不出來，故改由 `tests/test_environment_contract.py`（`pure` 層）比對「實際安裝版本 vs 釘住版本」，不符即紅、套件沒裝也紅（**不 skip**）。動 `requirements-dev.txt` 或換機器後第一件事就是跑它。
 ⚠️ **pytest 必須分非 shell／shell 兩段跑**：`shell` 層包含會建立應用程式行程或完整 shell 的測試；其中 `tests/test_standalone_shell.py` 會在同一行程內反覆建立整個 `DocumentManager`，與其餘模組合跑時累積到一定量必定 native 崩潰（access violation）。兩段各自全綠、合併必崩，詳細證據與已試過無效的兩條修法見 PITFALLS **TST-5**。正式程式不受影響——重啟一律另起新行程（`tab_settings._restartApp`），一個行程一輩子只建一個 `DocumentManager`。五個主層 marker 為 `pure`／`db`／`qt`／`shell`／`packaging`，每個 node 恰屬一層；分類由根 `conftest.py` 的明確模組表與契約測試共同把關。pytest 的 basetemp、cache 與各 xdist worker 的 matplotlib 設定皆放在專案 `.tmp`。
 
 - **xdist 裁決**：`pytest-xdist` 只供分層量測。`pure+db` 與 `qt` 已通過 `-n 2
@@ -226,6 +227,8 @@ graph LR
 - **需 PySide6 的測試**（受測模組 import 時載入 PySide6）：`test_db_utils`／`test_status`／`test_auth_manager`／`test_error_msg`／`test_audit`／`test_ref_sort`；純 stdlib：`test_archive_text`／`test_app_lock`／`test_db_backup`
 - **offscreen Qt 元件測試**（module 層設 `QT_QPA_PLATFORM=offscreen` 建 QApplication，實例化 widget 但不開視窗）：`test_nullable_date`／`test_ui_load`／`test_dialog_smoke`／`test_dbbrowse_sync`（整個瀏覽 Tab offscreen 實例化，驗 `_allRows`/`_docorder` 與表格列 1:1 不變式、`_diffUpdate` 增修刪、`setUpdatesEnabled` try/finally 防卡死、搜尋過濾一致性）
 - **涵蓋**：歸檔解析（含 PK 撞號雷）、流水號／重置／設定／歸檔定位、逾期與狀態色、權限與密碼、錯誤白話化、稽核 helper、操作紀錄解析、軟性互斥、自動備份、閒置逾時解析（`test_idle_timeouts`，0＝停用／壞值退預設）；`.ui` 全檔載入與對話框建構 smoke（offscreen）；罰單四檔（`test_ticket_data` domain／`test_ticket_tab` 登錄頁與欄寬伸縮／`test_ticket_browse` 瀏覽 gate／`test_ticket_print` 排序分頁合併）＋`test_combo_hint`（提示灰字六狀態）＋`test_window_geometry`；另 `test_no_pii` 防個資外洩（見 CLAUDE）
+- **依賴清單分兩份（2026-08-03 起）**：`requirements.txt`＝**產品 runtime**，目前只有 `PySide6`——PDF 產出走 Qt 的 `QPdfWriter`／`QPrinter`，`reportlab` 只有 `tools/gen_quickstart.py`（速查卡）用、`pypdf` 只有測試用、`matplotlib` 只有列印基準工具用，三者都**不是**產品相依；`requirements-dev.txt`＝`-r requirements.txt` 再加上這些驗收工具與 pytest 家族。只想把程式跑起來或打包裝前者，要跑完整 gate 裝後者。分界由 `test_environment_contract` 守著：dev-only 套件混進 runtime 清單即紅。要往 `requirements.txt` 加東西前，先確認它真的被 `lib/` 或 `tabs/` import
+- **契約類測試（三支，各管一件事）**：`test_environment_contract`（實際安裝版本 vs `requirements-dev.txt`）／`test_help_content_contract`（HELP 與速查卡文案）／`test_release_documentation_contract`（本檔的發布流程 gate、陳報模式、對照表、key 名與 DB 結構）。後兩支刻意逐字比對文案，**改了文件就會紅是設計如此**——那是「文件要跟功能一起改」的提醒，紅了照著改斷言即可，不要為了不紅而放寬比對。⚠️ 新增文件契約請加進這兩支，別再塞回 `test_reward_integration`（該檔曾同時檢查敘獎程式、HELP、速查卡與本檔四件事，紅燈看不出哪裡出事）
 - **紀律**：動到可單測純邏輯時一併新增／更新測試；GUI 互動仍須上機驗證
 
 ---
@@ -802,6 +805,33 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；身分變更時 `_onRolePerm` 重刷編號連結與刪除鈕。瀏覽頁已改純 item，`_onRolePerm` 只切編號欄 `setForeground`（藍＝可點）、`refreshDeleteBtns` 切 ✕ 字色，點擊走 `cellClicked`；收/發/陳報頁仍由 `setDocIdLinkCell(clickable=…)`（cellWidget）控制。
 > 「歸檔管理也能做」用 `is_manager()`；「僅 admin」（Tab6 刪除、Tab6 交辦／敘獎／罰單編輯、Tab0 發文）維持 `is_admin()`。設定頁參照維護按鈕對 archive `setEnabled(False)`（需配 `:disabled` 樣式，見 PITFALLS QSS 組）；雙擊參照列會繞過按鈕 enabled，故 `_add*/_edit*`（現已收斂為 `_addRef`／`_editRef`）皆有 `_refEditable()`（僅 admin）guard。⚠️ **排序的替代路徑也要 gate**：拖拉在 `_applyRolePermissions` 以 `NoDragDrop` 關閉；**序號欄雙擊行內編輯**曾漏 gate（archive 可雙擊改序號→ `_moveRow` 把已反灰的「儲存排序」鈕重新點亮→ 存回 DB＝權限繞過），已於 `_onCellDoubleClicked` 開頭與 `_onSeqItemChanged` 補 `_refEditable()` guard。凡新增「受限身分不可做」的功能，務必檢查**每一條**觸發路徑（按鈕／雙擊／行內編輯／Enter／拖拉），見 CLAUDE.md 協作偏好 B。
+
+#### 權限上機檢查清單（發版前照表點一遍，約 10～15 分鐘）
+
+離線測試看不到真實 modal 時序、角色切換的畫面連動與替代觸發路徑（雙擊／Enter／右鍵／拖拉），
+**受限身分的權限缺口歷來都是上機才抓到的**（序號欄雙擊繞過排序 gate、modal 期間降權兩例）。
+故發版前依本表逐列點過；新增「受限身分不可做」的功能時**同步補一列**，否則本表腐爛即失效。
+
+「身分」欄是**該用哪個身分去試著做**（預期全部做不到；admin 那列反過來確認做得到）。
+
+| # | 受限操作 | 身分 | 要逐條試的觸發路徑 | 預期 |
+|---|----------|------|--------------------|------|
+| 1 | 瀏覽頁交辦／敘獎／罰單**編輯** | archive、user | ①點編號欄 ②雙擊該列 ③切走再切回本頁後再點 ④登出後（admin→user）立刻再點 | 編號不是藍字、點了不開視窗 |
+| 2 | 瀏覽頁**刪除** | archive、user | ①點 ✕ 欄 ②身分切換後再點（`refreshDeleteBtns` 是否有重刷） | ✕ 灰字、點了無反應 |
+| 3 | 設定頁**參照維護**（人員／部門／案類） | archive | ①「新增」「修改」鈕 ②**雙擊參照列** ③**雙擊序號欄行內編輯** ④拖拉整列 | 鈕反灰；雙擊與拖拉都不得開視窗或改動順序 |
+| 4 | **排序儲存**（modal 期間降權） | admin→降權 | 以 admin 拖拉調序（先不存）→ 登出或等閒置登出 | 未存排序**直接丟棄並重載 DB 順序**，不留畫面、不跳提示 |
+| 5 | **跨年度重置** | archive、user／admin→降權 | ①入口紅字鈕 ②以 admin 開啟 ResetDialog，**視窗開著時等閒置登出**，再按確定 | 入口不可用；降權後按確定應中止（目前靜默無提示，見下方已知缺口） |
+| 6 | **檔案歸檔**（動實體 PDF） | user／admin·archive→降權 | ①「檔案歸檔」鈕 ②「只歸紙本」鈕 ③兩者的確認框開著時登出，再按確定 | 中止；且**實體 PDF 檔名不得被改動**（去資料夾確認） |
+| 7 | **TAB 顯隱與導向** | 三身分各一輪 | ①user 應見 8 個、archive 9 個、admin 10 個 ②主選單點目前隱藏的功能 ③在登入頁故意打錯密碼 ④以無權身分登入成功 | ②導向設定頁登入；③保留待前往目標可重試；④不前往該目標 |
+| 8 | **登出／閒置登出時所在頁籤** | admin、archive | 停在「操作紀錄」或「檔案歸檔」頁 → 登出 | 自動回設定頁再套顯隱；若當前頁對 user 仍可見則留在原頁 |
+| 9 | **六種輸入流程唯讀鎖** | user（逐一鎖起來） | 每種鎖後：①送出鈕與欄位是否反灰 ②**按 Enter 送出** ③紅色橫幅是否出現 ④切走再切回本頁（`_onShown` 有無重套） | 一律擋下；`admin`／`archive` 不受限 |
+| 10 | **交辦發文既有資料編輯** | user | 點編號開修改視窗 | 只有承辦人可改，其餘欄位顯示原值且反灰；已發文者不得編輯 |
+| 11 | **變更密碼** | admin、archive | ①按 Enter（應**不**送出，防誤按）②改成功後 | 只能滑鼠點確定；成功後自動登出、須以新密碼重新登入 |
+| 12 | **設定頁面板可改範圍** | archive | 逐一點六個系統設定面板 | 只有「歸檔資料夾」可改，其餘整塊反灰 |
+
+> ⚠️ **本表尚未涵蓋**（`執行時權限複核` 只補了重置／歸檔／排序三條）：備份還原子頁、資源回收筒、
+> 參照維護對話框、三個編輯彈窗**在開啟後才降權**的情境。要不要比照補 runtime 複核須依風險排序另行決定，
+> 決定後本表同步補列。
 
 #### 六種輸入流程唯讀鎖（唯讀設定）
 

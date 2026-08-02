@@ -1,4 +1,4 @@
-# 開發／測試依賴。
+# 開發／測試／驗收依賴。產品 runtime 依賴在 requirements.txt（本檔已含入）。
 # 完整既有 suite：python -m unittest discover -s tests
 # 正式 pytest gate（含 packaging／bundle／startup 與 GUI pilot）固定分兩段：
 #   $env:QT_QPA_PLATFORM = 'offscreen'
@@ -7,13 +7,19 @@
 #   python -m unittest tests.test_no_pii
 # 其中 test_pytest_qt_runtime.py 與 test_reward_gui_pilot.py 是兩支 offscreen GUI pilot，
 # 但不是完整 pytest suite 的全部。
-# 依賴清單於 2026-08-02 同步。完整測試環境必須先安裝本檔依賴；
-# 缺 pytest 等套件時，test module 可能在 discovery 的 import 階段直接失敗。
+#
+# 依賴清單於 2026-08-03 重新同步：本檔是**正式 gate 那支 Python 的實際快照**
+# （見 DEVELOPER §4）。2026-08-03 前 pypdf／reportlab 兩行來自另一支沒有 pytest 的
+# 直譯器，與能跑測試的環境不符，靠人工看不出來——版本一致性現由
+# tests/test_environment_contract.py 自動把關（不符即紅，不 skip；會一併檢查
+# requirements.txt）。完整測試環境必須先安裝本檔依賴；缺 pytest 等套件時，
+# test module 可能在 discovery 的 import 階段直接失敗。
 
-# Runtime／完整既有 suite
-PySide6==6.11.1
-pypdf==6.10.0
-reportlab==4.4.9
+-r requirements.txt
+
+# 文件／速查卡產出與 PDF 檢查（產品 runtime 不 import）
+pypdf==6.14.2
+reportlab==4.5.1
 
 # 列印基準／感知比對工具（產品 runtime 不 import）。依核可計畫固定 3.11.1；
 # 2026-08-02 已以此版本重建 101 項 manifest 並重跑重現性驗證。升版仍須重建

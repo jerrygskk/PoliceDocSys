@@ -1,0 +1,10 @@
+# 產品 runtime 依賴（兩支 exe 實際會 import 的東西）。
+# 只想把程式跑起來／打包，裝這一份就夠。開發與驗收工具見 requirements-dev.txt。
+#
+# ⚠️ 這份刻意只有一項：pypdf／reportlab／matplotlib 都不是產品相依——
+# PDF 產出走 Qt 的 QPdfWriter／QPrinter（見 DEVELOPER §5「列印」），
+# reportlab 只有速查卡產生器（tools/gen_quickstart.py）用，
+# matplotlib 只有列印基準比對工具用，`lib/` 底下一律禁止 import（見 PRINTING.md）。
+# 要加東西進這份之前，先確認它真的被 lib/ 或 tabs/ import。
+
+PySide6==6.11.1
