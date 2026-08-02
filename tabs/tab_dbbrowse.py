@@ -47,9 +47,10 @@ class _WatermarkFitter(QObject):
 # 切 tab 自動差異更新時，變動列數達此值才跳「更新中」提示（少量重建無感、不閃提示）
 _BUSY_ROW_THRESHOLD = 100
 
-# 案由／主旨依是否顯示 PDF 圖示採固定字數刪節，避免欄位邊界切字。
+# 有 PDF 圖示的案由／主旨採固定字數刪節（該列要讓出圖示寬度，靠欄寬省略會
+# 把圖示擠掉）。⚠️ 無圖示者不再刪節、一律塞完整文字，長度交給欄寬省略——
+# 先截短再寫入會讓 tooltip 與複製出來的內容跟著少字。
 _SUBJECT_LIMIT_WITH_ICON = 12
-_SUBJECT_LIMIT_WITHOUT_ICON = 14
 
 
 def _truncateSubject(text, limit):
