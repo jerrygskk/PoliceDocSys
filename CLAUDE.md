@@ -17,7 +17,7 @@
 - **技術棧**：Python + PySide6（Qt）+ SQLite，純桌面單機程式；使用者為警察單位承辦人員
 - **目標環境**：Windows，顯示縮放 **125%**，全域字體 **14pt**；PyInstaller `--onefile` 打包
 - **資料**：軟刪除（清空欄位、保留 `doc_id`），不做真 DELETE
-- **文件分工**：`README.md`＝使用者門面（撰寫定義見 DEVELOPER §9）；`DEVELOPER.md`＝技術文件（架構／打包／DB／版本記錄）；`PITFALLS.md`＝踩雷速查表（症狀→解法，本表任務對照見下）；`CLAUDE.md`＝協作規則（本檔）；`docs/handover.md`＝跨對話交接（不入庫）
+- **文件分工**：`README.md`＝使用者門面（撰寫定義見 DEVELOPER §9）；`DEVELOPER.md`＝技術文件（架構／打包／DB／版本記錄）；`PITFALLS.md`＝踩雷速查表（症狀→解法，本表任務對照見下）；`PRINTING.md`＝簽收單列印專章（引擎／版面／驗收網，自 DEVELOPER §5 拆出）；`CLAUDE.md`＝協作規則（本檔）；`docs/handover.md`＝跨對話交接（不入庫）
 - ⚠️ **入庫文件不得叫人去參照未入庫的檔案**：`CLAUDE.md`／`README.md`／`DEVELOPER.md`／`PITFALLS.md` 內不得指向 `.gitignore` 排除的路徑（`docs/*`、`dbfile.db`、根目錄 `fix_*.py`／`seed_*.py`、`*.spec`、`build/`／`dist/` 等）。**該留的結論直接寫進入庫文件本身**，不要留一個「詳見某某設計文件」的指標——未入庫檔案隨時可能不存在，`git status` 也看不出它被刪，規則會靜默失效（踩過：`docs/superpowers/` 被清掉後，CLAUDE.md 的指路變成死連結）。反向亦然：真正該長期保存的內容就要入庫，不要放在被忽略的路徑
 
 ## 任務對照表（動手前先讀哪裡）
@@ -32,6 +32,7 @@
 | 陳報頁（tab_report）版面／模式切換 | PITFALLS LAY 組；§5「tab_report 特殊架構」 |
 | Tab 切換／未存攔截 | PITFALLS TAB 組 |
 | SVG／icon／HELP／速查卡 | PITFALLS SVG 組；§5「程式內 HELP」 |
+| **簽收單列印／繪圖層／簽收表版面** | **`PRINTING.md` 全檔**（引擎、三個出口、罰單 renderer、三層驗收網與基準重建）；改繪圖前基準必須是綠的 |
 | SQL／查詢／軟刪除／參照表／瀏覽搜尋 | PITFALLS SQL 組；§6、§10「資料庫瀏覽（Tab6）搜尋」 |
 | 歸檔檔名解析（`archive_text.py`） | §10「歸檔檔名解析的雷」 |
 | 打包／重啟／磁碟空間 | PITFALLS PKG 組；§7 |

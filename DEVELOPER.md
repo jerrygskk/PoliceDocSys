@@ -7,6 +7,7 @@ Windows 桌面應用，PySide6 + SQLite，管理警察單位公文（交辦單�
 ## 0. 給接手者
 
 協作規定與偏好見 [CLAUDE.md](CLAUDE.md)（Claude 開新對話時會自動載入）。本檔為技術文件、按需查閱，每節開頭點明用途。
+踩雷速查表在 [PITFALLS.md](PITFALLS.md)；**簽收單列印**（引擎／版面／驗收網）已獨立成 [PRINTING.md](PRINTING.md)。
 
 ---
 
@@ -84,7 +85,7 @@ graph LR
 | **歸檔資料夾設定**（`archive_root`／子夾） | `ArchiveRootPanel`（settings_panels）；歸檔頁 `_updateArchWarn` 警示＋資料夾定位；瀏覽頁 `_refreshArchWarn` 警示＋PDF 連結；設定頁登入彈窗 `_maybeWarnArchiveRoot`；Reset 會清空（`performYearEndReset`）；`clearPdfIndexCache` | §5「系統設定子頁」＋「歸檔根目錄未設定警示」；HELP 歸檔/設定頁；QUICKSTART；README 部署段＋`07-archive-folder` 截圖 |
 | **簽收表標題**（`print_title_*` 六 key） | `PrintTitlePanel`；`printTitle`/`printTitlesUnset`（db_utils）；列印頁警示 `_refresh_title_warn`＋過期指紋 `_titles_sig`；Reset 不清 | §5「簽收表標題自訂」；HELP 列印/設定頁；QUICKSTART；`tests/test_print_titles` |
 | **敘獎登錄／發文**（`Document_Reward`／`print_title_reward`，v1.1.11） | `tabs/tab_reward.py`（Tab3 登錄頁，三身分皆可登錄／改／刪本次登錄清單；INSERT 一律帶 `create_date=今天`，送文者模式帶所填 `register_date`＋`sender_id`（發文人員必填），自助取號模式帶 `register_date=''`、`sender_id=NULL` 待結算補值，依 `isSelfServiceMode(db, 'reward')`）；右側候選人員名條依 `Ref_Personnel.sort_order` 排，**不依使用次數**（與罰單登錄同規則，見 §5）；發文改由列印頁「結算發文」處理（`SETTLE_META` 的 reward entry，見 §5 陳報模式）；瀏覽頁 reward 子頁（`TABLE_META` raw/active_where＋登錄日期／發文日期兩欄＋發文人員欄 JOIN `Ref_Personnel`；**編輯僅 admin**——`tab_dbbrowse._canEditKey('reward')=is_admin()`，歸檔管理者不可改；刪除 `is_admin()`）；`tab_print` `REWARD_COLUMNS`＋`_build_sections`（簽收表敘獎 section）；`softDeleteDoc`/`_DELETE_META`（軟刪除清 `create_date`/`register_date`/`sender_id`/`reason`/`recipients`）；`trash_panel`（回收筒可還原）；`backup_doc_counts`（備份筆數統計）；`performYearEndReset`（跨年度重置） | §10「權限」權限矩陣＋§6＋§5「簽收表標題自訂」；HELP 3/5 頁；QUICKSTART；`tests/test_reward_*` |
-| **罰單登錄**（`Document_Ticket`／`print_title_ticket`） | `tabs/tab_ticket.py`（Tab4；所有 CRUD 寫入唯一走 `lib/ticket_utils.py`；編輯採五欄原值 CAS＋開窗快照，見 §10「多機無聲覆蓋防護」；排序一律用 `ticketSortKey()`；結算發文由 `SETTLE_META` 在共用 transaction 更新）；`Document_Ticket_Full` 供預覽／瀏覽／結算／列印共用；`settle_dialog.SETTLE_META` 的 ticket `strict=True`；`tab_print` Ticket renderer；瀏覽頁 ticket 子頁 `admin_only_edit`；`performYearEndReset`／`backup_doc_counts` 均含 ticket；**不進回收筒** | §10「權限」權限矩陣＋§6＋§5「簽收表標題自訂」；HELP 4/5/6 頁；QUICKSTART；`tests/test_ticket_*` |
+| **罰單登錄**（`Document_Ticket`／`print_title_ticket`） | `tabs/tab_ticket.py`（Tab4；所有 CRUD 寫入唯一走 `lib/ticket_utils.py`；結算發文由 `SETTLE_META` 在共用 transaction 更新；編輯採五欄原值 CAS＋開窗快照（見 §10「多機無聲覆蓋防護」）；排序一律用 `ticketSortKey()`）；`Document_Ticket_Full` 供預覽／瀏覽／結算／列印共用；`settle_dialog.SETTLE_META` 的 ticket `strict=True`；`tab_print` Ticket renderer；瀏覽頁 ticket 子頁 `admin_only_edit`；`performYearEndReset`／`backup_doc_counts` 均含 ticket；**不進回收筒** | §10「權限」權限矩陣＋§6＋§5「簽收表標題自訂」；HELP 4/5/6 頁；QUICKSTART；`tests/test_ticket_*` |
 | **閒置逾時**（`idle_logout_min`/`idle_close_min`） | `IdleTimeoutPanel`；`getIdleTimeoutsMs`/`parseIdleMinutes`；main.py 兩計時器 `>0` guard；main.py `_onIdleTimeout`/`_onIdleClose` 訊息帶實際分鐘數（`{mins:g}`，勿寫死）；「低於鎖螢幕時間」約束（維護者默契、不放 UI）；Reset 不清 | §10「閒置處理與多人使用（main.py）」；HELP/QUICKSTART 內寫死的分鐘數字；`tests/test_idle_timeouts` |
 | **唯讀設定**（`input_lock_*` 六 key） | `InputLockPanel`；`isInputLocked`/`INPUT_LOCK_KEYS`；六種流程的硬 gate（`handleDispatch`/`tab_receive._submit`/`_submitCriminal`/`_submitGeneral`/`tab_reward._submit`/`tab_ticket._submit`）；五頁 `_applyInputLock` 反灰＋橫幅＋`_onShown`＋`_onRoleClearList`；tab_report `_currentLockKind`/`_switchFormType` 重套。敘獎自助模式下鎖 `reward` 即擋住發文源頭（不另設發文鎖） | §10「六種輸入流程唯讀鎖」＋權限矩陣＋§5 面板表；HELP/QUICKSTART；`tests/test_input_lock` |
 | **自動備份／備份還原**（`backup_second_dir`／異地／quick_check／還原子頁） | `run_auto_backup(extra_dirs=)`＋`_run_gfs`＋`quick_check`／`list_backups`／`verify_backup`／`restore_backup`（db_backup）；`main.py` 啟動 quick_check→備份；`BackupPanel`（settings_panels）；`BackupRestorePanel`（backup_restore_panel）；tab_settings nav 第 6 子頁四處掛載（`_nav_btns`／兩份 loaders／`_applyRolePermissions`）；Reset 不清 `backup_second_dir` | §10「平時自動備份（`lib/db_backup.py`）」＋§5 面板表＋「備份還原子頁」＋§6 App_Settings 列；HELP 設定頁；QUICKSTART；README FAQ 資料安全段；`tests/test_db_backup` |
@@ -370,69 +371,11 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 ### 列印（tab_print.py）
 
-#### 繪圖引擎：Qt 原生（v1.2.9 起，已脫離 matplotlib）
-
-三個出口共用 `lib/print_canvas.py` 的 `Canvas` 介面（`text`／`rect`／`line`，normalized
-座標、y 向上）：預覽出 `QImage`、儲存 PDF 走 `QPdfWriter`、列印走 `QPrinter`
-**向量直印**（不再點陣化）。產品端一律 `QtCanvas`（QPainter）；matplotlib 版
-`MatplotlibCanvas` 降級搬到 `tools/mpl_canvas.py`，只當比對基準、不進打包。
-完整版 exe 因此 55.5 → 30.1 MB。
-
-⚠️ **維護這塊必須知道的四件事**（每一條都是踩過才寫的）：
-
-1. **版面決策與繪製裝置解耦**：換行／字級只用固定 1200dpi 基準算一次，三個出口
-   照同一組結果畫，**不得各自依自己的 dpi 重算**——Qt 會把字寬取整到整數 device
-   px，96dpi 下誤差大到讓螢幕預覽與紙本換行不同。
-2. **粗體必須明確 `setBold()`**，不可靠 family 名區分：本機 `msjh.ttc` 與
-   `msjhbd.ttc` 回傳的 family 名**完全相同**，靠名字切字重會靜默失效（整頁標題
-   與欄名曾整批變成一般字重）。
-3. **垂直置中沿用 matplotlib 的 `"lp"` 參考字串規則**，不是墨跡框置中、也不是 Qt
-   的 `AlignVCenter`——純 CJK 差 1.7pt。
-4. **驗收網三層，缺一不可**：`tools/print_baseline.py --check`（目前 101 個比對項目：
-   100 張 PNG＋1 個查無資料哨兵，逐位元組鎖住基準版面沒位移）、
-   `tools/render_diff.py`（Qt vs matplotlib 感知級比對，
-   附 `--selftest` 自我驗證）、`tools/check_no_matplotlib.py`（靜態 AST 掃描＋執行期
-   import 攔截雙軌，證明產品路徑無 matplotlib）。⚠️ `tools/engine_diff.py` 只驗
-   「打算畫什麼」，對繪製正確性零保證——上述第 2、3 條它照樣全綠。
-   可版控雜湊放 `tests/print_baseline_manifest.json`，頂層 `environment` 同時記錄一般／
-   粗體字型檔與版本、Qt／PySide6 版本及 Windows 顯示縮放；`--check` 失敗會把記錄值
-   與目前值並排列出，先辨別環境漂移或程式回歸。PNG 放 `docs/print_baseline/`（未入庫），
-   由 `tools/seed_print_baseline.py` 產生的全虛構資料重建；從專案根依序執行：
-   ```powershell
-   python tools/seed_print_baseline.py tmp/print-baseline
-   python tools/print_baseline.py --db-dir tmp/print-baseline --save --force
-   python tools/print_baseline.py --db-dir tmp/print-baseline --check
-   ```
-   輸出資料夾已有資料庫時 seed 會拒絕覆寫，請另選空的暫存資料夾。換機器時應在新機
-   重建基準當新起點，不要拿舊雜湊硬比（字型／Qt／PySide6／縮放一變，雜湊可能全滅）。
-   `requirements-dev.txt` 依核可計畫固定 matplotlib 3.11.1；2026-08-02 已在指定
-   Python 實際安裝該版，重建現行 101 項 manifest 並重跑重現性驗證。這個 pin 是
-   重現已驗證環境，不是永久禁止升版；升版須重建 manifest、三輪比對並重新人工目視。
-   ⚠️ 雜湊全綠只證明前後一致，不證明圖面正確；重建候選仍須由維護者逐張目視確認，
-   Codex 的 offscreen 自動檢查不能替代這道人工核准。
-
-- ⚠️ **簽收表產生走前景＋modal「產生中」popup**（`runWithBusy`），非背景執行緒：
-  `generate_pages` 一律主執行緒同步畫（單機 1～2 秒可接受）。QPainter／QPdfWriter
-  同樣不應在背景 `QThread` 與主執行緒搶用
-- 用 **`QPrintPreviewDialog`** 跳原生預覽＋列印選項；不碰 PDF 檔案關聯（避 WinError 1155）
-- 跨版本相容：`setPageSize` 用 `QPageSize` 物件、頁面範圍用 `painter.viewport()`（避 6.x enum 命名空間差異）
-- **預設彩色＋長邊雙面**：開預覽前對 `QPrinter` 設 `setColorMode(Color)`＋`setDuplex(DuplexLongSide)`，使用者仍可改（實際支援取決於印表機）
-- **欄內換行用真實字型度量**（`_text_width_pt`，dpi=72 `RendererAgg`）：`_wrap_clamp` 不再用「中文當滿格＋0.86 係數」估算（偏窄，會害欄寬還夠的主旨／案類提早折行）。可用寬＝欄寬扣約 1.2×PAD。⚠️ 編號欄 `_fit_font` 仍用舊估算（單行縮字、影響小）
-- **刑案類型欄固定 10pt**（`_draw_page` 中 `is_crim and cidx==2`）：案類名長短不一，固定避免參差又壓迫。一般「業務單位」與交辦不受影響、維持 12→10 自動縮
-
-#### 罰單簽收表版面（`drawTicketPage`，與其他四張不同 renderer）
-
-每頁三組並排、共六欄（開立人員｜罰單編號 ×3），每組固定 20 列，末頁下方一次性
-「本頁／本日總計＋簽收人」區。開立人員依 `TicketCell.issuer_rowspan` 合併儲存格。
-
-- **v1.2.9 起標題包在粗外框內**：粗外框從標題帶頂端包到簽收格底端，本表上邊界因此
-  與其他四張齊平（先前標題浮在框外，上邊界低一個 `TITLE_H`≈14.8mm）。列印日期與
-  發文日期仍在框外
-- **兩層網底**：標題帶 `TICKET_TITLE_BG`（重色白字）→ 欄名列 `TICKET_HEADER_BG`
-  （＝總計區同色的淡粉底、深字）→ 明細純白。⚠️ **欄名列不用白字**：淺底白字在
-  雷射列印會糊，筆畫多的中文尤其明顯
-- 明細整塊鋪白底再畫線，不逐列 patch（避免斑馬紋與相鄰邊界疊畫）
-- 配色與框線位置由 `tests/test_ticket_print.py` 釘住，改色或改框請一併更新該檔
+⚠️ **已拆到 [PRINTING.md](PRINTING.md)**：繪圖引擎（`lib/print_canvas.py` 的 `Canvas`／
+`QtCanvas`）、三個出口（預覽／PDF／向量直印）、五張簽收表的版面規則、罰單專用
+renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組／`render_diff`
+感知級／`check_no_matplotlib`）＋基準重建流程，全部在該檔。
+**動列印頁或繪圖層前先讀完 PRINTING.md**，本節不重複。
 
 ### 簽收表標題自訂（tab_print／tab_settings／settings_dialogs）
 
