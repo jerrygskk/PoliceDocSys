@@ -139,20 +139,65 @@ def test_check_prints_recorded_and_current_environment_side_by_side(
         "CASES",
         [("dbfile.db", "2026-01-01", "empty")],
     )
-    monkeypatch.setattr(
-        baseline,
-        "_collect_with_mpl_config",
-        lambda _db_dir: {"2026-01-01": {"__empty__": ("EMPTY", b"")}},
-    )
+    rendered = []
+
+    def _collect(_db_dir):
+        rendered.append(_db_dir)
+        return {"2026-01-01": {"__empty__": ("EMPTY", b"")}}
+
+    monkeypatch.setattr(baseline, "_collect_with_mpl_config", _collect)
     monkeypatch.setattr(baseline, "environment_metadata", lambda: current)
 
     result = baseline.cmd_check(tmp_path)
 
     output = capsys.readouterr().out
-    assert result == 1
+    # 環境先行：不符就停在算圖之前。算完 101 張才說「環境不同」既浪費 90 秒，
+    # 又會讓人把上百處差異誤判成程式回歸（實際發生過）。
+    assert result == 3
+    assert rendered == [], "環境不符時不得算圖"
+    assert "停止比對" in output
     assert "記錄值" in output and "目前值" in output
     assert "old-regular.ttc" in output and "new-regular.ttc" in output
     assert "125" in output and "100" in output
+
+
+def test_environment_drift_can_be_overridden_to_still_compare(
+    tmp_path, monkeypatch, capsys
+):
+    """逃生口：明知環境不同、就是想看差異圖時仍要跑得動。"""
+    baseline = _load_module()
+    base_dir = tmp_path / "images"
+    base_dir.mkdir()
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "environment": {"qt_version": "6.old"},
+                "cases": {"2026-01-01": {"__empty__": "EMPTY"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "BASE_DIR", str(base_dir))
+    monkeypatch.setattr(baseline, "MANIFEST", str(manifest))
+    monkeypatch.setattr(baseline, "DIFF_DIR", str(base_dir / "diff"))
+    monkeypatch.setattr(baseline, "CASES", [("dbfile.db", "2026-01-01", "empty")])
+    rendered = []
+
+    def _collect(_db_dir):
+        rendered.append(_db_dir)
+        return {"2026-01-01": {"__empty__": ("EMPTY", b"")}}
+
+    monkeypatch.setattr(baseline, "_collect_with_mpl_config", _collect)
+    monkeypatch.setattr(baseline, "environment_metadata",
+                        lambda: {"qt_version": "6.new"})
+
+    result = baseline.cmd_check(tmp_path, allow_environment_drift=True)
+
+    output = capsys.readouterr().out
+    assert rendered == [tmp_path], "指定逃生口時仍要實際算圖比對"
+    assert result == 1          # 影像雖相同，環境不同本身仍記為一處差異
+    assert "allow-environment-drift" in output
 
 
 def test_missing_baseline_prints_complete_rebuild_commands(
@@ -271,7 +316,9 @@ def render(_db_dir):
 
 baseline.environment_metadata = metadata
 baseline._collect_with_mpl_config = render
-result = baseline.cmd_check(Path.cwd())
+# 這支驗的是「metadata 與 render 共用同一個暫存 MPLCONFIGDIR」；探針的 manifest
+# 環境是空的、必然與實際環境不符，故要開逃生口讓兩步都真的跑到。
+result = baseline.cmd_check(Path.cwd(), allow_environment_drift=True)
 paths = [entry[1] for entry in seen]
 print(json.dumps({
     "result": result,

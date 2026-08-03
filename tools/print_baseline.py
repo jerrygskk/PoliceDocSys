@@ -267,7 +267,23 @@ def cmd_save(db_dir, force=False):
     return 0
 
 
-def cmd_check(db_dir):
+def _environment_drift_message(db_dir):
+    return (
+        "[X] 產生環境與基準記錄不同，已**停止比對**（沒有算圖）。\n"
+        "    雜湊基準綁字型檔、matplotlib／Qt／PySide6 版本與顯示縮放，環境不同時\n"
+        "    逐位元組比對沒有意義——會得到「上百處不同」，那是環境漂移、不是程式回歸。\n"
+        "    請擇一處理：\n"
+        "      ① 把環境對齊回記錄值（多半是 requirements-dev.txt 的 pin 被裝成別版）；\n"
+        f"      ② 確定要以目前環境當新起點，就重建基準並重新人工目視核准：\n"
+        f"         python tools/seed_print_baseline.py {db_dir}\n"
+        f"         python tools/print_baseline.py --db-dir {db_dir} --save --force\n"
+        "         （雜湊全綠只證明前後一致、不證明畫得對，重建後仍須逐張目視，\n"
+        "          見 PRINTING.md §4）\n"
+        "      ③ 只是想看差異圖、明知環境不同：加 --allow-environment-drift 續跑。"
+    )
+
+
+def cmd_check(db_dir, allow_environment_drift=False):
     if not os.path.exists(MANIFEST):
         print(f"[X] 找不到完整基準：{BASE_DIR} / {MANIFEST}")
         print("請依序重建：")
@@ -279,13 +295,23 @@ def cmd_check(db_dir):
 
     base = manifest.get("cases", {})
     recorded_environment = manifest.get("environment", {})
+
+    # 環境先行：算圖要 90 秒以上，而環境不同時那 90 秒的結果一定是「上百處不同」，
+    # 既浪費時間又容易被誤判成程式回歸（實際發生過）。故先比環境再決定要不要算。
     with _isolated_mpl_config():
         current_environment = environment_metadata()
+        drifted = recorded_environment != current_environment
+        if drifted and not allow_environment_drift:
+            print(_environment_drift_message(db_dir))
+            _print_environment_comparison(recorded_environment, current_environment)
+            return 3
         now = _collect_with_mpl_config(db_dir)
     shutil.rmtree(DIFF_DIR, ignore_errors=True)
 
     bad = []
-    if recorded_environment != current_environment:
+    if drifted:
+        print("[!] 環境與基準不同，但已指定 --allow-environment-drift，續行比對；"
+              "以下差異可能全部來自環境漂移。")
         bad.append(("environment", "產生環境不同"))
     for db, date_str, _desc in CASES:
         case = _case_key(db, date_str)
@@ -324,6 +350,9 @@ def main():
     g.add_argument("--check", action="store_true", help="比對基準（重構後）")
     ap.add_argument("--force", action="store_true",
                      help="配合 --save：基準已存在時仍強制覆寫")
+    ap.add_argument("--allow-environment-drift", action="store_true",
+                     help="配合 --check：環境與基準不同時仍續行比對"
+                          "（預設是停下不算圖，結束碼 3）")
     ap.add_argument(
         "--db-dir",
         default=str(ROOT / "tmp" / "print-baseline"),
@@ -335,7 +364,7 @@ def main():
     except Exception:
         pass
     if args.check and not os.path.exists(MANIFEST):
-        return cmd_check(args.db_dir)
+        return cmd_check(args.db_dir, args.allow_environment_drift)
     missing = sorted(
         {db for db, _d, _x in resolve_cases(args.db_dir) if not os.path.exists(db)}
     )
@@ -343,7 +372,9 @@ def main():
         print(f"[X] 找不到資料庫：{'、'.join(missing)}（需在專案根目錄執行；"
               f"請先執行 tools/seed_print_baseline.py）")
         return 2
-    return cmd_save(args.db_dir, force=args.force) if args.save else cmd_check(args.db_dir)
+    if args.save:
+        return cmd_save(args.db_dir, force=args.force)
+    return cmd_check(args.db_dir, args.allow_environment_drift)
 
 
 if __name__ == "__main__":

@@ -87,6 +87,13 @@ python tools/print_baseline.py --db-dir tmp/print-baseline --save --force
 python tools/print_baseline.py --db-dir tmp/print-baseline --check
 ```
 
+- ⚠️ **`--check` 是環境先行**（2026-08-03 起）：開頭先比字型檔／matplotlib／Qt／
+  PySide6／顯示縮放，**不符就停在算圖之前**（實測 0.6 秒結束，原本要先算 90 秒
+  以上才會看到「上百處不同」），並列出記錄值與目前值的並排對照。環境不同時
+  逐位元組比對沒有意義——那是環境漂移，不是程式回歸，別當成壞掉去追。
+  結束碼分家可供腳本判斷：**1**＝影像真的有差異、**2**＝基準或資料庫缺失、
+  **3**＝環境漂移、未進行比對。明知環境不同、就是要看差異圖時，加
+  `--allow-environment-drift` 續跑（環境差異本身仍會記為一處差異）。
 - 輸出資料夾已有資料庫時 seed 會拒絕覆寫，請另選空的暫存資料夾。
 - 只有 manifest、沒有 PNG 的乾淨 clone 也能直接 `--check`（雜湊比對不需要舊圖，
   只有要輸出差異圖時才建立資料夾）。
