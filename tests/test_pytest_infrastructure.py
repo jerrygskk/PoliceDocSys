@@ -52,8 +52,8 @@ EXPECTED_MARKER_MODULES = {
         "test_ticket_tab.py", "test_ui_load.py", "test_window_geometry.py",
     },
     "shell": {
-        "test_lazy_tab_loading.py", "test_standalone_shell.py",
-        "test_startup_failure.py",
+        "test_lazy_tab_loading.py", "test_logout_gui_pilot.py",
+        "test_standalone_shell.py", "test_startup_failure.py",
     },
     "packaging": {
         "test_bundle_deps.py", "test_print_baseline.py", "test_pyi_prune.py",

@@ -50,8 +50,8 @@ MARKER_MODULES = {
         "test_ticket_tab.py", "test_ui_load.py", "test_window_geometry.py",
     },
     "shell": {
-        "test_lazy_tab_loading.py", "test_standalone_shell.py",
-        "test_startup_failure.py",
+        "test_lazy_tab_loading.py", "test_logout_gui_pilot.py",
+        "test_standalone_shell.py", "test_startup_failure.py",
     },
     "packaging": {
         "test_bundle_deps.py", "test_print_baseline.py", "test_pyi_prune.py",
@@ -82,7 +82,7 @@ os.environ["MPLCONFIGDIR"] = str(_mpl_dir)
 #
 # ⚠️ 一次一支、序列執行，不是平行。正式 gate 仍不得加 -n（xdist 對 shell 層已
 # 裁決退回 serial）。
-ISOLATED_MODULES = {"test_standalone_shell.py"}
+ISOLATED_MODULES = {"test_logout_gui_pilot.py", "test_standalone_shell.py"}
 ISOLATION_CHILD_ENV = "POLICEDOC_ISOLATED_CHILD"
 ISOLATION_TIMEOUT_SEC = 300
 
