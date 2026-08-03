@@ -212,8 +212,12 @@ graph LR
   `packaging` 也維持 serial。正式發布 gate 不加 `-n`，仍使用上方非 shell／shell
   兩段 serial 指令，不因前兩層實驗通過而改回合併或平行全跑。⚠️ serial 仍非絕對
   穩定：2026-08-02 依發布順序連跑兩段三次，shell 段 1 次 native crash、2 次通過。
-  發布時 shell 段若 native crash，先單獨 serial 重跑一次；連續兩次 crash 才視為回歸，
-  不得把第一次 crash 記成通過，也不得改用 xdist 硬繞
+  ⚠️ **2026-08-03 起 shell 層改為行程隔離**（根 `conftest.py` 的
+  `pytest_runtest_protocol`，`ISOLATED_MODULES` 內每支測試各跑一個子行程，
+  序列不平行），連跑 10 輪零 crash；關閉隔離的對照組 4 輪即崩 1 次。
+  **判讀規則同步改為「crash 一次就算回歸」**，不再有重跑寬限，詳見 PITFALLS
+  **TST-5**。新增會在行程內建立 `DocumentManager` 的測試檔時，必須把檔名補進
+  `ISOLATED_MODULES`；仍不得改用 xdist 硬繞
 
 - **無 pytest 環境備援**：只能執行 `python -m unittest discover -s tests`；pytest-only、packaging 與 GUI pilot 可能被跳過，因此不得拿這個結果取代正式 gate。
 - **趨勢紀錄**：根 `conftest.py` 在指定 `PYTEST_RUN_RECORD` 時輸出實際執行 node IDs 與最慢 20 筆；`python -m tools.pytest_trend --collection <collection.json> --layer pure_db=<run.json> --previous <history.jsonl> --output <history.jsonl>` 可追加完整 collection、各層數量／耗時、durations 與相對前次變化。長期結論寫入經審閱的實驗報告，`.tmp` 單次輸出只作原始證據。

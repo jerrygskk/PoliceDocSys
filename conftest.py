@@ -1,13 +1,17 @@
-"""專案層 pytest 啟動設定、測試分層與執行證據記錄。"""
+"""專案層 pytest 啟動設定、測試分層、行程隔離與執行證據記錄。"""
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
 
 import pytest
+from _pytest.reports import TestReport
 
 
 ROOT = Path(__file__).resolve().parent
@@ -62,6 +66,117 @@ _worker = os.environ.get("PYTEST_XDIST_WORKER") or f"master-{os.getpid()}"
 _mpl_dir = ROOT / ".tmp" / "mplconfig" / _worker
 _mpl_dir.mkdir(parents=True, exist_ok=True)
 os.environ["MPLCONFIGDIR"] = str(_mpl_dir)
+
+
+# --- 行程隔離（PITFALLS TST-5 的處置）-------------------------------------
+# test_standalone_shell.py 每支測試都自己建一個完整的 DocumentManager，一個
+# 行程累積下來約 28 個。manager 底下有部分東西掛在比它長壽的宿主上（AuthManager
+# 單例的 signal、QApplication 層的滾輪 guard／hover filter、各 combo 的 completer
+# model 與 viewport event filter），回收時機不確定，累積到一定量後會在「下一次
+# 大量配置 Qt 物件」的隨機位置 native crash（access violation）。崩點與測試身分
+# 無關、只與累積量有關。
+#
+# 故本層改由父行程逐一派給子行程執行：一個子行程只建一個 manager，累積量從 28
+# 降為 1，觸發條件在結構上不成立。這是隔離、不是修復——長壽掛載本身沒有被拆掉
+# （方案 B，2026-08-01 實測兩條修法皆無效，見 PITFALLS TST-5）。
+#
+# ⚠️ 一次一支、序列執行，不是平行。正式 gate 仍不得加 -n（xdist 對 shell 層已
+# 裁決退回 serial）。
+ISOLATED_MODULES = {"test_standalone_shell.py"}
+ISOLATION_CHILD_ENV = "POLICEDOC_ISOLATED_CHILD"
+ISOLATION_TIMEOUT_SEC = 300
+
+
+def _isolated_child_basetemp(nodeid: str) -> Path:
+    """子行程要有自己的 basetemp：pytest 對明確指定的 --basetemp 會在啟動時整個
+    清空，沿用父行程那個會把父行程正在使用的暫存目錄一起刪掉。"""
+    slug = re.sub(r"[^0-9A-Za-z]+", "_", nodeid).strip("_")[-60:].strip("_")
+    base = ROOT / ".tmp" / "pytest-isolated" / (slug or "node")
+    # pytest 只會建 basetemp 自己那一層，上層不存在會 FileNotFoundError。
+    base.parent.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def _run_isolated(item) -> TestReport:
+    cmd = [
+        sys.executable, "-m", "pytest", item.nodeid,
+        "-q", "--no-header", "-p", "no:cacheprovider",
+        "--basetemp", str(_isolated_child_basetemp(item.nodeid)),
+    ]
+    env = dict(os.environ)
+    env[ISOLATION_CHILD_ENV] = "1"
+    env["QT_QPA_PLATFORM"] = "offscreen"
+    # 子行程自己會記錄執行證據會覆蓋父行程的檔案，故一律移除。
+    env.pop("PYTEST_RUN_RECORD", None)
+    env.pop("PYTEST_COLLECTION_RECORD", None)
+    # 子行程的訊息含中文；不指定就會用系統 codepage（本機 cp950）解讀而丟
+    # UnicodeDecodeError，症狀是每支測試都莫名紅燈。
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    started = time.perf_counter()
+    try:
+        result = subprocess.run(
+            cmd, cwd=str(ROOT), env=env, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            timeout=ISOLATION_TIMEOUT_SEC,
+        )
+        returncode, stdout, stderr = result.returncode, result.stdout, result.stderr
+    except subprocess.TimeoutExpired as exc:
+        returncode = -1
+        stdout = exc.stdout or ""
+        stderr = (exc.stderr or "") + (
+            f"\n子行程逾時（{ISOLATION_TIMEOUT_SEC} 秒）未結束，已終止。")
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", "replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", "replace")
+    duration = time.perf_counter() - started
+
+    if returncode == 0:
+        return TestReport(
+            nodeid=item.nodeid, location=item.location, keywords={},
+            outcome="passed", longrepr=None, when="call", duration=duration,
+        )
+
+    # 結束碼 !=0：可能是斷言失敗（1）、收集不到（5），也可能是 native crash
+    # （Windows access violation 為 0xC0000005，回傳負值或大數）。三者都當失敗，
+    # 並把子行程輸出原樣帶回，讓紅燈訊息足以直接行動。
+    detail = (
+        f"隔離子行程失敗（exit={returncode}）\n"
+        f"指令：{' '.join(cmd)}\n"
+        f"--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
+    )
+    return TestReport(
+        nodeid=item.nodeid, location=item.location, keywords={},
+        outcome="failed", longrepr=detail, when="call", duration=duration,
+    )
+
+
+def pytest_runtest_protocol(item, nextitem):
+    """隔離清單內的測試改派給子行程；其餘一律走 pytest 預設流程。
+
+    子行程自己也會載入本檔，靠 ISOLATION_CHILD_ENV 認出身分並停用隔離，
+    否則會無限遞迴地一直開子行程。"""
+    if item.path.name not in ISOLATED_MODULES:
+        return None
+    if os.environ.get(ISOLATION_CHILD_ENV):
+        return None
+
+    ihook = item.ihook
+    ihook.pytest_runtest_logstart(nodeid=item.nodeid, location=item.location)
+    # setup／teardown 實際都在子行程內完成，父行程只補形式上的報告讓終端輸出
+    # 與計數正常。
+    ihook.pytest_runtest_logreport(report=TestReport(
+        nodeid=item.nodeid, location=item.location, keywords={},
+        outcome="passed", longrepr=None, when="setup", duration=0.0,
+    ))
+    ihook.pytest_runtest_logreport(report=_run_isolated(item))
+    ihook.pytest_runtest_logreport(report=TestReport(
+        nodeid=item.nodeid, location=item.location, keywords={},
+        outcome="passed", longrepr=None, when="teardown", duration=0.0,
+    ))
+    ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
+    return True
 
 
 def classify_test_module(module_name: str) -> str:

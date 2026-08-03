@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 from pathlib import Path
@@ -5,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from conftest import (
-    MARKER_MODULES, PRIMARY_MARKERS, classify_test_module,
-    write_collection_record,
+    ISOLATED_MODULES, MARKER_MODULES, PRIMARY_MARKERS, _isolated_child_basetemp,
+    classify_test_module, write_collection_record,
 )
 from tools.pytest_trend import (
     build_trend_record, compare_node_ids, unittest_id_to_pytest,
@@ -72,6 +73,55 @@ def test_marker_classification_covers_every_module_once():
     for marker, modules in EXPECTED_MARKER_MODULES.items():
         for module in modules:
             assert classify_test_module(module) == marker
+
+
+def _modules_building_manager_in_process(module_names):
+    """回傳「原始碼裡真的呼叫了 DocumentManager(...)」的 shell 層測試檔。
+
+    用 AST 而非字串搜尋：`test_lazy_tab_loading.py` 把建立 manager 的程式碼放在
+    要丟給子行程的字串腳本裡，字串搜尋會誤判成同行程建立。"""
+    found = set()
+    for name in sorted(module_names):
+        tree = ast.parse((ROOT / "tests" / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            called = getattr(func, "attr", None) or getattr(func, "id", None)
+            if called == "DocumentManager":
+                found.add(name)
+                break
+    return found
+
+
+def test_isolated_modules_stay_inside_shell_layer():
+    assert ISOLATED_MODULES <= MARKER_MODULES["shell"]
+    assert "test_standalone_shell.py" in ISOLATED_MODULES
+
+
+def test_every_shell_module_building_managers_runs_isolated():
+    """PITFALLS TST-5：在同一行程內反覆建立 `DocumentManager` 會累積長壽掛載，
+    到一定量後 native crash。行程隔離是唯一處置，故任何會在行程內建 manager 的
+    shell 層測試檔都必須列入 `ISOLATED_MODULES`——漏列的話累積量會重新長回來，
+    而症狀是隨機崩在別支測試上，極難回頭查到是這裡漏的。"""
+    needs_isolation = _modules_building_manager_in_process(MARKER_MODULES["shell"])
+    assert needs_isolation, "掃描結果為空，代表這道防護已失效（可能是掃描條件寫壞）"
+    assert needs_isolation <= ISOLATED_MODULES, (
+        f"這些 shell 測試會在行程內建立 DocumentManager 卻未隔離："
+        f"{sorted(needs_isolation - ISOLATED_MODULES)}；"
+        "請補進根 conftest.py 的 ISOLATED_MODULES")
+
+
+def test_isolated_child_basetemp_is_separate_from_shared_basetemp():
+    """子行程不可沿用父行程的 basetemp：pytest 對明確指定的 --basetemp 會在啟動時
+    整個清空，沿用會把父行程正在使用的暫存目錄一起刪掉。"""
+    one = _isolated_child_basetemp("tests/test_standalone_shell.py::test_a")
+    two = _isolated_child_basetemp("tests/test_standalone_shell.py::test_b")
+    shared = (ROOT / ".tmp" / "pytest").resolve()
+
+    assert one != two
+    assert one.resolve() != shared and shared not in one.resolve().parents
+    assert one.parent.is_dir()      # pytest 只建 basetemp 自己那一層
 
 
 def test_root_pytest_config_uses_project_temp_locations(pytestconfig):
