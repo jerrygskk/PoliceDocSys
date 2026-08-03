@@ -85,5 +85,6 @@
   ```
   2026-08-02 xdist 分層實驗中 shell 第 7 輪 native worker crash，故 shell 明確退回 serial；同日依發布順序連跑非 shell→shell 三次，serial shell 仍有 1 次 native crash、2 次通過。
   ⚠️ **2026-08-03 起已用行程隔離處置，上述「崩了重跑一次」的舊判讀規則作廢**：根 `conftest.py` 的 `pytest_runtest_protocol` 把 `ISOLATED_MODULES`（目前只有 `test_standalone_shell.py`）的**每支測試各派給一個子行程**，一個子行程只建一個 `DocumentManager`，累積量由約 28 降為 1，觸發條件在結構上不成立。測試檔與產品程式**一行都沒改**。實測：隔離後 shell 段連跑 10 輪全部 41 passed、零 crash 零卡死，每輪 node ID 集合完全相同；同日把環境變數 `POLICEDOC_ISOLATED_CHILD=1` 設在父行程以關閉隔離（退回舊的同行程行為）連跑 4 輪，第 1 輪即 `0xC0000005`（崩在 `test_standalone_shell.py:387`，第 30 支之後），與歷史崩潰率一致——**這條反證是隔離有效的依據，不是機器剛好變穩**。
+  隔離也連帶解掉了「整套合跑必崩」：2026-08-03 實測合併成一條連跑 5 輪全綠（964 passed，每輪約 3 分 15 秒），上面 2026-08-01 那條「93% 左右必定 access violation」自此僅為隔離前的歷史紀錄。**但正式 gate 仍維持兩段**（分層可讀、shell 判讀規則獨立、合併無時間收益），要改成一條須另行決定。
   **現行判讀規則**：shell 段 native crash **一次就視為回歸**，不再有重跑寬限；先確認 `ISOLATED_MODULES` 是否漏了新加入的同類測試（新增「會在行程內建立 `DocumentManager`」的測試檔時必須補進去），再往下查。仍不得改用 xdist 硬繞。
   ⚠️ **這是隔離、不是修復**：長壽掛載（`AuthManager` signal、`QApplication` 層 guard／filter、completer model）一個都沒拆掉，只是不再累積。代價是每支測試多約 1～2 秒啟動成本（shell 段約 15 秒 → 約 57 秒）。真要治本＝在 teardown 確實拆掉所有長壽掛載，**須另立經核可的計畫**，不要為了單一測試在產品程式上動刀。同樣的生命週期風險仍存在於 `qt` 層，只是配置量還沒到門檻。

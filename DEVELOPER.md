@@ -582,7 +582,7 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
 1. **寫文件內文**：技術章節補進 DEVELOPER.md；使用者有感的改動 README 也同步；HELP／QUICKSTART 對照 §2「跨功能影響對照表」逐列確認（歷來最常漏）
 2. **寫 handover**（需跨對話交接才寫，`docs/handover.md` 不入庫）
 3. **寫 release note**（`release_note_v{版號}.md`，不入庫；內容寫給使用者看，技術細節留 DEVELOPER.md）
-4. **推送前完整 gate**：依 §4 的 Python 選擇方式執行 Windows offscreen pytest **兩段**（`python -m pytest tests -q -m "not shell" --ignore=tests/test_no_pii.py` 與 `python -m pytest tests -q -m shell --ignore=tests/test_no_pii.py`，⚠️ 合併成一條會穩定 native 崩潰，原因見 PITFALLS **TST-5**）、再獨立執行 `python -m unittest tests.test_no_pii`；執行前須確認本機 denylist 存在且有有效項目，缺少／空白會明確 skipped，**不可把 skip 當通過**。全部通過後才可推送與建立 tag。`unittest discover` 僅是無 pytest 時的備援，不是發布 gate。
+4. **推送前完整 gate**：依 §4 的 Python 選擇方式執行 Windows offscreen pytest **兩段**（`python -m pytest tests -q -m "not shell" --ignore=tests/test_no_pii.py` 與 `python -m pytest tests -q -m shell --ignore=tests/test_no_pii.py`，⚠️ 兩段是**刻意保留**的：合併成一條在 2026-08-03 行程隔離之前會穩定 native 崩潰；隔離後實測合併連跑 5 輪全綠（964 passed、每輪約 3 分 15 秒，與兩段的 3 分 29 秒相當），**但正式 gate 仍維持兩段**——分層結果可讀、shell 段的判讀規則獨立，且合併沒有時間收益。要改成一條須另行決定，原委見 PITFALLS **TST-5**）、再獨立執行 `python -m unittest tests.test_no_pii`；執行前須確認本機 denylist 存在且有有效項目，缺少／空白會明確 skipped，**不可把 skip 當通過**。全部通過後才可推送與建立 tag。`unittest discover` 僅是無 pytest 時的備援，不是發布 gate。
 5. **版號進版並推上去**：bump＋commit，建立 tag `v{版號}`，再 push commit 與 tag（逐檔 add 等鐵則見 CLAUDE.md C 節）
 6. **build**：刪除既有 `build/`／`dist/` 後 onefile 全新 build（見下方指令），**兩支 exe 都要重建**；兩支 fresh build 完成後立即於同次執行 `python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager`，不得沿用舊 `build/` 或 `PKG-00.toc`。回報成功/失敗（失敗才貼錯誤末段）
 7. **發 GitHub Release**：5 asset，指令與 asset 取得方式見本節末「發 GitHub Release」
