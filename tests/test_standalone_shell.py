@@ -12,6 +12,8 @@ except ModuleNotFoundError as exc:  # 讓 unittest discover 在缺 pytest 時記
 
     raise unittest.SkipTest("需 pytest/pytest-qt，請以 pytest 執行此檔")
 
+from PySide6.QtWidgets import QDialog
+
 from lib.app_profile import ENTRY_PROFILE, FULL_PROFILE
 from lib.auth_manager import AuthManager
 from lib.db_schema import applySchema
@@ -304,6 +306,94 @@ def test_failed_login_while_staying_on_login_page_retains_pending(
     assert manager.tab_widget.currentIndex() == manager.tab_index("settings")
     assert manager._pending_tab_key == "audit"
     assert settings.lbl_login_err.text() == "密碼錯誤，請再試一次"
+
+
+class _StubDialog(QDialog):
+    """代表「登出當下正開著的輸入視窗」。不呼叫 exec()——離線環境的 modal 會
+    無限等待（PITFALLS TST-4）；本檔驗的是「有沒有被關掉」，show() 即足夠。"""
+
+    def __init__(self):
+        super().__init__()
+        self.rejected_times = 0
+
+    def reject(self):
+        self.rejected_times += 1
+        super().reject()
+
+
+def test_logout_closes_open_dialogs_and_discards_unfinished_input(
+        qtbot, shell_db):
+    """維護者裁示：確認鍵按下前一律視同未改變，故降權當下直接關窗、不保留。
+
+    這是「權限在 modal 開啟期間掉下來」的正解——確認鈕根本按不到，就不會有
+    按下去之後才發現沒權限的情形（見 main._closeOpenDialogs）。"""
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = _enter_admin_audit(manager)
+    dialog = _StubDialog()
+    qtbot.addWidget(dialog)
+    dialog.show()
+    assert dialog.isVisible()
+
+    auth.logout()
+
+    assert dialog.rejected_times == 1
+    assert not dialog.isVisible()
+
+
+def test_login_does_not_close_open_dialogs(qtbot, shell_db):
+    """只有「失去分頁」才關窗。升權（登入）不得把使用者開著的視窗掃掉。"""
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = AuthManager.instance()
+    dialog = _StubDialog()
+    qtbot.addWidget(dialog)
+    dialog.show()
+
+    auth._role = "admin"
+    auth.role_changed.emit("admin")
+
+    assert dialog.rejected_times == 0
+    assert dialog.isVisible()
+
+
+def test_logout_from_admin_only_tab_remembers_page_and_returns_after_login(
+        qtbot, shell_db):
+    """降權後停在設定頁登入畫面，且**記住原本那一頁**：輸入密碼正確即自動切回去。
+    改動前只會切到設定頁、不記得原頁，重新登入後要自己再點一次。"""
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = _enter_admin_audit(manager)
+
+    auth.logout()
+
+    settings = manager.tabs[manager.tab_index("settings")]
+    assert manager.tab_widget.currentIndex() == manager.tab_index("settings")
+    assert manager._pending_tab_key == "audit"
+    assert settings._outer_stack.currentIndex() == 0      # 登入畫面
+    assert "操作紀錄" in settings._lbl_login_ttl.text()
+
+    auth._role = "admin"
+    auth.role_changed.emit("admin")
+
+    assert manager.tab_widget.currentIndex() == manager.tab_index("audit")
+    assert manager._pending_tab_key is None
+
+
+def test_logout_on_still_visible_tab_keeps_page_and_asks_nothing(
+        qtbot, shell_db):
+    """目前這一頁一般使用者也看得到 → 留在原頁，不跳登入畫面、不記待前往目標。"""
+    manager = DocumentManager(profile=FULL_PROFILE)
+    qtbot.addWidget(manager.window)
+    auth = AuthManager.instance()
+    auth._role = "admin"
+    auth.role_changed.emit("admin")
+    manager.requestTab("reward")
+
+    auth.logout()
+
+    assert manager.tab_widget.currentIndex() == manager.tab_index("reward")
+    assert manager._pending_tab_key is None
 
 
 def test_entry_manager_visibility_never_adds_removed_tabs(qtbot, shell_db):

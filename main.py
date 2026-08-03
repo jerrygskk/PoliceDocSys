@@ -186,6 +186,8 @@ class DocumentManager:
         self._IDX_DBBROWSE = self.tab_index_by_key.get("browse")
         self._IDX_AUDIT    = self.tab_index_by_key.get("audit")
         self._pending_tab_key = None
+        # 降權判定用：記住上一次已知身分，role_changed 只帶新身分、帶不出舊的
+        self._last_known_role = AuthManager.instance().current_role
 
         # 瀏覽頁三表：用啟動預查資料分段建表，逐表更新載入進度條（65~100%）。
         # 建表必須在主執行緒，故放在此處（非背景 worker）；processEvents 讓進度條即時重繪。
@@ -374,7 +376,13 @@ class DocumentManager:
     def _isTabVisible(self, key, role=None):
         return key in self._visibleTabKeys(role)
 
-    def _applyTabVisibility(self, role):
+    def _applyTabVisibility(self, role, prompt_login=False):
+        """依身分顯隱分頁；當前頁已不可見時退回設定頁。
+
+        `prompt_login=True`（降權路徑專用）會另外記住原本那一頁並在設定頁亮出
+        登入畫面，密碼輸入正確後自動切回去——與從主選單點到受限功能時同一套
+        機制（`requestTab`）。啟動時的第一次套用不帶此旗標：那時使用者還沒
+        待在任何一頁上，不該跳登入提示。"""
         visible = set(self._visibleTabKeys(role))
         current = self.tab_widget.currentIndex()
         current_key = next(
@@ -384,11 +392,48 @@ class DocumentManager:
         )
 
         if current_key not in visible and self._IDX_SETTINGS is not None:
-            self.tab_widget.setCurrentIndex(self._IDX_SETTINGS)
-            self._prev_tab_index = self._IDX_SETTINGS
+            if prompt_login and current_key is not None:
+                self._routeToLogin(current_key)
+            else:
+                self.tab_widget.setCurrentIndex(self._IDX_SETTINGS)
+                self._prev_tab_index = self._IDX_SETTINGS
 
         for key, index in self.tab_index_by_key.items():
             self.tab_widget.setTabVisible(index, key in visible)
+
+    def _routeToLogin(self, key):
+        """切到設定頁的登入畫面，並記住原本那一頁（登入成功後自動回去）。"""
+        self._pending_tab_key = key
+        settings = self.tabs.get(self._IDX_SETTINGS)
+        label = self.profile.menu_labels.get(key, key)
+        if settings and hasattr(settings, "showLoginPrompt"):
+            settings.showLoginPrompt(label)
+        self.tab_widget.setCurrentIndex(self._IDX_SETTINGS)
+        self._prev_tab_index = self._IDX_SETTINGS
+
+    def _closeOpenDialogs(self):
+        """降權當下關閉所有開啟中的對話框，未完成的輸入一律不保留。
+
+        ⚠️ 這是「權限在 modal 開啟期間掉下來」的正解：Qt modal 有自己的巢狀
+        事件迴圈，按鈕反灰、頁籤隱藏、stack 遮罩都攔不住已經開啟的視窗，
+        回到 handler 後仍會用舊權限往下做。與其在每條流程各補一道「確認後
+        再檢查一次」，不如讓確認鈕根本按不到——使用者按不下去，就不會有
+        「按了才發現沒權限」的情形，日後新增的視窗也自動涵蓋。
+        維護者裁示：確認鍵按下前一律視同未改變，故未完成的輸入直接丟棄、
+        不保留、不寫任何中繼紀錄。
+
+        ⚠️ **關不掉原生檔案對話框**（`QFileDialog` 走系統視窗時，如歸檔選檔、
+        備份選檔）：那不是本程式的 QDialog，沒有控制權。該類流程仍倚賴既有的
+        「確認後再複核身分」（見 DEVELOPER §10「執行時權限複核」）。"""
+        from PySide6.QtWidgets import QApplication, QDialog
+        for widget in QApplication.topLevelWidgets():
+            if not isinstance(widget, QDialog):
+                continue
+            try:
+                if widget.isVisible():
+                    widget.reject()
+            except RuntimeError:
+                continue    # 已被回收的 C++ 物件（同批關閉時可能連帶消失）
 
     def requestTab(self, key):
         index = self.tab_index(key)
@@ -412,12 +457,21 @@ class DocumentManager:
         return False
 
     def _onRoleChanged(self, role):
-        self._applyTabVisibility(role)
+        # 降權（手動登出／閒置自動登出／變更密碼後自動登出，三者共用本訊號）：
+        # 先關掉所有開啟中的對話框，再處理分頁顯隱。順序不可對調——先關窗才能
+        # 確保沒有任何 modal 還停在舊權限的巢狀事件迴圈裡。
+        lost = set(self._visibleTabKeys(self._last_known_role)) - set(
+            self._visibleTabKeys(role))
+        self._last_known_role = role
+        if lost:
+            self._closeOpenDialogs()
+
+        # 先取走「登入前記下的待前往目標」再套顯隱：降權時 `_applyTabVisibility`
+        # 會把當前頁記成新的待前往目標，若順序對調會被這裡當成舊值清掉。
         pending = self._pending_tab_key
-        if not pending:
-            return
         self._pending_tab_key = None
-        if self._isTabVisible(pending):
+        self._applyTabVisibility(role, prompt_login=bool(lost))
+        if pending and self._isTabVisible(pending):
             self.requestTab(pending)
 
     def _onTabChanged(self, index):
