@@ -46,6 +46,7 @@ MARKER_MODULES = {
         "test_reward_integration.py", "test_reward_print.py",
         "test_reward_recipients.py", "test_reward_refresh.py",
         "test_reward_summary.py", "test_reward_tab.py",
+        "test_settings_panel_pilot.py",
         "test_settle_checkbox_alignment.py", "test_settle_chip_visibility.py",
         "test_settle_gui_pilot.py",
         "test_standalone_browse.py", "test_standalone_settings.py",
