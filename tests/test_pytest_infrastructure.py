@@ -37,7 +37,8 @@ EXPECTED_MARKER_MODULES = {
         "test_trash.py",
     },
     "qt": {
-        "test_archive_runtime_guards.py", "test_base_tab.py", "test_combo_hint.py",
+        "test_archive_gui_pilot.py", "test_archive_runtime_guards.py",
+        "test_base_tab.py", "test_combo_hint.py",
         "test_date_wheel_guard.py", "test_dbbrowse_sync.py", "test_dialog_smoke.py",
         "test_help_content_contract.py",
         "test_loading_screen_banner.py", "test_nullable_date.py",
