@@ -41,6 +41,7 @@ MARKER_MODULES = {
         "test_help_content_contract.py",
         "test_loading_screen_banner.py", "test_nullable_date.py",
         "test_pytest_qt_runtime.py", "test_report_mode_switch.py",
+        "test_reset_gui_pilot.py",
         "test_reward_browse.py", "test_reward_gui_pilot.py",
         "test_reward_integration.py", "test_reward_print.py",
         "test_reward_recipients.py", "test_reward_refresh.py",
