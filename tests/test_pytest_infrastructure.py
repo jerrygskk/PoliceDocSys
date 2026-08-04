@@ -52,6 +52,7 @@ EXPECTED_MARKER_MODULES = {
         "test_settle_gui_pilot.py",
         "test_standalone_browse.py", "test_standalone_settings.py",
         "test_ticket_browse.py", "test_ticket_runtime_cas.py",
+        "test_trash_gui_pilot.py",
         "test_ticket_tab.py", "test_ui_load.py", "test_window_geometry.py",
     },
     "shell": {
