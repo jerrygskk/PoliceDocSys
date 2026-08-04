@@ -104,6 +104,22 @@ class TabDispatch(BaseTab, InputLockMixin):
             clear_tables=[self.table],
         )
 
+    def _onRoleClearList(self, *args):
+        """降權清空後必須順手重畫「尚未發文」提醒條。
+
+        基底 `InputLockMixin._onRoleClearList` 只把預覽表清成 0 列，不動本頁的
+        `_pending`（待發文 doc_id 集合）。`_updatePendingBanner` 本身會先與表格
+        現況對齊，但降權當下沒有任何人呼叫它——使用者登出時人就停在本頁，
+        `on_activated` 不會觸發，於是表格空了、橫幅還掛著「尚有 N 筆已輸入
+        未發文」，切到別頁再切回來才會消失。實際回報過。
+        """
+        super()._onRoleClearList(*args)
+        from lib.auth_manager import AuthManager
+        if AuthManager.instance().is_manager():
+            return
+        self._pending.clear()
+        self._updatePendingBanner()
+
     def _onRolePerm(self, _role=None):
         """身分變更即時生效：逐列切換刪除鈕停用/啟用，並重算編號欄可點狀態
         （admin 永遠可點，含已發文；一般使用者已發文鎖住）。"""

@@ -42,6 +42,7 @@ EXPECTED_MARKER_MODULES = {
         "test_date_guard_gui_pilot.py",
         "test_base_tab.py", "test_combo_hint.py",
         "test_date_wheel_guard.py", "test_dbbrowse_sync.py", "test_dialog_smoke.py",
+        "test_dispatch_tab.py",
         "test_help_content_contract.py",
         "test_loading_screen_banner.py", "test_nullable_date.py",
         "test_pytest_qt_runtime.py", "test_report_mode_switch.py",
