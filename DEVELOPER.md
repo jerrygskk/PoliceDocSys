@@ -219,6 +219,23 @@ graph LR
   **TST-5**。新增會在行程內建立 `DocumentManager` 的測試檔時，必須把檔名補進
   `ISOLATED_MODULES`；仍不得改用 xdist 硬繞
 
+- **GUI pilot（六支，2026-08-03～04 建立）**：以真實版面與真實資料庫走完一條使用者流程，
+  補的是「兩端各自有測試、中間那段沒人看」的接縫。
+  `test_reward_gui_pilot`（敘獎登錄→編輯→發文）／`test_logout_gui_pilot`（登出即關窗，
+  **唯一在 shell 層、需隔離**）／`test_archive_gui_pilot`（歸檔正名與 DB 同步）／
+  `test_settle_gui_pilot`（四種流程自助取號→結算發文，含罰單 strict 併發衝突）／
+  `test_reset_gui_pilot`（跨年度重置的確認→稽核→備份→重置）／
+  `test_restore_gui_pilot`（備份還原）／`test_trash_gui_pilot`（回收筒還原）／
+  `test_settings_panel_pilot`（六個設定面板的 key 接線與髒值判斷）。
+  寫新 pilot 前務必知道三件事（都踩過）：
+  1. **只建單一分頁就留在 `qt` 層**，隔離每支要多付約 0.6 秒子行程成本；只有會建
+     完整 `DocumentManager` 的才進 shell 層並列入 `ISOLATED_MODULES`。
+  2. **收尾必須拆掉掛在 `AuthManager` 單例上的 `role_changed` 連線**，否則會紅在
+     毫不相干的檔案上，見 PITFALLS **TST-6**。
+  3. **一律不得呼叫 `exec()`**（PITFALLS TST-4）；慣用解是把 `exec` 換成「就地驅動」
+     的函式，仍走真實驗證邏輯，只是不進 modal 事件迴圈。
+  ⚠️ pilot 的價值來自**能抓到回歸**，不是綠燈本身：每支交付前都以「故意破壞被測機制、
+  確認對應那支會紅」反證過。新增時照做。
 - **無 pytest 環境備援**：只能執行 `python -m unittest discover -s tests`；pytest-only、packaging 與 GUI pilot 可能被跳過，因此不得拿這個結果取代正式 gate。
 - **趨勢紀錄**：根 `conftest.py` 在指定 `PYTEST_RUN_RECORD` 時輸出實際執行 node IDs 與最慢 20 筆；`python -m tools.pytest_trend --collection <collection.json> --layer pure_db=<run.json> --previous <history.jsonl> --output <history.jsonl>` 可追加完整 collection、各層數量／耗時、durations 與相對前次變化。長期結論寫入經審閱的實驗報告，`.tmp` 單次輸出只作原始證據。
 - **PII gate**：`tests/test_no_pii.py` 的文字檔清單只取自 `git ls-files`，因此不掃
