@@ -9,6 +9,7 @@ from lib.base_tab import BaseTab, InputLockMixin
 from lib.db_utils import (getResourcePath, nextDocId, DEBUG_MODE,
                           softDeleteDoc, isInputLocked)
 from ui_utils import loadUi, msgWarning, msgCritical, confirmBox, reportError
+from ui_utils.date_guard import confirmDateGap
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
@@ -165,6 +166,9 @@ class TabReceive(BaseTab, InputLockMixin):
         if not proc_id: errors.append("承辦人")
         if errors:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
+            return
+        # 日期防呆（見 ui_utils/date_guard）；限辦日期本來就在未來，不套此檢查
+        if not confirmDateGap(recv_date, "收文日期", parent=self.tab_widget):
             return
 
         # 限辦日期確認

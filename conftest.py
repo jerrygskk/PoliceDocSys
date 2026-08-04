@@ -19,7 +19,8 @@ PRIMARY_MARKERS = ("pure", "db", "qt", "shell", "packaging")
 MARKER_MODULES = {
     "pure": {
         "test_app_lock.py", "test_app_profile.py", "test_archive_text.py",
-        "test_environment_contract.py", "test_error_msg.py",
+        "test_date_guard.py", "test_environment_contract.py",
+        "test_error_msg.py",
         "test_no_pii.py", "test_pytest_infrastructure.py",
         "test_ref_sort.py", "test_release_documentation_contract.py",
         "test_status.py",
@@ -36,6 +37,7 @@ MARKER_MODULES = {
     },
     "qt": {
         "test_archive_gui_pilot.py", "test_archive_runtime_guards.py",
+        "test_date_guard_gui_pilot.py",
         "test_base_tab.py", "test_combo_hint.py",
         "test_date_wheel_guard.py", "test_dbbrowse_sync.py", "test_dialog_smoke.py",
         "test_help_content_contract.py",
@@ -182,6 +184,29 @@ def pytest_runtest_protocol(item, nextitem):
     ))
     ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
     return True
+
+
+# --- 日期防呆的測試處置（PITFALLS TST-4）---------------------------------
+# ui_utils/date_guard 會在送出的日期與本日落差過大時彈確認框。離線環境的 modal
+# 會無限等待，任何「以非今日日期送出」的測試都會整支卡住（實際踩過：新增防呆後
+# 非 shell 段直接掛住不結束）。故一律自動回「確認無誤」，並清掉「本次已確認」的
+# 模組層狀態避免跨測試汙染。
+#
+# ⚠️ 這只遮蔽「防呆的提示」，不影響其他行為；防呆本身由下列兩支專責測試涵蓋
+# （純邏輯門檻 + 六個送出點的接線與取消行為），它們自行覆寫本 fixture 的替身。
+DATE_GUARD_OWN_TESTS = {"test_date_guard.py", "test_date_guard_gui_pilot.py"}
+
+
+@pytest.fixture(autouse=True)
+def _auto_confirm_date_guard(request, monkeypatch):
+    if request.path.name in DATE_GUARD_OWN_TESTS:
+        return
+    try:
+        import ui_utils.date_guard as date_guard
+    except Exception:
+        return          # 無 PySide6 的環境（純 stdlib 測試）不需處置
+    date_guard.resetConfirmedDates()
+    monkeypatch.setattr(date_guard, "confirmBox", lambda *a, **kw: True)
 
 
 def classify_test_module(module_name: str) -> str:

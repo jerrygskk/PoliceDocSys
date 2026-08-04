@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QTableWidgetItem
 from lib.base_tab import BaseTab, InputLockMixin
 from lib.db_utils import DEBUG_MODE, isInputLocked
 from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, reportError
+from ui_utils.date_guard import confirmDateGap
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, refreshDeleteBtns, setDocIdLinkCell,
@@ -388,6 +389,9 @@ class TabDispatch(BaseTab, InputLockMixin):
         # 發文人員必填（比照刑案／一般陳報；避免寫出無送件人的簽收表）
         if not sender_id:
             msgWarning("欄位未填", "請選擇發文人員。")
+            return
+        # 日期防呆（見 ui_utils/date_guard）
+        if not confirmDateGap(dispatch_day, "發文日期", parent=self.tab_widget):
             return
 
         # 計算已有發文日期的筆數

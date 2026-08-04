@@ -18,6 +18,7 @@ from ui_utils import (
     setDocIdLinkCell, setupDateEditToToday, setupFilterCombo,
     setupPreviewTable, setupRecipientCombo,
 )
+from ui_utils.date_guard import confirmDateGap
 
 
 _SELF_SERVICE_HINT = "自助取號模式：發文日期與發文人員免填"
@@ -253,6 +254,10 @@ class TabReward(BaseTab, InputLockMixin):
         # 發文人員必填（僅送文者模式；自助模式由結算補填），比照 tab_dispatch。
         if not is_self and not sender_id:
             msgWarning("欄位未填", "請選擇發文人員。")
+            return
+        # 日期防呆：連續登錄時日期欄共用，被誤改會一路錯下去（見 ui_utils/date_guard）
+        if not is_self and not confirmDateGap(
+                register_date, "發文日期", parent=self.tab_widget):
             return
         recipients = ",".join(names)
         conn = None

@@ -10,7 +10,7 @@ from .status  import calcOverdue, colorForStatus
 from .sticky_scroll import attachStickyScroll
 from .widgets import (
     setupFilterCombo, setupDateEditToToday, setupDateEditCalendarOnly,
-    installDateEditWheelGuard,
+    installDateEditWheelGuard, installDateEditInputGuard,
     setupNullableDateEdit, NullableDateEdit,
     normalizeDateText, classifyNullableDate,
     refreshFilterCombo, runWithBusy, preserveScroll, attachComboHint,
@@ -54,7 +54,7 @@ __all__ = [
     "attachComboHint",
     "setupDateEditToToday",
     "setupDateEditCalendarOnly",
-    "installDateEditWheelGuard",
+    "installDateEditWheelGuard", "installDateEditInputGuard",
     "setupNullableDateEdit",
     "NullableDateEdit",
     "normalizeDateText",

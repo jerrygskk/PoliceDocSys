@@ -29,6 +29,7 @@ from lib.archive_text import _trimName
 from ui_utils.ui_common import (
     BTN_CANCEL, BTN_CONFIRM, confirmBox, msgInfo, msgWarning, reportError,
 )
+from ui_utils.date_guard import confirmDateGap
 from ui_utils.widgets import setupDateEditToToday
 
 _ORANGE = QColor("#e67e22")
@@ -773,6 +774,10 @@ class SettleDialog(QDialog):
         sender_name = self.cmb_sender.currentText()
         issue_date = self.issue_date.date()
         issue_date_str = issue_date.toString("yyyy-MM-dd")
+        # 日期防呆：一次確認會把發文日期寫進多筆，誤改的代價最大
+        # （見 ui_utils/date_guard）
+        if not confirmDateGap(issue_date_str, "發文日期", parent=self):
+            return
         issue_date_disp = issue_date.toString("yyyy 年 MM 月 dd 日")
         excl_count  = self._tbl.excluded_count()
         parts = self._count_parts(counts)

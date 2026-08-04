@@ -253,16 +253,57 @@ def preserveScroll(table, func):
     return result
 
 
-class _DateEditWheelGuard(QObject):
-    """在 QApplication 層攔截 QDateEdit 與其內部子元件的滑鼠滾輪。"""
+# 日期框上一律停用的按鍵。上下鍵會直接調整游標所在的年／月／日，PageUp／PageDown
+# 幅度更大；左右鍵雖然只是切換段落，但**切完之後接著誤觸上下鍵就會改到別的段落**，
+# 而且使用者常以為自己還在別的欄位移動游標。維護者裁示：日期欄不留任何「按到就跑掉」
+# 的機會，要改就打數字或用月曆翻頁挑。
+#
+# 2026-08-04 實際事故：某日發文日期的年份被多加一年，當天 12 筆有 8 筆寫成隔年，
+# 簽收表只印得出前 4 筆；畫面上只有一個數字變動，登錄當下完全沒被發現。
+_DATE_BLOCKED_KEYS = frozenset({
+    Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right,
+    Qt.Key_PageUp, Qt.Key_PageDown,
+})
+
+
+def _disableSpinButtons(date_edit):
+    """關掉 QDateEdit 的上下箭頭（`buttonSymbols`）。
+
+    ⚠️ 這不只是「拿掉兩顆小箭頭」——`calendarPopup=True` 時 Qt 會用**下拉式月曆**
+    的幾何去判斷點擊落在哪個子控制項，但 spin 箭頭仍然存在，兩套座標對不起來，
+    結果是**點擊輸入區的任何位置都會被當成按到 spin 箭頭而步進目前選取的段落**。
+    本專案的日期格式為 yyyy-MM-dd、預設選取段落是「年」，所以症狀就是
+    「點一下欄位，年份莫名 ±1」。2026-08-04 實測（300×36、offscreen）：
+      - `calendarPopup=False`：只有右側箭頭區 x=288～294 會改值（正常）
+      - `calendarPopup=True`：x=0～276 幾乎整條都會改值
+      - 加上 `NoButtons`：完全不會改，且**月曆下拉照常開啟**
+    與全域樣式無關（拿掉 `APPLE_STYLE` 重測結果相同），是 Qt 本身的行為。
+    """
+    if date_edit.buttonSymbols() != QDateEdit.NoButtons:
+        date_edit.setButtonSymbols(QDateEdit.NoButtons)
+
+
+class _DateEditInputGuard(QObject):
+    """在 QApplication 層攔掉 QDateEdit（含其內部子元件）的滑鼠滾輪與方向類按鍵。
+
+    **保留的輸入只有兩條路**：直接打數字（打完會自動跳下一段），或用月曆 popup 挑
+    （popup 內的捲動與方向鍵完全不受影響）。Home／End、Backspace／Delete、Tab／Enter
+    等不會改值的鍵照舊。
+    """
 
     def eventFilter(self, obj, event):
-        if event.type() != QEvent.Wheel:
+        etype = event.type()
+        if etype == QEvent.Polish and isinstance(obj, QDateEdit):
+            _disableSpinButtons(obj)      # 新建立的日期框一律關掉上下箭頭
+            return False
+        if etype not in (QEvent.Wheel, QEvent.KeyPress):
+            return False
+        if etype == QEvent.KeyPress and event.key() not in _DATE_BLOCKED_KEYS:
             return False
 
         current = obj
         while current is not None:
-            # 月曆 popup 與其子元件必須維持原本的月份捲動行為。
+            # 月曆 popup 與其子元件必須維持原本的捲動與方向鍵選日行為。
             if isinstance(current, QCalendarWidget):
                 return False
             if isinstance(current, QDateEdit):
@@ -272,20 +313,29 @@ class _DateEditWheelGuard(QObject):
         return False
 
 
-def installDateEditWheelGuard(app=None):
-    """冪等安裝全域日期框滑鼠滾輪防護，回傳由 QApplication 持有的 filter。"""
+def installDateEditInputGuard(app=None):
+    """冪等安裝全域日期框輸入防護（滑鼠滾輪＋上下／PageUp／PageDown），
+    回傳由 QApplication 持有的 filter。"""
     if app is None:
         from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
     if app is None:
-        raise RuntimeError("installDateEditWheelGuard 需要 QApplication")
+        raise RuntimeError("installDateEditInputGuard 需要 QApplication")
 
-    guard = getattr(app, "_date_edit_wheel_guard", None)
+    guard = getattr(app, "_date_edit_input_guard", None)
     if guard is None:
-        guard = _DateEditWheelGuard(app)
+        guard = _DateEditInputGuard(app)
         app.installEventFilter(guard)
-        app._date_edit_wheel_guard = guard
+        app._date_edit_input_guard = guard
+    # 安裝前就已建立的日期框收不到 Polish，這裡補一次。
+    for widget in app.allWidgets():
+        if isinstance(widget, QDateEdit):
+            _disableSpinButtons(widget)
     return guard
+
+
+# 舊名保留：原本只擋滾輪，2026-08-04 起一併擋調整鍵。
+installDateEditWheelGuard = installDateEditInputGuard
 
 
 def setupDateEditToToday(date_edit):
