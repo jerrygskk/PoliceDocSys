@@ -78,6 +78,19 @@ class TestReportModeSwitch(unittest.TestCase):
         self.assertEqual(crim, crim_again, "切回刑案模式後右半部位移了")
         self._tabs.hide()
 
+    def test_sender_hint_follows_mode_of_current_form(self):
+        """黃底提示條只在該頁籤為發文結算模式時出現（tooltip 在深色模式看不到，
+        QSS-7）。提示條放在 row0 的 col7／col8，與「報案人」那組同欄——上面的
+        `test_right_column_does_not_shift_between_modes` 已在本組設定（刑案＝
+        發文結算、一般＝送文者）下驗過切換時右半部不位移，兩條合看才完整。"""
+        tab = self._make_tab()
+        tab.type_tabbar.setCurrentIndex(0)
+        self.assertTrue(tab.rpt_sender_hint.isVisibleTo(tab.rpt_sender_hint.parent()))
+        tab.type_tabbar.setCurrentIndex(1)
+        self.assertFalse(tab.rpt_sender_hint.isVisibleTo(tab.rpt_sender_hint.parent()))
+        tab.type_tabbar.setCurrentIndex(0)
+        self.assertTrue(tab.rpt_sender_hint.isVisibleTo(tab.rpt_sender_hint.parent()))
+
     def test_crim_self_service_blanks_and_disables(self):
         tab = self._make_tab()
         tab.type_tabbar.setCurrentIndex(0)

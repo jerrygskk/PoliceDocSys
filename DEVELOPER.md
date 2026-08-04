@@ -82,7 +82,7 @@ graph LR
 
 | 主題 | 程式觸點 | 文件／測試同步 |
 |------|----------|----------------|
-| v1.2.10 | **日期欄防呆：擋掉誤改途徑並在送出前確認，無 schema 變動**。起因是現場事故——某日刑案陳報登錄 12 筆，簽收表只印得出 4 筆；查出其中 8 筆的 `report_date` 年份被寫成隔年（`create_date` 正常），而簽收表只撈「陳報日期＝所選日期」，那 8 筆永遠印不出來。程式寫入的欄位與值都正確，是**日期欄的值在登錄當下被誤改**；送文者模式下日期欄連續登錄共用（送出後不重設），錯一次就一路錯到底，錯成連續的一整段。①**擋掉誤改途徑**：所有 `QDateEdit` 停用滾輪、上下／左右／PageUp／PageDown，**保留的改期路徑只剩「打數字」與「月曆挑」**；左右鍵一併擋是因為切完段落接著誤觸上下鍵就會改到別的段落。②**點擊那條的根因**（現場另回報「有些點擊會莫名讓年份 +1」）：`calendarPopup=True` 時 Qt 用下拉式月曆的幾何判斷點擊落在哪個子控制項，但 spin 箭頭仍存在，兩套座標對不起來，**點輸入區等同按到 spin 箭頭而步進目前選取的段落**；格式為 `yyyy-MM-dd`、預設選取年，症狀就是年份 ±1。300×36 實測：`calendarPopup=False` 只有 x=288～294 會改值，`True` 則 x=0～276 幾乎整條都會改。⚠️ 與全域樣式無關（拿掉 `APPLE_STYLE` 結果相同），是 Qt 本身行為。處置為全域強制 `NoButtons`，已驗證月曆照常開啟且**渲染前後逐像素 0 差異**，未動任何 `.ui`／`theme.py`／按鈕樣式。③**送出前確認**（`ui_utils/date_guard.py`）：發文／收文日期早於今天 1 天、或晚於今天 10 天以上即跳一次提示；查獲／受理日期只看往後、同樣 10 天。只提示不擋（補登舊案與跨年度作業都正常），**同一欄位＋同一日期本次執行只問一次**（連續登錄十幾筆時每筆都問會被無視）。接在六個送出點：刑案／一般陳報、敘獎登錄、交辦單發文、交辦單收文、結算發文視窗（一次寫多筆，誤改代價最大）；交辦單限辦日期與各編輯彈窗刻意不套。④⚠️ **加完提示後整條 gate 掛住不結束**——既有測試只要以非今日日期送出就會叫出真的確認框而無限等待（PITFALLS TST-4）；已在根 `conftest.py` 統一自動回「確認無誤」並清掉「本次已確認」的模組層狀態，防呆自己的測試則自行覆寫。⑤文件：DEVELOPER §10 新增「日期欄防呆」，PITFALLS **QTW-13** 改寫、新增 **QTW-14**；HELP 四頁與結算頁、速查卡、README FAQ 同步。完整套件 pytest 1022（非 shell）＋49（shell）＋9（PII gate，零 skip）。 |
+| v1.2.10 | **日期欄防呆：擋掉誤改途徑並在送出前確認，無 schema 變動**。起因是現場事故——某日刑案陳報登錄 12 筆，簽收表只印得出 4 筆；查出其中 8 筆的 `report_date` 年份被寫成隔年（`create_date` 正常），而簽收表只撈「陳報日期＝所選日期」，那 8 筆永遠印不出來。程式寫入的欄位與值都正確，是**日期欄的值在登錄當下被誤改**；送文者模式下日期欄連續登錄共用（送出後不重設），錯一次就一路錯到底，錯成連續的一整段。①**擋掉誤改途徑**：所有 `QDateEdit` 停用滾輪、上下／左右／PageUp／PageDown，**保留的改期路徑只剩「打數字」與「月曆挑」**；左右鍵一併擋是因為切完段落接著誤觸上下鍵就會改到別的段落。②**點擊那條的根因**（現場另回報「有些點擊會莫名讓年份 +1」）：`calendarPopup=True` 時 Qt 用下拉式月曆的幾何判斷點擊落在哪個子控制項，但 spin 箭頭仍存在，兩套座標對不起來，**點輸入區等同按到 spin 箭頭而步進目前選取的段落**；格式為 `yyyy-MM-dd`、預設選取年，症狀就是年份 ±1。300×36 實測：`calendarPopup=False` 只有 x=288～294 會改值，`True` 則 x=0～276 幾乎整條都會改。⚠️ 與全域樣式無關（拿掉 `APPLE_STYLE` 結果相同），是 Qt 本身行為。處置為全域強制 `NoButtons`，已驗證月曆照常開啟且**渲染前後逐像素 0 差異**，未動任何 `.ui`／`theme.py`／按鈕樣式。③**送出前確認**（`ui_utils/date_guard.py`）：發文／收文日期早於今天 1 天、或晚於今天 10 天以上即跳一次提示；查獲／受理日期只看往後、同樣 10 天。只提示不擋（補登舊案與跨年度作業都正常），**同一欄位＋同一日期本次執行只問一次**（連續登錄十幾筆時每筆都問會被無視）。接在六個送出點：刑案／一般陳報、敘獎登錄、交辦單發文、交辦單收文、結算發文視窗（一次寫多筆，誤改代價最大）；交辦單限辦日期與各編輯彈窗刻意不套。④⚠️ **加完提示後整條 gate 掛住不結束**——既有測試只要以非今日日期送出就會叫出真的確認框而無限等待（PITFALLS TST-4）；已在根 `conftest.py` 統一自動回「確認無誤」並清掉「本次已確認」的模組層狀態，防呆自己的測試則自行覆寫。⑤文件：DEVELOPER §10 新增「日期欄防呆」，PITFALLS **QTW-13** 改寫、新增 **QTW-14**；HELP 四頁與結算頁、速查卡、README FAQ 同步。<br>**⟪同版號重新發布（tag `v1.2.10` 移至本次 commit，`lib/version.py` 仍為 1.2.10）：用語與提示的收斂，無 schema 變動⟫**⑥**「自助取號模式」全面改名為「發文結算模式」**：舊名容易被誤解成承辦人自己就把文發掉了，實際流程是先取文號、日後由送文者統一結算補齊。改名涵蓋程式、版面、HELP 全文、系統設定的模式選項與 README；⚠️ 程式識別字 `isSelfServiceMode`／`SELF_SERVICE_*` 與 `App_Settings` 的 `report_mode_*` key **刻意維持原名**（同步 70 餘處無實質好處，且會讓 HISTORY 與 git log 的舊名對不上），命名落差寫在 `lib/db_utils.py` 該區塊註解；HISTORY.md 與舊 release note 保留當時用語。資料庫完全未動。⑦**提示條只留模式名**：原本黃底寫「自助取號模式：發文日期與發文人員免填」，冒號後的說明佔滿整條而欄位早已反灰，說明反成噪音；一併**補上公文陳報頁的提示條**（原本只有滑鼠移上去才看得到的 tooltip，深色模式還整塊黑，QSS-7）。⚠️ 提示條放 `Layout3.ui` row0 的 col7／col8，避開 LAY-2b 的模式切換位移，細節見 §5「tab_report.py 特殊架構」。⑧**日期確認框改白話**：「晚於本日 16 天」→「發文日期是 2026-08-20，為 16 天之後」，第二行改為「請檢查日期是否正確，若輸入有誤請返回修正」。⑨**日期防呆的「本次已確認」改為各頁分開記**（`confirmDateGap` 新增 `scope`，只進記錄鍵、不影響顯示文字）：公文陳報、敘獎登錄、交辦單收文三頁按下送出就直接寫、**沒有內容確認視窗**，日期誤改沒有第二道關卡；原本共用同一組記錄時，在 A 頁確認過某日期後，B 頁的日期欄剛好被誤改成同一天就會靜默放行。同頁內連續登錄仍只問一次，作業節奏不變。⚠️ 新增呼叫點一律要指定 `scope`。⑩**陳報兩張預覽表的日期改 `MM/DD`**（原 `MM-DD`），與 DB 的 `YYYY-MM-DD` 一眼區隔；欄寬不受影響（字數相同）。完整套件 pytest 1026（非 shell）＋49（shell）＋9（PII gate，零 skip）。 |
 | v1.2.9-v6 | **同版號重新發布（tag `v1.2.9-v6`，`lib/version.py` 仍為 1.2.9）：自動化驗收擴充，無功能／schema／UI 變動**。①**新增六支 GUI pilot**（連同既有敘獎 pilot 共八支），以真實版面與真實資料庫走完整條使用者流程，補的都是「兩端各自有測試、中間那段沒人看」的接縫：登出即關窗、檔案歸檔正名與 DB 同步、發文結算到結算發文（四種流程，含罰單 strict 併發衝突整批 rollback）、跨年度重置（確認→稽核→備份→重置）、備份還原、回收筒還原、系統設定六面板的 key 接線與髒值判斷。②**最有價值的兩條不變式**：其一，登錄端寫下的「未發文」哨兵各流程並不一致（陳報寫 NULL、敘獎與罰單寫空字串），而結算端另以 SQL 撈——兩邊分開維護，改壞了兩邊測試都綠、公文卻會從待結算清單無聲消失，故 pilot 一律用真實登錄分頁送出、不以 SQL 塞資料；其二，跨年度重置的稽核**必須寫在備份之前**，因為重置會清空當前庫的操作紀錄，順序顛倒該筆紀錄就永遠消失且無任何錯誤訊息。③**設定面板改以消費端自己的讀取函式斷言**，而非直接查 `App_Settings`：只查 key 的話，寫錯 key 名或正規化方式與讀取端不一致仍會漏，那正是「設定了但沒作用」的成因。④**每支交付前都做反證**——故意破壞被測機制、確認對應那支會紅；替身蓋得掉的機制（如「備份失敗要中止」的 `return`）則直接改原始碼那一行驗紅後還原。**pilot 的價值來自能抓到回歸，不是綠燈本身**。⑤文件：DEVELOPER §4 新增「GUI pilot」條目（八支清單＋三條規則），PITFALLS 新增 **TST-6**（測試建立的分頁沒拆掉 `AuthManager` 單例連線，會讓別的測試檔莫名紅燈；只有特定執行順序才炸，已踩過兩次、兩次都害到同一支罰單測試）。⚠️ 因版號未進位，exe 版本資訊仍顯示 1.2.9，只能靠 Release 頁與檔名區分。完整套件 pytest 995（非 shell）＋49（shell）＋9（PII gate，零 skip）。 |
 | **歸檔資料夾設定**（`archive_root`／子夾） | `ArchiveRootPanel`（settings_panels）；歸檔頁 `_updateArchWarn` 警示＋資料夾定位；瀏覽頁 `_refreshArchWarn` 警示＋PDF 連結；設定頁登入彈窗 `_maybeWarnArchiveRoot`；Reset 會清空（`performYearEndReset`）；`clearPdfIndexCache` | §5「系統設定子頁」＋「歸檔根目錄未設定警示」；HELP 歸檔/設定頁；QUICKSTART；README 部署段＋`07-archive-folder` 截圖 |
 | **簽收表標題**（`print_title_*` 六 key） | `PrintTitlePanel`；`printTitle`/`printTitlesUnset`（db_utils）；列印頁警示 `_refresh_title_warn`＋過期指紋 `_titles_sig`；Reset 不清 | §5「簽收表標題自訂」；HELP 列印/設定頁；QUICKSTART；`tests/test_print_titles` |
@@ -91,7 +91,7 @@ graph LR
 | **閒置逾時**（`idle_logout_min`/`idle_close_min`） | `IdleTimeoutPanel`；`getIdleTimeoutsMs`/`parseIdleMinutes`；main.py 兩計時器 `>0` guard；main.py `_onIdleTimeout`/`_onIdleClose` 訊息帶實際分鐘數（`{mins:g}`，勿寫死）；「低於鎖螢幕時間」約束（維護者默契、不放 UI）；Reset 不清 | §10「閒置處理與多人使用（main.py）」；HELP/QUICKSTART 內寫死的分鐘數字；`tests/test_idle_timeouts` |
 | **唯讀設定**（`input_lock_*` 六 key） | `InputLockPanel`；`isInputLocked`/`INPUT_LOCK_KEYS`；六種流程的硬 gate（`handleDispatch`/`tab_receive._submit`/`_submitCriminal`/`_submitGeneral`/`tab_reward._submit`/`tab_ticket._submit`）；五頁 `_applyInputLock` 反灰＋橫幅＋`_onShown`＋`_onRoleClearList`；tab_report `_currentLockKind`/`_switchFormType` 重套。敘獎發文結算模式下鎖 `reward` 即擋住發文源頭（不另設發文鎖） | §10「六種輸入流程唯讀鎖」＋權限矩陣＋§5 面板表；HELP/QUICKSTART；`tests/test_input_lock` |
 | **自動備份／備份還原**（`backup_second_dir`／異地／quick_check／還原子頁） | `run_auto_backup(extra_dirs=)`＋`_run_gfs`＋`quick_check`／`list_backups`／`verify_backup`／`restore_backup`（db_backup）；`main.py` 啟動 quick_check→備份；`BackupPanel`（settings_panels）；`BackupRestorePanel`（backup_restore_panel）；tab_settings nav 第 6 子頁四處掛載（`_nav_btns`／兩份 loaders／`_applyRolePermissions`）；Reset 不清 `backup_second_dir` | §10「平時自動備份（`lib/db_backup.py`）」＋§5 面板表＋「備份還原子頁」＋§6 App_Settings 列；HELP 設定頁；QUICKSTART；README FAQ 資料安全段；`tests/test_db_backup` |
-| **陳報模式**（`report_input_mode`／發文結算） | `isSelfServiceMode`（db_utils）；`InputModePanel`（settings_panels）；陳報頁、敘獎登錄頁與罰單頁 `_applyInputLock`→`_applySelfServiceMode`，提交帶 NULL 與放行發文人員（敘獎／罰單以可見 QLabel 提示條 `*_sender_hint` 說明免填，不用 tooltip，見 PITFALLS QSS-7）；**刑案／一般編輯彈窗 `_BaseEditDialog._lockReportFieldsIfSelfService()`**（發文結算模式且非管理身分才反灰陳報日期／發文人員，涵蓋陳報／瀏覽／歸檔三處開啟點）；列印頁 `_settle_group`／`_refresh_settle_group`／`_on_settle`＋`SettleDialog`／`count_unissued`（settle_dialog 的 `SETTLE_META` 含刑案／一般／敘獎／罰單，罰單衝突 strict rollback）；歸檔 `_queryUnarchived`／`_tableSignature` 排除未發文列；瀏覽頁未發文欄位橘字提示；Reset 不清。⚠️ `reward` **不吃**舊 `report_input_mode` 全域 fallback（見 `LEGACY_MODE_FALLBACK_KINDS`） | §5「發文結算模式」＋§5 面板表＋§6 App_Settings 列；HELP 陳報/列印/設定頁；QUICKSTART；README 功能段＋陳報模式 TIP；`tests/test_report_input_mode` |
+| **陳報模式**（`report_input_mode`／發文結算） | `isSelfServiceMode`（db_utils）；`InputModePanel`（settings_panels）；陳報頁、敘獎登錄頁與罰單頁 `_applyInputLock`→`_applySelfServiceMode`，提交帶 NULL 與放行發文人員（三頁皆以可見 QLabel 提示條 `*_sender_hint` 顯示「發文結算模式」，不用 tooltip，見 PITFALLS QSS-7；陳報頁的提示條放 `Layout3.ui` row0 的 col7／col8，見 §5「tab_report.py 特殊架構」）；**刑案／一般編輯彈窗 `_BaseEditDialog._lockReportFieldsIfSelfService()`**（發文結算模式且非管理身分才反灰陳報日期／發文人員，涵蓋陳報／瀏覽／歸檔三處開啟點）；列印頁 `_settle_group`／`_refresh_settle_group`／`_on_settle`＋`SettleDialog`／`count_unissued`（settle_dialog 的 `SETTLE_META` 含刑案／一般／敘獎／罰單，罰單衝突 strict rollback）；歸檔 `_queryUnarchived`／`_tableSignature` 排除未發文列；瀏覽頁未發文欄位橘字提示；Reset 不清。⚠️ `reward` **不吃**舊 `report_input_mode` 全域 fallback（見 `LEGACY_MODE_FALLBACK_KINDS`） | §5「發文結算模式」＋§5 面板表＋§6 App_Settings 列；HELP 陳報/列印/設定頁；QUICKSTART；README 功能段＋陳報模式 TIP；`tests/test_report_input_mode` |
 | **權限／角色**（新增任何「受限身分不可做」） | **每條觸發路徑 guard**（按鈕/雙擊/行內編輯/Enter/右鍵/拖拉，見 CLAUDE.md 協作偏好 B）；`role_changed`→`_onRolePerm`/`_applyRolePermissions`；遮罩頁（歸檔/稽核）；閒置登出後的行為；**破壞性或動實體檔案的流程另加「modal 返回後再檢查一次」**（見 §10「執行時權限複核」） | **§10「權限」權限矩陣必更新**＋§10「執行時權限複核」；HELP 各頁的權限描述；QUICKSTART 權限段；上機以受限身分逐路徑驗證 |
 | **角色 TAB 顯隱**（user／archive／admin） | `visibleTabKeys` 權限矩陣；`DocumentManager` 執行期顯隱與登出 fallback；`MainMenu` 全入口 `requestTab`；設定頁登入與待前往目標 | §10「權限」9／10／11 TAB 清單；HELP 固定 Profile index 映射；QUICKSTART 權限段；README 登入說明；角色切換、主選單導向、登出／閒置登出與 HELP mapping 測試 |
 | **新增 App_Settings key**（通用步驟） | db_utils 常數＋讀取 helper（含 fallback 預設）；`db_seed` 要不要播種；Reset 清不清（`performYearEndReset`）；生效時機（即時讀 vs 重啟） | §6 App_Settings 那一列；對應 tests |
@@ -391,10 +391,21 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 ### tab_report.py 特殊架構
 
+- **發文結算模式提示條 `rpt_sender_hint`**（黃底，樣式沿用敘獎 `Layout9.ui`／罰單
+  `Layout11.ui` 的 `*_sender_hint`）放 **row0 的 col7／col8**：刑案模式那兩欄是
+  「報案人」那組（較寬），一般模式兩欄隱藏後只剩本標籤——兩種情形多出來的寬度都
+  只有 col9（唯一 stretch）可去，col0–col6 完全不受影響，故不踩 LAY-2b 的模式切換
+  位移。標籤外包一層 `QHBoxLayout` 內接 stretch，黃底才依文字寬度收斂、不撐滿整格
+  （同 LAY-9）。顯示與否跟著當前頁籤的模式走（`_applySelfServiceMode`），預設隱藏。
+  ⚠️ 三個 rowspan=6 的透明 spacer（col2／col6／col9）與 `setup()` 的欄寬鎖定、
+  stretch 全歸零那段都不可動。回歸測試
+  `tests/test_report_mode_switch.py::test_sender_hint_follows_mode_of_current_form`
+  ＋既有的 `test_right_column_does_not_shift_between_modes`（該測本來就在「刑案＝
+  發文結算、一般＝送文者」的設定下跑，等於已涵蓋提示條出現時的位移檢查）
 - 刑案／一般共用 `Layout3.ui` **單一 `mainGrid`**（row0 共用、row1-3 刑案、row4-5 一般），程式建獨立 `QTabBar` 切換：`_switchFormType` show/hide 兩組 widget＋`setRowMinimumHeight` 鎖兩模式同高（防抖細節見 PITFALLS LAY 組）
 - **頂列 topbar（v1.1.10）**：「清除表單／確認陳報」鈕**不在 mainGrid**，由 `setup()` 程式建立（objectName 沿用 `btn_rpt_clear`/`btn_rpt_submit`——theme.py 套色與 findChild 綁定都靠它），與刑案/一般子頁籤同一 `QHBoxLayout` 靠右。⚠️ 預覽列因此改按 `previewLayout` objectName 定位（頂端多了 topbar，不能再拿「第一個 HBox」當預覽列）。欄寬：col1=300（.ui 鎖 min/max）、col4=242（code 錨點 `setColumnMinimumWidth`），表單最小寬約 1100 邏輯px
 - 發文分類 radio：刑案 `radio_status_a/b/c`→CS01/CS02/CS03；一般 `radio_gen_cat_a/b/c`→GC01/GC03/GC02
-- ⚠️ **部分預覽顯示 ≠ DB 值**（刷新時務必轉換）：人名 預覽`王小明`/DB`王小明-19.06`（去 `-` 後綴）；日期 陳報兩張預覽表為 `MM-DD`（`_fmtDateShort`，見下方「陳報預覽欄寬基準」）、其餘頁預覽為 `MM-DD-YYYY`（`BaseTab._fmtDate`）／DB 一律 `YYYY-MM-DD`
+- ⚠️ **部分預覽顯示 ≠ DB 值**（刷新時務必轉換）：人名 預覽`王小明`/DB`王小明-19.06`（去 `-` 後綴）；日期 陳報兩張預覽表為 `MM/DD`（`_fmtDateShort`，見下方「陳報預覽欄寬基準」）、其餘頁預覽為 `MM-DD-YYYY`（`BaseTab._fmtDate`）／DB 一律 `YYYY-MM-DD`
 - 刑案發文分類／一般分類**已正規化**：`status_name`／`gen_cat_name` 直接存兩字顯示名（現行/到案/未到、業務/其他/相驗），View 撈出即顯示（舊 `_STATUS_MAP`／`_CAT_MAP` 已移除）。現行犯判斷改以 `case_status` ID（`CS01`）比對、與顯示名脫鉤（見 `tab_print._build_*`）
 
 ### 列印（tab_print.py）
@@ -447,10 +458,10 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
   放不下就直接切斷。省略號會再吃掉一個字元寬，而欄寬是照字數算好的
   （日期欄踩過：64px 本該剛好顯示 `07-16`，加省略號變成 `07-1…`）。
   主旨欄以 `_ElideRightDelegate` 個別還原，否則長主旨會在句中硬切、看不出有後文
-- **兩個日期欄刻意只顯示 `MM-DD` 段**（維護者決定，年份被切可接受），
+- **兩個日期欄刻意只顯示 `MM/DD` 段**（維護者決定，年份被切可接受；分隔符用 `/` 是為了與 DB 的 `YYYY-MM-DD` 一眼區隔），
   但**標題不可被切**，故寬度由標題決定：登錄日期＝4 全形＝**92**、
   日期＝**64**（標題 2 全形＝58，內容 5 半形剛好放下 `07-16`）。
-  顯示由 `tab_report._fmtDateShort` 只輸出 `MM-DD`，完整日期掛 tooltip。
+  顯示由 `tab_report._fmtDateShort` 只輸出 `MM/DD`，完整日期掛 tooltip。
   ⚠️ **不可改 `BaseTab._fmtDate`**（`MM-DD-YYYY`）：交辦單／罰單／敘獎所有預覽共用它
 - ⚠️ **伸縮欄＝「陳報主旨」**，不是末端空標題欄。其餘欄位全部固定寬，剩餘寬度
   由主旨吸收，所以**主旨不需要一個決定好的數字**，視窗放大時也只有它變寬。
@@ -494,7 +505,7 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
 
 **核心設計：發文結算的未發文＝`report_date IS NULL`**（不加新欄位／新表），只適用刑案與一般陳報。敘獎與罰單改以**空字串 `register_date=''`** 為未發文哨兵（`NULL` 是軟刪除哨兵，不可混用，見 §3 三態）。敘獎登錄頁（Tab3）依 `isSelfServiceMode(db, 'reward')` 決定：送文者模式提交即發文（帶所填 `register_date`＋必填 `sender_id`），發文結算模式帶 `''`／`NULL` 待列印頁「結算發文」補值；`create_date=今天` 兩模式皆帶、與模式無關。牽動四處，動這功能逐一檢查：
 
-1. **陳報頁（`tab_report`）**：覆寫 `_applyInputLock` → 先 `super()`（唯讀鎖）再 `_applySelfServiceMode`（發文結算模式下 `rpt_date`／`rpt_sender` 反灰＋tooltip）。`_submit` 發文結算模式帶 `report_date=None`／`sender_id=None`；`_submitCriminal`／`_submitGeneral` 驗證在發文結算模式**放行「發文人員」空值**（其餘必填不變）。反灰的陳報日期框以 `specialValueText(" ")` 哨兵**顯示空白**（v1.1.11；僅不可互動狀態使用，無鍵盤路徑、不踩可編輯空白欄的雷；切回送文者模式清哨兵並還原今天；`widgets` 的「日期空值補今天」邏輯對哨兵狀態放行）。
+1. **陳報頁（`tab_report`）**：覆寫 `_applyInputLock` → 先 `super()`（唯讀鎖）再 `_applySelfServiceMode`（發文結算模式下 `rpt_date`／`rpt_sender` 反灰，並顯示黃底提示條 `rpt_sender_hint`）。`_submit` 發文結算模式帶 `report_date=None`／`sender_id=None`；`_submitCriminal`／`_submitGeneral` 驗證在發文結算模式**放行「發文人員」空值**（其餘必填不變）。反灰的陳報日期框以 `specialValueText(" ")` 哨兵**顯示空白**（v1.1.11；僅不可互動狀態使用，無鍵盤路徑、不踩可編輯空白欄的雷；切回送文者模式清哨兵並還原今天；`widgets` 的「日期空值補今天」邏輯對哨兵狀態放行）。
    - ⚠️ **編輯彈窗也要擋（曾漏）**：刑案／一般編輯彈窗（`CriminalEditDialog`／`GeneralEditDialog`）進入點不只陳報頁，還有瀏覽頁／歸檔頁。發文結算模式下**一般使用者**不可手動編輯陳報日期／發文人員（避免繞過結算），故 `_BaseEditDialog._lockReportFieldsIfSelfService()`（載入資料後於兩彈窗 `__init__` 呼叫）在「發文結算模式 **且** `not is_manager()`」時把 `w_report_date`／`w_sender` `setEnabled(False)`。**管理者／歸檔管理者不擋**（仍可手動補正）。停用欄位仍保留載入值，`_on_save` 讀回原值寫回為 no-op，未發文哨兵不變式維持，儲存邏輯不需改。測試 `tests/test_dialog_smoke.py`（一般使用者反灰／管理者不擋／非發文結算模式可編輯／反灰儲存保留原值四情境）。
 2. **列印頁（`tab_print`）**：`_settle_group`（`insertWidget(1)`，僅發文結算模式 `setVisible`）含「結算發文」鈕＋未發文計數 `lbl_unissued`（`count_unissued` 回 `{key: n}` dict，v1.2.1 起）；`_onShown` 呼叫 `_refresh_settle_group`。按鈕開 `SettleDialog`，`settled()` 為真則以 `settledDate()` 的實際成功日期＋`_on_generate()` 自動產生簽收表（結算→簽收表一條龍）。
 3. **結算彈窗（`ui_utils/settle_dialog.py` 的 `SettleDialog`）**：採**單一表格＋`SETTLE_META` registry**；成員為刑案／一般／敘獎／罰單，每型態各一筆 meta（label／色／未發文 query／`count_query`／結算 UPDATE／with_sender）。表格列出未發文案件（類型色標欄、預設全勾、點列切換、類型 chip＋關鍵字過濾疊加、全選 checkbox 三態只作用於顯示中列、底部即時計數）。勾選案件時送文者必選；選取後以**同一 transaction** 批次更新。刑案／一般遇到並行衝突 rowcount=0 時自然跳過、流程照走；其 UPDATE 的 CAS 同時檢查案由仍非空，避免載入後遭軟刪除的空殼被復活；**罰單 meta 帶 `strict=True`，任一衝突即整批 rollback**。**結算不寫稽核 LOG**（發文日期與發文人員本身就寫在資料列上，另記一筆是重複）；CRUD mutation 仍在同一 transaction 寫入 `writeAudit()`。⚠️ **勾選狀態才是結算範圍**，關鍵字過濾（`isRowHidden`）只是找列輔助——隱藏但仍勾選者照結、照計數（「將結算＋排除」必須恆等於總筆數）。⚠️ 表格 mouseover 反白須明寫 `QTableWidget::item:hover { background-color: transparent; }`（見 PITFALLS QSS 組）。
@@ -526,8 +537,15 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
 2. **送出前確認**（`ui_utils/date_guard.py`）：發文／收文日期早於今天 1 天、或晚於
    今天 10 天以上即跳一次提示；查獲／受理日期只看往後、同樣 10 天（往前是常態，
    案件受理常在數週前）。**只提示不擋**——補登舊案與跨年度作業都正常。
-   **同一欄位＋同一日期本次執行只問一次**：連續登錄十幾筆時每筆都問會被無視，
-   反而失去提醒效果。
+   **同一頁＋同一欄位＋同一日期本次執行只問一次**：連續登錄十幾筆時每筆都問會被
+   無視，反而失去提醒效果。
+   ⚠️ **記錄鍵帶頁面代號（`scope`）、各頁互不共用**：公文陳報、敘獎登錄、交辦單收文
+   三頁按下送出就直接寫、**沒有內容確認視窗**（交辦單發文有「確認發文」列出發文
+   日期與筆數、結算發文有結算視窗），日期誤改沒有第二道關卡；若共用同一組記錄，
+   在 A 頁確認過某日期後，B 頁的日期欄剛好被誤改成同一天就會靜默放行。`scope`
+   只進記錄鍵、不影響彈窗顯示文字，現行值為 `report`／`reward`／`receive`／
+   `dispatch`／`settle`。**新增呼叫點一律要指定**（省略時退回以欄位名稱當代號，
+   會和同名欄位的別頁共用）。回歸測試 `tests/test_date_guard.py::TestConfirmScope`。
 3. **接在六個送出點**：刑案／一般陳報、敘獎登錄、交辦單發文、交辦單收文、
    結算發文視窗。結算一次寫多筆，誤改代價最大。
    ⚠️ 交辦單的**限辦日期**與各**編輯彈窗**刻意不套：前者本來就在未來，後者往往正是

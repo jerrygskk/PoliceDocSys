@@ -78,6 +78,35 @@
         <property name="editable"><bool>true</bool></property>
        </widget>
       </item>
+      <!-- 發文結算模式提示條（比照敘獎 Layout9／罰單 Layout11 的 *_sender_hint）。
+           放 col7-8：刑案模式此兩欄是「報案人」那組（較寬），一般模式兩欄隱藏後
+           本標籤成為唯一內容——兩種情形多出來的寬度都只有 col9（唯一 stretch）
+           可去，col0–col6 不受影響，故不會踩 LAY-2b 的模式切換位移。
+           內接 stretch 讓黃底依文字寬度收斂，不撐滿整格（同 LAY-9）。 -->
+      <item row="0" column="7" colspan="2">
+       <layout class="QHBoxLayout" name="rptHintRow">
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item>
+         <widget class="QLabel" name="rpt_sender_hint">
+          <property name="text"><string>發文結算模式</string></property>
+          <property name="minimumSize"><size><width>0</width><height>36</height></size></property>
+          <property name="maximumSize"><size><width>16777215</width><height>36</height></size></property>
+          <property name="styleSheet"><string notr="true">background-color: #fdf3e0; color: #8a5c14; border: 1px solid #f0d9a8; border-radius: 7px; padding: 4px 12px;</string></property>
+          <property name="alignment"><set>Qt::AlignLeft|Qt::AlignVCenter</set></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="rptHintStretch">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
 
       <!-- ════════════════════════════════════════
            row 1（刑案）：發文分類 radio ／ 陳報主旨

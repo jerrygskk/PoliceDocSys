@@ -391,7 +391,8 @@ class TabDispatch(BaseTab, InputLockMixin):
             msgWarning("欄位未填", "請選擇發文人員。")
             return
         # 日期防呆（見 ui_utils/date_guard）
-        if not confirmDateGap(dispatch_day, "發文日期", parent=self.tab_widget):
+        if not confirmDateGap(dispatch_day, "發文日期", scope="dispatch",
+                              parent=self.tab_widget):
             return
 
         # 計算已有發文日期的筆數

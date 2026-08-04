@@ -12,6 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QDate
 
+import ui_utils.date_guard as date_guard
 from ui_utils.date_guard import (
     FUTURE_GAP_DAYS, PAST_GAP_DAYS, dateGapDays, describeDateGap,
     needsDateConfirm)
@@ -76,12 +77,52 @@ class TestMessage(unittest.TestCase):
         """提示要寫出日期本身與差距天數，使用者才看得出被改到哪一段。"""
         msg = describeDateGap("2027-08-04", "發文日期", today=TODAY)
         self.assertIn("2027-08-04", msg)
-        self.assertIn("晚於", msg)
-        self.assertIn("365", msg)
+        self.assertIn("365 天之後", msg)
 
         msg = describeDateGap(_shift(-2), "收文日期", today=TODAY)
-        self.assertIn("早於", msg)
-        self.assertIn("2", msg)
+        self.assertIn("2 天之前", msg)
+
+
+class TestConfirmScope(unittest.TestCase):
+    """「本次已確認」以頁面為單位分開記，各頁各問一次。
+
+    為什麼要分開：公文陳報、敘獎登錄、交辦單收文按下送出就直接寫、沒有內容確認
+    視窗，日期誤改沒有第二道關卡。若各頁共用同一組記錄，在 A 頁確認過某日期後，
+    B 頁的日期欄剛好被誤改成同一天就會靜默放行。
+    """
+
+    def setUp(self):
+        date_guard.resetConfirmedDates()
+        self._calls = []
+        self._orig = date_guard.confirmBox
+        date_guard.confirmBox = lambda *a, **kw: (self._calls.append(a), True)[1]
+        self.addCleanup(setattr, date_guard, "confirmBox", self._orig)
+        self.addCleanup(date_guard.resetConfirmedDates)
+
+    def _ask(self, scope):
+        return date_guard.confirmDateGap(
+            _shift(FUTURE_GAP_DAYS), "發文日期", scope=scope, today=TODAY)
+
+    def test_same_page_same_date_asks_once(self):
+        """同頁連續登錄只問一次——每筆都問會被無視，反而失去提醒效果。"""
+        self.assertTrue(self._ask("report"))
+        self.assertTrue(self._ask("report"))
+        self.assertEqual(len(self._calls), 1)
+
+    def test_other_page_asks_again_despite_same_label_and_date(self):
+        """欄位名稱與日期都相同，換一頁仍要再問一次。"""
+        self._ask("report")
+        self._ask("reward")
+        self._ask("receive")
+        self.assertEqual(len(self._calls), 3)
+
+    def test_scope_defaults_to_label(self):
+        """未指定 scope 時退回以欄位名稱當代號（舊行為）。"""
+        date_guard.confirmDateGap(_shift(FUTURE_GAP_DAYS), "發文日期",
+                                  today=TODAY)
+        date_guard.confirmDateGap(_shift(FUTURE_GAP_DAYS), "發文日期",
+                                  today=TODAY)
+        self.assertEqual(len(self._calls), 1)
 
 
 if __name__ == "__main__":

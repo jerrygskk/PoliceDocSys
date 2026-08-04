@@ -11,8 +11,12 @@
 - **只提示、不擋**。補登前幾天的公文、跨年度前後作業都是正常情境，擋死會妨礙作業。
 - **早於今日的門檻比晚於今日嚴格**（早 1 天就問、晚 10 天才問）：往前是常見的補登，
   但也是誤改最常見的方向；往後 10 天內可能是預定發文日。
-- **同一欄位＋同一日期，本次執行只問一次**。連續登錄十幾筆時每筆都問會被無視，
-  反而失去提醒效果；問一次即可，換成別的日期才會再問。
+- **同一頁＋同一欄位＋同一日期，本次執行只問一次**。連續登錄十幾筆時每筆都問會被
+  無視，反而失去提醒效果；問一次即可，換成別的日期才會再問。
+- **各頁的「已確認」互不共用**（`scope`）。公文陳報、敘獎登錄、交辦單收文三頁按下
+  送出就直接寫、沒有內容確認視窗，日期誤改沒有第二道關卡；若各頁共用同一組記錄，
+  在 A 頁確認過某日期後，B 頁的日期欄剛好被誤改成同一天就不會再提醒。故記錄鍵
+  帶上頁面代號，**每頁各問一次**。同頁內連續登錄仍只問一次，不影響作業節奏。
 - 使用者按取消＝回去改日期，**不記錄**（下次仍會問）。
 """
 from PySide6.QtCore import QDate
@@ -26,7 +30,7 @@ PAST_GAP_DAYS = 1
 # `future_only` 欄位（查獲／受理日期）往後也用同一個門檻，只是往前不提示。
 FUTURE_GAP_DAYS = 10
 
-# 本次執行已確認過的 (欄位名稱, 日期字串)；不持久化，關掉程式即重來
+# 本次執行已確認過的 (頁面代號, 欄位名稱, 日期字串)；不持久化，關掉程式即重來
 _confirmed = set()
 
 
@@ -72,28 +76,32 @@ def describeDateGap(value, label, today=None):
     d = _to_qdate(value)
     shown = d.toString("yyyy-MM-dd") if d else str(value)
     if gap is None or gap == 0:
-        return f"{label}為 {shown}。"
-    direction = "晚於" if gap > 0 else "早於"
-    return (f"{label}為 {shown}，{direction}本日 {abs(gap)} 天。")
+        return f"{label}是 {shown}。"
+    direction = "之後" if gap > 0 else "之前"
+    return (f"{label}是 {shown}，為 {abs(gap)} 天{direction}。")
 
 
-def confirmDateGap(value, label="發文日期", *, parent=None, future_only=False,
-                   today=None):
+def confirmDateGap(value, label="發文日期", *, scope=None, parent=None,
+                   future_only=False, today=None):
     """送出前呼叫。回傳 True 表示可以繼續（不需提示、或使用者已確認）。
 
     ⚠️ 呼叫端必須把回傳 False 當成「使用者要回去改日期」，中止本次送出。
+
+    `scope`＝頁面代號，只進「本次已確認」的記錄鍵、**不影響顯示文字**。不同頁面
+    即使欄位名稱相同（陳報／敘獎／交辦單發文／結算都叫「發文日期」）也各問一次；
+    省略時退回以 `label` 當代號（等同舊行為）。新增呼叫點請一律指定。
     """
     if not needsDateConfirm(value, future_only=future_only, today=today):
         return True
     d = _to_qdate(value)
-    key = (label, d.toString("yyyy-MM-dd") if d else str(value))
+    key = (scope or label, label,
+           d.toString("yyyy-MM-dd") if d else str(value))
     if key in _confirmed:
         return True
     ok = confirmBox(
         "請確認日期",
         describeDateGap(value, label, today=today),
-        informative="日期欄可能在輸入其他欄位時被鍵盤或滾輪誤改。\n"
-                    "確認無誤才繼續，否則請返回修正。",
+        informative="請檢查日期是否正確，若輸入有誤請返回修正。",
         confirm_text="確認無誤", cancel_text="返回修正",
         default_confirm=False, parent=parent, min_width=520)
     if ok:

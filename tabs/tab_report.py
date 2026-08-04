@@ -24,7 +24,7 @@ from ui_utils import (
 # 多少算多少」，視窗放大時只有它變寬。改欄位配置要連 stretch_col 與
 # previewLayout 的 3:2 分配一起看（見 DEVELOPER §5「陳報預覽欄寬基準」）。
 # 兩個日期欄的標題刻意用兩字「登錄」「陳報」：標題 2 全形＝58 < 欄寬 64，
-# 標題不會被切，欄寬也就能壓到 5 半形（只顯示 MM-DD，見 _fmtDateShort）。
+# 標題不會被切，欄寬也就能壓到 5 半形（只顯示 MM/DD，見 _fmtDateShort）。
 CRIM_HEADERS = ["", "編號", "登錄", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "陳報", "報案人"]
 GEN_HEADERS  = ["", "編號", "登錄", "業務單位", "陳報主旨", "承辦人", "分類"]
 
@@ -36,14 +36,14 @@ SUBJECT_MIN_W = 92
 
 
 def _fmtDateShort(value):
-    """預覽的兩個日期欄只顯示 `MM-DD`（維護者決定，年份不進畫面）。
+    """預覽的兩個日期欄只顯示 `MM/DD`（維護者決定，年份不進畫面）。
 
     ⚠️ 不改 `BaseTab._fmtDate`：那支是交辦單／罰單／敘獎所有預覽共用的
     `MM-DD-YYYY`，動它會一次改掉所有頁。完整日期改掛在 tooltip。
     """
     text = str(value or "")
     if len(text) == 10 and text[4] == "-" and text[7] == "-":   # YYYY-MM-DD
-        return f"{text[5:7]}-{text[8:10]}"
+        return f"{text[5:7]}/{text[8:10]}"
     return text
 
 # Radio 圓點縮小，選中用較細 border 呈現
@@ -92,6 +92,10 @@ class TabReport(BaseTab, InputLockMixin):
         # ── 頂部共用欄位 ──────────────────────────────────
         self.rpt_date   = inner.findChild(QDateEdit, 'rpt_date')
         self.rpt_sender = inner.findChild(QComboBox, 'rpt_sender')
+        # 發文結算模式提示條；預設隱藏，由 _applySelfServiceMode 決定顯示
+        self.rpt_sender_hint = inner.findChild(QLabel, 'rpt_sender_hint')
+        if self.rpt_sender_hint:
+            self.rpt_sender_hint.setVisible(False)
 
         # ── mainGrid 參照（供 _switchFormType 調整列高） ────
         self._mainGrid = inner.findChild(QGridLayout, 'mainGrid')
@@ -377,7 +381,10 @@ class TabReport(BaseTab, InputLockMixin):
 
     def _applySelfServiceMode(self):
         """發文結算模式：陳報日期／發文人員兩欄反灰（由結算時自動填入）。
-        唯讀鎖已停用整個表單時這兩欄已是停用狀態，不衝突。"""
+        唯讀鎖已停用整個表單時這兩欄已是停用狀態，不衝突。
+
+        提示以可見 QLabel（`rpt_sender_hint`）呈現、比照敘獎與罰單登錄頁：
+        tooltip 在深色模式整塊黑、也要滑過才看得到（PITFALLS QSS-7）。"""
         is_self = isSelfServiceMode(self.db_path, self._currentLockKind())
         tip = "發文結算模式" if is_self else ""
         for w in [self.rpt_date, self.rpt_sender]:
@@ -385,6 +392,8 @@ class TabReport(BaseTab, InputLockMixin):
                 if is_self:
                     w.setEnabled(False)
                 w.setToolTip(tip)
+        if getattr(self, "rpt_sender_hint", None):
+            self.rpt_sender_hint.setVisible(is_self)
         # 陳報日期顯示空白：僅在反灰（不可互動）狀態下用 specialValueText 哨兵，
         # 無鍵盤/滑鼠路徑，不會踩 QDateEdit 可編輯空白欄的雷（踩雷表 #3）。
         # 送出值與此無關（發文結算模式 _submit 一律帶 report_date=None）。
@@ -620,10 +629,11 @@ class TabReport(BaseTab, InputLockMixin):
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
         # 日期防呆：日期欄可能在輸入其他欄位時被鍵盤／滾輪誤改（見 ui_utils/date_guard）
-        if not confirmDateGap(report_date, "發文日期", parent=self.tab_widget):
+        if not confirmDateGap(report_date, "發文日期", scope="report",
+                              parent=self.tab_widget):
             return
-        if not confirmDateGap(occ_date, "查獲日期", parent=self.tab_widget,
-                              future_only=True):
+        if not confirmDateGap(occ_date, "查獲日期", scope="report",
+                              parent=self.tab_widget, future_only=True):
             return
 
         conn = None
@@ -684,7 +694,8 @@ class TabReport(BaseTab, InputLockMixin):
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
         # 日期防呆：同刑案（見 ui_utils/date_guard）
-        if not confirmDateGap(report_date, "發文日期", parent=self.tab_widget):
+        if not confirmDateGap(report_date, "發文日期", scope="report",
+                              parent=self.tab_widget):
             return
 
         conn = None

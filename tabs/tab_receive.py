@@ -168,7 +168,8 @@ class TabReceive(BaseTab, InputLockMixin):
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
         # 日期防呆（見 ui_utils/date_guard）；限辦日期本來就在未來，不套此檢查
-        if not confirmDateGap(recv_date, "收文日期", parent=self.tab_widget):
+        if not confirmDateGap(recv_date, "收文日期", scope="receive",
+                              parent=self.tab_widget):
             return
 
         # 限辦日期確認

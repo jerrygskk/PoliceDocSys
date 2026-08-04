@@ -257,7 +257,8 @@ class TabReward(BaseTab, InputLockMixin):
             return
         # 日期防呆：連續登錄時日期欄共用，被誤改會一路錯下去（見 ui_utils/date_guard）
         if not is_self and not confirmDateGap(
-                register_date, "發文日期", parent=self.tab_widget):
+                register_date, "發文日期", scope="reward",
+                parent=self.tab_widget):
             return
         recipients = ",".join(names)
         conn = None

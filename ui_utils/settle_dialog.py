@@ -776,7 +776,7 @@ class SettleDialog(QDialog):
         issue_date_str = issue_date.toString("yyyy-MM-dd")
         # 日期防呆：一次確認會把發文日期寫進多筆，誤改的代價最大
         # （見 ui_utils/date_guard）
-        if not confirmDateGap(issue_date_str, "發文日期", parent=self):
+        if not confirmDateGap(issue_date_str, "發文日期", scope="settle", parent=self):
             return
         issue_date_disp = issue_date.toString("yyyy 年 MM 月 dd 日")
         excl_count  = self._tbl.excluded_count()

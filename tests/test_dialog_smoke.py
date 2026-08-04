@@ -786,7 +786,7 @@ class TestReportPreviewCreateDate(_DialogBase):
     def test_preview_dates_show_month_day_only_with_full_date_tooltip(self):
         """預覽日期欄只顯示 MM-DD，完整日期掛 tooltip。"""
         from tabs.tab_report import _fmtDateShort
-        self.assertEqual(_fmtDateShort("2026-07-31"), "07-31")
+        self.assertEqual(_fmtDateShort("2026-07-31"), "07/31")
         self.assertEqual(_fmtDateShort(""), "")
         self.assertEqual(_fmtDateShort(None), "")
         self.assertEqual(_fmtDateShort("非日期"), "非日期")
@@ -864,8 +864,8 @@ class TestReportPreviewCreateDate(_DialogBase):
             "陳志豪", "", "", "2026-06-01")
         self.assertEqual(
             [tab.crim_table.item(0, col).text() for col in range(2, 10)],
-            ["07-16", "現行", "竊盜案", "刑案主旨",
-             "陳志豪", "", "06-01", ""])
+            ["07/16", "現行", "竊盜案", "刑案主旨",
+             "陳志豪", "", "06/01", ""])
         # 完整日期仍掛在 tooltip
         self.assertEqual(tab.crim_table.item(0, 2).toolTip(), "2026-07-16")
         self.assertEqual(tab.crim_table.item(0, 8).toolTip(), "2026-06-01")
@@ -874,7 +874,7 @@ class TestReportPreviewCreateDate(_DialogBase):
             "3", "2026-07-16", "偵查隊", "一般主旨", "陳志豪", "業務")
         self.assertEqual(
             [tab.gen_table.item(0, col).text() for col in range(2, 7)],
-            ["07-16", "偵查隊", "一般主旨", "陳志豪", "業務"])
+            ["07/16", "偵查隊", "一般主旨", "陳志豪", "業務"])
         self.assertEqual(tab.gen_table.item(0, 2).toolTip(), "2026-07-16")
         tab.crim_table.deleteLater()
         tab.gen_table.deleteLater()
