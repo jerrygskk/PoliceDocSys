@@ -287,7 +287,7 @@ class _BaseEditDialog(QDialog):
         return True, report_date, sender_id, issued
 
     def _lockReportFieldsIfSelfService(self):
-        """自助取號模式下，一般使用者不可手動編輯陳報日期／發文人員（避免繞過結算）；
+        """發文結算模式下，一般使用者不可手動編輯陳報日期／發文人員（避免繞過結算）；
         管理者／歸檔管理者仍可手動補正，不擋。停用後 _on_save 讀回原載入值寫回、
         對這兩欄為 no-op，維持未發文哨兵不變式。載入資料後呼叫。"""
         if (not self._mode_kind
@@ -295,7 +295,7 @@ class _BaseEditDialog(QDialog):
             return
         if AuthManager.instance().is_manager():   # admin／歸檔管理者不擋
             return
-        tip = "自助取號模式：陳報日期與發文人員由結算時自動填入"
+        tip = "發文結算模式"
         for w in (getattr(self, "w_report_date", None),
                   getattr(self, "w_sender", None)):
             if w is not None:
@@ -780,7 +780,7 @@ QRadioButton:checked {
 
         self.w_create_date.setText(str(create_date or ""))
 
-        # 有值＝已發文；NULL＝未發文（自助取號未結算列）→ 留空，不填今日
+        # 有值＝已發文；NULL＝未發文（發文結算未結算列）→ 留空，不填今日
         if report_date:
             self.w_report_date.setDate(QDate.fromString(str(report_date), "yyyy-MM-dd"))
         else:
@@ -1036,7 +1036,7 @@ class GeneralEditDialog(_BaseEditDialog):
 
         self.w_create_date.setText(str(create_date or ""))
 
-        # 有值＝已發文；NULL＝未發文（自助取號未結算列）→ 留空，不填今日
+        # 有值＝已發文；NULL＝未發文（發文結算未結算列）→ 留空，不填今日
         if report_date:
             self.w_report_date.setDate(QDate.fromString(str(report_date), "yyyy-MM-dd"))
         else:

@@ -35,7 +35,7 @@ class TestDateGapDays(unittest.TestCase):
         self.assertEqual(dateGapDays(TODAY.addDays(5), today=TODAY), 5)
 
     def test_unparsable_returns_none_and_never_blocks(self):
-        """空值／哨兵／壞格式一律回 None：自助取號模式送的就是空字串，不能被擋。"""
+        """空值／哨兵／壞格式一律回 None：發文結算模式送的就是空字串，不能被擋。"""
         for bad in (None, "", "   ", "2026/08/04", "not-a-date"):
             self.assertIsNone(dateGapDays(bad, today=TODAY), bad)
             self.assertFalse(needsDateConfirm(bad, today=TODAY), bad)

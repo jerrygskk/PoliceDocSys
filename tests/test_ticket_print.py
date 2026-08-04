@@ -684,7 +684,7 @@ class TestQueryTicketPrintRows(unittest.TestCase):
             "(doc_id,create_date,register_date,sender_id,issuer_id,ticket_no) "
             "VALUES('9002','2026-07-23','','P1','P1','UNISSUED001')")
         # 發文者登錄模式：register_date=create_date（同 ticket_utils.createTicket
-        # 非自助分支的寫入語意）。
+        # 非發文結算模式分支的寫入語意）。
         conn.execute(
             "INSERT INTO Document_Ticket"
             "(doc_id,create_date,register_date,sender_id,issuer_id,ticket_no) "
@@ -700,7 +700,7 @@ class TestQueryTicketPrintRows(unittest.TestCase):
                              "1" if on else "0")
 
     def test_self_service_ticket_settled_after_mode_switch_prints_by_register_date(self):
-        """自助建立後切回送文者模式，隔日結算仍以資料本身的簽收日列印。"""
+        """發文結算模式建立後切回送文者模式，隔日結算仍以資料本身的簽收日列印。"""
         self._set_self_service(True)
         conn = sqlite3.connect(self.db_path)
         try:

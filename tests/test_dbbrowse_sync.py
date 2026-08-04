@@ -252,7 +252,7 @@ class TestDiffUpdateAlignment(_BrowseBase):
         self._assert_aligned("crim", ["2"])
 
     def test_ticket_settlement_update_reflected_via_on_activated(self):
-        # 模擬自助結算（settle_selected 的效果）：另一頁把未發文罰單補上
+        # 模擬發文結算（settle_selected 的效果）：另一頁把未發文罰單補上
         # 發文日期／發文者。驗證瀏覽頁「切回來」真正用到的入口 on_activated()
         # （指紋比對→_diffUpdate），不是直接呼叫 _diffUpdate() 繞過指紋層。
         self.tab.buildInitial("ticket")

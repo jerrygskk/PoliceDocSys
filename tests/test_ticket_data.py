@@ -314,7 +314,7 @@ class TestTicketCreate(TicketDbTestCase):
             )
 
     def test_self_service_ignores_leftover_sender(self):
-        # 自助模式的發文者欄反灰但仍有殘留值，提交時不得採用。
+        # 發文結算模式的發文者欄反灰但仍有殘留值，提交時不得採用。
         self._insert_person("P001", "王小明")
         self._insert_person("P002", "李大華")
         createTicket(

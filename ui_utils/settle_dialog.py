@@ -1,5 +1,5 @@
 """
-settle_dialog.py — 自助取號模式「結算發文」彈窗
+settle_dialog.py — 發文結算模式「結算發文」彈窗
 
 功能：
   - 單一表格列出所有「已取號、未發文」公文（刑案／一般／敘獎／罰單），依 SETTLE_META
@@ -219,7 +219,7 @@ def count_unissued(db_path):
 
 
 def visible_chip_keys(modes, counts):
-    """回傳自助模式已啟用或仍有未發文資料的類型 chip key 集合。"""
+    """回傳發文結算模式已啟用或仍有未發文資料的類型 chip key 集合。"""
     return {
         meta["key"]
         for meta in SETTLE_META
@@ -667,7 +667,7 @@ class SettleDialog(QDialog):
         self._apply_filters()
 
     def _visible_keys(self):
-        """目前該出現的類型 key（自助模式開啟或仍有未發文殘留）。
+        """目前該出現的類型 key（發文結算模式開啟或仍有未發文殘留）。
 
         chip、底部計數與確認訊息共用同一份判斷：只開罰單的所裡不該在任何一處
         看到「刑案 0／一般 0」。

@@ -1079,7 +1079,7 @@ class TabPrint(BaseTab):
         self._gen_sig     = None    # 上次「產生」當下的標題指紋，供偵測過期
         self._refresh_title_warn()
 
-        # ── 自助取號模式：結算按鈕群（僅自助模式顯示）──
+        # ── 發文結算模式：結算按鈕群（僅發文結算模式顯示）──
         _settle_ss = """
             QPushButton {
                 background-color: #4977b1; color: #ffffff;
@@ -1112,7 +1112,7 @@ class TabPrint(BaseTab):
         except Exception:
             pass
         # 初次進入列印頁不一定會觸發 currentChanged（初始索引即本頁時不發），
-        # 故在此設定結算群組初始可見性，否則自助模式下按鈕要等切頁才出現。
+        # 故在此設定結算群組初始可見性，否則發文結算模式下按鈕要等切頁才出現。
         self._refresh_settle_group()
 
     def _titles_sig(self):
@@ -1165,7 +1165,7 @@ class TabPrint(BaseTab):
         """重算未發文計數並更新 lbl_unissued（依 SETTLE_META 逐型態列出，
         新增結算型態時本處自動涵蓋，不需另改）。
 
-        ⚠️ 只列出「該類別自助取號模式開啟，或送文者輸入模式下仍有未發文殘留」
+        ⚠️ 只列出「該類別發文結算模式開啟，或送文者輸入模式下仍有未發文殘留」
         的類別，與結算彈窗的類型 chip 同一條規則（`visible_chip_keys`）：
         送文者輸入模式且已無殘留的類別不該出現在這行，否則只開罰單的所裡也會
         看到「刑案 0／一般 0」這種與自己無關的字。"""

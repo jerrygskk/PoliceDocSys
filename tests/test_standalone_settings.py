@@ -463,7 +463,7 @@ class TestInputLockPanelFlowIsolation(unittest.TestCase):
 
         panel = InputModePanel(self.db, flow_keys=("ticket",))
         self.assertEqual(set(panel._radios.keys()), {"ticket"})
-        panel._radios["ticket"][1].setChecked(True)   # 自助取號
+        panel._radios["ticket"][1].setChecked(True)   # 發文結算
         self.assertTrue(panel._save())
 
         self.assertEqual(

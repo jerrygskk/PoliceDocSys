@@ -3,9 +3,9 @@
 
 涵蓋：
   - Layout11.ui 物件名契約（改名／刪元件即紅）
-  - 兩種模式（自助取號／發文者登錄）的發文人員欄狀態與提示標籤
+  - 兩種模式（發文結算／發文者登錄）的發文人員欄狀態與提示標籤
   - 必填驗證（純函式 `_validateInput()`，不彈視窗）
-  - 新增／編輯／刪除的 DB round-trip 與稽核安全（自助模式強制 sender NULL）
+  - 新增／編輯／刪除的 DB round-trip 與稽核安全（發文結算模式強制 sender NULL）
   - 候選人員＝直接取代開立人員（取 currentData，不猜姓名字串）
 offscreen 執行；任何會彈 QMessageBox 的路徑一律 patch，否則測試永久卡死。
 """
@@ -50,7 +50,7 @@ class TestTicketLayoutContract(unittest.TestCase):
         ui.deleteLater()
 
     def test_ticket_layout_has_visible_self_service_hint_label(self):
-        # 自助模式提示不可只靠 tooltip（深色模式下 tooltip 整塊黑，PITFALLS QSS-7）
+        # 發文結算模式提示不可只靠 tooltip（深色模式下 tooltip 整塊黑，PITFALLS QSS-7）
         from PySide6.QtWidgets import QLabel
         ui = loadUi(_LAYOUT)
         hint = ui.findChild(QLabel, "ticket_sender_hint")
@@ -185,7 +185,7 @@ class TestTicketSubmit(TicketTabBase):
             self._index_for("P002", combo=tab.ticket_sender))
         self._fill(tab)
         # 直接釘住 Tab 層守衛：Tab 傳給 createTicket 的 sender_id 引數本身必須
-        # 是 None。若只驗 DB 欄位，createTicket 內部對自助模式的覆寫會遮住
+        # 是 None。若只驗 DB 欄位，createTicket 內部對發文結算模式的覆寫會遮住
         # Tab 層破口，讓「Tab 誤讀殘留值」的 bug 測不出來（審查踩過）。
         with patch("tabs.tab_ticket.createTicket",
                    wraps=tab_ticket_module.createTicket) as spy:
@@ -641,7 +641,7 @@ class TestTicketInputLock(TicketTabBase):
 
 
 class TestTicketCrossPageRefresh(TicketTabBase):
-    """切回罰單登錄頁必須反映其他頁的異動（瀏覽頁 admin 編輯／自助結算）。
+    """切回罰單登錄頁必須反映其他頁的異動（瀏覽頁 admin 編輯／發文結算）。
 
     ⚠️ 真正的刷新掛鉤點是 `tab_widget.currentChanged→_onShown`（`main.
     _onTabChanged` 不會對本頁呼叫 `on_activated`，見 DEVELOPER「刷新時機」）；
@@ -666,7 +666,7 @@ class TestTicketCrossPageRefresh(TicketTabBase):
         super().tearDown()
 
     def test_switching_back_via_signal_reflects_external_settlement(self):
-        # 比照自助結算：外部直接 UPDATE register_date/sender_id（settle_selected
+        # 比照發文結算：外部直接 UPDATE register_date/sender_id（settle_selected
         # 的效果），模擬另一頁（列印頁「結算發文」）幫這筆罰單補了發文日期。
         self._set_self_service(True)
         tabs, tab = self._make_multi_tab()

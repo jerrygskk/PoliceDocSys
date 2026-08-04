@@ -5,7 +5,7 @@
   - 所有罰單編號寫入入口一律先走 `normalizeTicketNo()`（去頭尾空白→轉大寫→
     只允許 ASCII 英數），UI 端不得自行 trim／upper 後直接寫 DB。
   - `register_date` 為三態欄位，語意與 `Document_Reward` 一致：
-    `NULL`＝軟刪除空殼、`''`＝自助登錄未發文、非空日期＝發文者登錄已發文。
+    `NULL`＝軟刪除空殼、`''`＝發文結算登錄未發文、非空日期＝發文者登錄已發文。
     因此「有效列」條件恆為 `register_date IS NOT NULL`。
   - 刪除一律清空業務欄位保留 `doc_id`（不真 DELETE、不寫 `Trash_Documents`；
     罰單為單欄輕量資料，不納入誤刪還原回收筒）。
@@ -201,7 +201,7 @@ def _writeTicketAudit(conn, *, role, action, label, doc_id, create_date,
     查得到刪掉的是哪張罰單。新增／修改請勿再把本函式加回去。
 
     `operator` 一律留空：罰單登錄開放所有已登入身分操作，資料列本身不足以
-    判定「是誰按下的」（自助模式沒有發文人員、admin 亦可代改），與其寫入
+    判定「是誰按下的」（發文結算模式沒有發文人員、admin 亦可代改），與其寫入
     可能誤導的姓名，不如只留 `role`。
     """
     writeAudit(
@@ -217,7 +217,7 @@ def createTicket(conn, *, issuer_id, ticket_no, self_service, sender_id,
                  create_date, role):
     """新增一筆罰單，回傳配發到的 `doc_id`（字串）。
 
-    自助模式：`register_date=''`、`sender_id=NULL`（UI 的發文者欄雖反灰仍可能
+    發文結算模式：`register_date=''`、`sender_id=NULL`（UI 的發文者欄雖反灰仍可能
     有殘留值，此處一律忽略）。發文者登錄模式：`register_date=create_date`、
     寫入指定發文者。`doc_id` 由 `Seq_DocId` 配發，**與罰單編號完全無關**。
     """
@@ -283,7 +283,7 @@ def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
     `register_date` 必須明確區分 `''`（未發文）與有效日期，**不接受 `None`**
     ——`NULL` 是刪除狀態的哨兵，只能經由 `deleteTicket()` 產生。
     另在 helper 層把關「已發文必有發文人員」（有發文日期就必然有發文者：
-    發文者登錄模式當場指定、自助結算整批寫入），資料表 CHECK 不改動——既有
+    發文者登錄模式當場指定、發文結算整批寫入），資料表 CHECK 不改動——既有
     資料庫的 CHECK 不會因改 schema 而重建，只有這裡擋得住。呼叫端必須傳入
     對話框載入時的五欄 `original_values`，不得於儲存時重查快照。
     """

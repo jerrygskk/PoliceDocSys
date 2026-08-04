@@ -371,15 +371,15 @@ class TabReport(BaseTab, InputLockMixin):
         return "crim" if idx == 0 else "gen"
 
     def _applyInputLock(self):
-        """覆寫：先套唯讀設定鎖，再疊加自助取號模式的欄位反灰。"""
+        """覆寫：先套唯讀設定鎖，再疊加發文結算模式的欄位反灰。"""
         super()._applyInputLock()
         self._applySelfServiceMode()
 
     def _applySelfServiceMode(self):
-        """自助取號模式：陳報日期／發文人員兩欄反灰（由結算時自動填入）。
+        """發文結算模式：陳報日期／發文人員兩欄反灰（由結算時自動填入）。
         唯讀鎖已停用整個表單時這兩欄已是停用狀態，不衝突。"""
         is_self = isSelfServiceMode(self.db_path, self._currentLockKind())
-        tip = "自助取號模式：發文日期與送文者由結算時自動填入" if is_self else ""
+        tip = "發文結算模式" if is_self else ""
         for w in [self.rpt_date, self.rpt_sender]:
             if w:
                 if is_self:
@@ -387,13 +387,13 @@ class TabReport(BaseTab, InputLockMixin):
                 w.setToolTip(tip)
         # 陳報日期顯示空白：僅在反灰（不可互動）狀態下用 specialValueText 哨兵，
         # 無鍵盤/滑鼠路徑，不會踩 QDateEdit 可編輯空白欄的雷（踩雷表 #3）。
-        # 送出值與此無關（自助模式 _submit 一律帶 report_date=None）。
+        # 送出值與此無關（發文結算模式 _submit 一律帶 report_date=None）。
         if self.rpt_date:
             if is_self:
                 self.rpt_date.setSpecialValueText(" ")
                 self.rpt_date.setDate(self.rpt_date.minimumDate())
             elif self.rpt_date.specialValueText():
-                # 從自助切回送文者模式：清哨兵、還原今天（僅切換當下做一次，
+                # 從發文結算模式切回送文者模式：清哨兵、還原今天（僅切換當下做一次，
                 # 平時重複呼叫不動使用者已選的日期）
                 self.rpt_date.setSpecialValueText("")
                 self.rpt_date.setDate(QDate.currentDate())

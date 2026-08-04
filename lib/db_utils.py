@@ -706,7 +706,7 @@ INPUT_LOCK_KEYS = {
     "crim":     "input_lock_crim",
     "gen":      "input_lock_gen",
     "ticket":   "input_lock_ticket",     # 罰單登錄
-    "reward":   "input_lock_reward",     # 敘獎登錄（自助模式下亦即發文源頭）
+    "reward":   "input_lock_reward",     # 敘獎登錄（發文結算模式下亦即發文源頭）
 }
 
 
@@ -723,9 +723,17 @@ def isInputLocked(db_path, kind):
 
 
 # ══════════════════════════════════════════════════════════════════
-# 輸入模式（自助取號／送文者輸入；存 App_Settings；僅 admin 可改）
+# 輸入模式（發文結算／送文者輸入；存 App_Settings；僅 admin 可改）
 # ──────────────────────────────────────────────────────────────────
 # 跨年度重置不清此 key（模式是單位的作業型態，見 performYearEndReset）。
+#
+# ⚠️ 命名落差：程式裡的 SelfService／self_service（`isSelfServiceMode`、
+# `anySelfServiceMode`、各頁的 `_SELF_SERVICE_HINT` 等）＝UI 上的**發文結算模式**。
+# 這是舊名，UI 用語後來改成「發文結算模式」而識別字刻意不動：改名要同步 70 餘處
+# 卻無實質好處，且會讓 HISTORY 與 git log 的舊名對不上。新增相關程式沿用舊識別字，
+# 面向使用者的字串一律寫「發文結算模式」。
+# 下面兩組**字串**才是真正寫進 App_Settings 的 key，改動需考慮舊資料庫相容性；
+# 識別字改名則與資料庫無關。
 REPORT_INPUT_MODE_KEY = "report_input_mode"
 REPORT_MODE_KEYS = {
     "crim": "report_mode_crim",
@@ -736,12 +744,12 @@ REPORT_MODE_KEYS = {
 
 # 僅這三種流程在新 key 不存在時回退讀舊的全域 report_input_mode（歷史相容）。
 # reward 是後來才掛回陳報模式的流程，**不得**吃這個回退：舊資料庫可能殘留
-# report_input_mode='1'，若回退會讓敘獎在未經設定的情況下莫名變成自助取號。
+# report_input_mode='1'，若回退會讓敘獎在未經設定的情況下莫名變成發文結算。
 LEGACY_MODE_FALLBACK_KINDS = ("crim", "gen", "ticket")
 
 
 def isSelfServiceMode(db_path, kind) -> bool:
-    """判斷 crim、gen、ticket、reward 是否為自助取號模式。
+    """判斷 crim、gen、ticket、reward 是否為發文結算模式。
 
     未知 kind 回傳 False；僅 LEGACY_MODE_FALLBACK_KINDS 在新 key 不存在時
     才回退讀取舊 key（reward 不回退，key 不存在一律送文者模式）。新 key 即使
@@ -761,7 +769,7 @@ def isSelfServiceMode(db_path, kind) -> bool:
 
 
 def anySelfServiceMode(db_path) -> bool:
-    """判斷任一類別是否啟用自助取號模式。"""
+    """判斷任一類別是否啟用發文結算模式。"""
     return any(isSelfServiceMode(db_path, kind) for kind in REPORT_MODE_KEYS)
 
 

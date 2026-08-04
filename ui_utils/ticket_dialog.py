@@ -178,7 +178,7 @@ class TicketEditDialog(_BaseEditDialog):
             self._set_combo(self.w_sender, sender_id)
         else:
             self.w_create_date.setText(str(create_date or ""))
-            # register_date 三態：''＝尚未發文（自助登錄），日期字串＝已發文。
+            # register_date 三態：''＝尚未發文（發文結算登錄），日期字串＝已發文。
             self.w_register_date.setText(str(register_date) if register_date
                                          else "未發文")
             self.w_sender_name.setText(str(sender_name or "－"))

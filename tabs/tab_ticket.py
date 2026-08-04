@@ -4,7 +4,7 @@
 界線（重要）：
   - 所有寫入一律走 `lib.ticket_utils` 的 domain helper，本檔不自組業務 SQL；
     唯一的 SELECT 是預覽表刷新與候選人員排序，走 `Document_Ticket_Full` View。
-  - 兩種模式（`isSelfServiceMode`）：自助取號模式下發文人員欄**保留位置但反灰**
+  - 兩種模式（`isSelfServiceMode`）：發文結算模式下發文人員欄**保留位置但反灰**
     （不隱藏，避免版面跳動），並顯示可見的提示 QLabel——不可只靠 tooltip，
     深色模式下 tooltip 整塊黑（PITFALLS QSS-7）。提交時強制 `sender_id=None`，
     **不得讀取反灰欄的殘留 UI 值**。
@@ -40,10 +40,10 @@ from ui_utils import (
 from lib.archive_text import _trimName
 
 
-# 未發文（自助取號模式）在預覽表的橘字提示，與敘獎登錄一致
+# 未發文（發文結算模式）在預覽表的橘字提示，與敘獎登錄一致
 _UNISSUED_COLOR = "#e67e22"
 
-_SENDER_HINT = "自助取號模式：發文人員免填"
+_SENDER_HINT = "發文結算模式"
 
 
 class TabTicket(BaseTab, InputLockMixin):
@@ -164,7 +164,7 @@ class TabTicket(BaseTab, InputLockMixin):
         `currentChanged→_onShown` 是唯一的切頁掛鉤點；基底 `_onShown`
         只重套唯讀鎖，不會重載預覽表／候選清單／參照下拉。覆寫成呼叫
         `on_activated()`（內含 `_applyInputLock()`），比照 `tab_reward`
-        的做法，讓跨頁異動（瀏覽頁 admin 編輯／刪除、自助結算）在切回本頁
+        的做法，讓跨頁異動（瀏覽頁 admin 編輯／刪除、發文結算）在切回本頁
         時反映。⚠️ `_connectSignals` 不得再自行 `connect(currentChanged)`，
         否則 `_setupInputLock` 的既有連線會重複觸發本方法。
         """
@@ -213,7 +213,7 @@ class TabTicket(BaseTab, InputLockMixin):
                 or not isInputLocked(self.db_path, kind))
 
     def _applyInputLock(self):
-        """唯讀鎖套用後必須再套一次自助模式，否則反灰的發文人員欄會被解鎖回可用。"""
+        """唯讀鎖套用後必須再套一次發文結算模式，否則反灰的發文人員欄會被解鎖回可用。"""
         super()._applyInputLock()
         self._applySelfServiceMode()
 
@@ -294,7 +294,7 @@ class TabTicket(BaseTab, InputLockMixin):
             self._focusFirstMissing(missing)
             return
         self_service = isSelfServiceMode(self.db_path, "ticket")
-        # 自助模式一律送 None：反灰欄可能有殘留值，此處不得讀取。
+        # 發文結算模式一律送 None：反灰欄可能有殘留值，此處不得讀取。
         sender_id = None if self_service else self.ticket_sender.currentData()
         conn = None
         try:
@@ -422,7 +422,7 @@ class TabTicket(BaseTab, InputLockMixin):
         for offset, value in enumerate(values):
             col = offset + 2
             if col == 3:
-                # register_date 三態：''＝尚未發文（自助登錄）→ 橘字提示。
+                # register_date 三態：''＝尚未發文（發文結算登錄）→ 橘字提示。
                 # 不可用 `if not register_date` 判斷有效性（NULL 是刪除哨兵，
                 # 有效列查詢已排除）。
                 text = str(register_date) if register_date else "未發文"

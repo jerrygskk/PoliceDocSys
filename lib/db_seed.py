@@ -8,7 +8,7 @@
 預設密碼（admin / 0000 的 SHA-256）暫塞於此；威脅模型下可接受，
 日後若改首次啟動強制設定再移除（見 docs/handover 待議）。
 簽收表四個 key 以空值播種＝維持「未設定」紅字提醒（printTitlesUnset 視空為未設定）。
-各類型自助取號 key 以 '0' 播種＝預設送文者模式，既有庫維持 fallback。
+各類型發文結算 key 以 '0' 播種＝預設送文者模式，既有庫維持 fallback。
 """
 
 # (staff_id, staff_name, is_active, sort_order, alias)

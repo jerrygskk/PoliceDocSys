@@ -1,4 +1,4 @@
-"""GUI pilot：自助取號模式登錄 → 列印頁結算發文（四種流程全走）。
+"""GUI pilot：發文結算模式登錄 → 列印頁結算發文（四種流程全走）。
 
 **這支測試的重點是那條接縫**：待結算的判定條件是「發文日期為 NULL 或空字串」，
 而登錄端各流程寫進去的哨兵**並不一致**——陳報（刑案／一般）寫 `None`，
@@ -247,8 +247,8 @@ def test_self_service_entry_writes_sentinel_that_settle_side_can_find(
     rows = _rows(db_path, key)
     assert len(rows) == 1, f"{FLOWS[key]['label']}應寫入一筆"
     doc_id, date_val, sender_id = rows[0]
-    assert date_val == FLOWS[key]["sentinel"], "自助模式的發文日期哨兵不符"
-    assert sender_id is None, "自助模式不得寫入送文者"
+    assert date_val == FLOWS[key]["sentinel"], "發文結算模式的發文日期哨兵不符"
+    assert sender_id is None, "發文結算模式不得寫入送文者"
     assert count_unissued(db_path).get(key) == 1
     assert [str(r["doc_id"]) for r in load_unissued(db_path).get(key, [])] == [doc_id]
     assert not quiet_dialogs["warning"] and not quiet_dialogs["error"]
@@ -323,7 +323,7 @@ def test_ticket_conflict_rolls_back_every_flow_and_warns(
 
 def test_print_tab_shows_settle_entry_and_chains_to_receipt(
         qtbot, db_path, quiet_dialogs, monkeypatch):
-    """列印頁：自助模式下結算群組現身，結算成功後接著以結算日產生簽收表。
+    """列印頁：發文結算模式下結算群組現身，結算成功後接著以結算日產生簽收表。
 
     只驗一條龍有接上與日期正確；實際繪圖由列印基準網負責，不在此重畫。"""
     _enable_self_service(db_path)
@@ -332,7 +332,7 @@ def test_print_tab_shows_settle_entry_and_chains_to_receipt(
     tab = TabPrint(_host(qtbot), db_path)
     tab.setup(0)
     assert tab._settle_group.isVisibleTo(tab._settle_group.parentWidget()), \
-        "自助模式下結算群組應現身"
+        "發文結算模式下結算群組應現身"
     assert "刑案" in tab.lbl_unissued.text()
 
     generated = []
@@ -355,8 +355,8 @@ def test_print_tab_shows_settle_entry_and_chains_to_receipt(
 
 def test_sender_mode_keeps_fields_editable_and_requires_sender(
         qtbot, db_path, quiet_dialogs):
-    """未開自助模式（送文者登錄）：發文欄位可填，且沒選發文人員要被擋下。
-    這是自助模式的反面，確保反灰與免填不會外溢到送文者模式。"""
+    """未開發文結算模式（送文者登錄）：發文欄位可填，且沒選發文人員要被擋下。
+    這是發文結算模式的反面，確保反灰與免填不會外溢到送文者模式。"""
     tab = TabReport(_host(qtbot), db_path)
     tab.setup(0)
     assert tab.rpt_date.isEnabled()

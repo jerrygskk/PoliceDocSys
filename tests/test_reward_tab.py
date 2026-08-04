@@ -54,7 +54,7 @@ class TestRewardTab(unittest.TestCase):
         self.assertTrue(tab.reward_date.isEnabled())
         self.assertTrue(tab.reward_sender.isEnabled())
         self.assertEqual(tab.reward_date.date(), QDate.currentDate())
-        # 送文者模式不顯示自助提示條（比照罰單登錄頁的可見 QLabel 提示）
+        # 送文者模式不顯示發文結算模式提示條（比照罰單登錄頁的可見 QLabel 提示）
         self.assertTrue(tab.reward_sender_hint.isHidden())
         self.assertEqual(tab.reward_reason.placeholderText(), "請輸入敘獎事由")
         self.assertFalse(hasattr(tab, "clear_tables"))
@@ -147,10 +147,10 @@ class TestRewardTab(unittest.TestCase):
         tab = self._make_tab()
         self.assertFalse(tab.reward_date.isEnabled())
         self.assertFalse(tab.reward_sender.isEnabled())
-        # 自助模式：以可見提示條說明兩欄免填（tooltip 在深色模式看不到，QSS-7）
+        # 發文結算模式：以可見提示條說明兩欄免填（tooltip 在深色模式看不到，QSS-7）
         self.assertFalse(tab.reward_sender_hint.isHidden())
         self.assertEqual(tab.reward_sender_hint.text(),
-                         "自助取號模式：發文日期與發文人員免填")
+                         "發文結算模式")
         for _ in range(2):
             tab.reward_reason.setText("  協助查緝  ")
             tab.reward_recipients.setCurrentText("測試甲、測試乙，測試甲")

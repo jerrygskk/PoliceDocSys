@@ -141,7 +141,7 @@ class TestEditDialogs(_DialogBase):
         conn.close()
 
     def test_report_edit_locks_fields_for_regular_user_in_self_service(self):
-        # 自助取號模式＋一般使用者：陳報日期／發文人員反灰（避免繞過結算）。
+        # 發文結算模式＋一般使用者：陳報日期／發文人員反灰（避免繞過結算）。
         from unittest.mock import patch
         from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
         self._set_self_service(True)
@@ -155,7 +155,7 @@ class TestEditDialogs(_DialogBase):
                 dlg.deleteLater()
 
     def test_report_edit_manager_not_locked_in_self_service(self):
-        # 自助取號模式＋管理者／歸檔管理者：不擋，仍可手動補正。
+        # 發文結算模式＋管理者／歸檔管理者：不擋，仍可手動補正。
         from unittest.mock import patch
         from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
         self._set_self_service(True)
@@ -169,7 +169,7 @@ class TestEditDialogs(_DialogBase):
                 dlg.deleteLater()
 
     def test_report_edit_fields_editable_when_not_self_service(self):
-        # 非自助模式：任何身分皆可編輯。
+        # 非發文結算模式：任何身分皆可編輯。
         from unittest.mock import patch
         from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
         self._set_self_service(False)
@@ -371,7 +371,7 @@ class TestTicketEditDialog(_DialogBase):
         dlg.deleteLater()
 
     def test_unissued_row_shows_pending_label(self):
-        # register_date=''＝自助登錄未發文（NULL 才是刪除哨兵）
+        # register_date=''＝發文結算登錄未發文（NULL 才是刪除哨兵）
         from ui_utils.ticket_dialog import TicketEditDialog
         conn = sqlite3.connect(self.db)
         conn.execute("UPDATE Document_Ticket SET register_date='',sender_id=NULL "

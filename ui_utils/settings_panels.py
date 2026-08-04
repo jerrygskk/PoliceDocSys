@@ -856,7 +856,7 @@ class BackupPanel(_SettingsPanel):
 
 
 # ══════════════════════════════════════════════════════════════════
-# 輸入模式（自助取號／送文者輸入；僅 admin 可改；即時生效）
+# 輸入模式（發文結算／送文者輸入；僅 admin 可改；即時生效）
 # ══════════════════════════════════════════════════════════════════
 class InputModePanel(_SettingsPanel):
     """陳報模式：刑案陳報／一般陳報／敘獎登錄／罰單登錄各自二選一。
@@ -899,7 +899,7 @@ class InputModePanel(_SettingsPanel):
         head.addWidget(spacer)
         for title, desc in (
             ("送文者輸入模式", "輸入時一併輸入日期與送文人員"),
-            ("自助取號模式", "各承辦人先行輸入後再由送文者結算發文"),
+            ("發文結算模式", "各承辦人先行輸入後再由送文者結算發文"),
         ):
             cell = QVBoxLayout()
             cell.setSpacing(2)
@@ -1026,7 +1026,7 @@ class InputModePanel(_SettingsPanel):
             old_self = transitions[kind][0]
             setSetting(self.db_path, REPORT_MODE_KEYS[kind], "1" if new_self else "0")
             if new_self != old_self:
-                name = lambda s: "自助取號" if s else "送文者輸入"  # noqa: E731
+                name = lambda s: "發文結算" if s else "送文者輸入"  # noqa: E731
                 writeAuditSafe(self.db_path, role=am.current_role, action="CONFIG",
                                operator=am.actor_name(),
                                detail=buildDetail(

@@ -40,13 +40,13 @@ class HelpContentContractTests(unittest.TestCase):
         browse_help = render_review_text(6)
         settings_help = render_review_text(8)
         self.assertIn("登錄日期由系統自動填入今天", reward_help)
-        self.assertIn("自助取號模式", reward_help)
+        self.assertIn("發文結算模式", reward_help)
         self.assertIn("送文者輸入模式", reward_help)
         self.assertNotIn("敘獎發文", reward_help)
         # 模式名稱必須與設定頁 radio 的字面一致（使用者要照著去設定頁找選項），
         # 不可自創「發文者登錄模式」之類的同義詞。
         self.assertIn("送文者輸入模式", ticket_help)
-        self.assertIn("自助取號模式", ticket_help)
+        self.assertIn("發文結算模式", ticket_help)
         self.assertIn("開立人員", ticket_help)
         self.assertIn("取代", ticket_help)
         self.assertIn("清空", ticket_help)
@@ -71,11 +71,11 @@ class HelpContentContractTests(unittest.TestCase):
         })
         # 罰單與敘獎同受陳報模式影響，說明不可再宣稱「只影響刑案與一般」
         self.assertIn(
-            "自助取號模式影響刑案與一般陳報，以及敘獎登錄與罰單登錄", settings_help)
+            "發文結算模式影響刑案與一般陳報，以及敘獎登錄與罰單登錄", settings_help)
         self.assertNotIn("敘獎登錄與敘獎發文不受陳報模式影響", settings_help)
         self.assertNotIn("一併於結算時補齊", settings_help)
         self.assertIn("罰單簽收歸屬日一律依發文日期", settings_help)
-        self.assertIn("與目前採送文者輸入模式或自助取號模式無關", settings_help)
+        self.assertIn("與目前採送文者輸入模式或發文結算模式無關", settings_help)
         self.assertNotIn("歷史單據的列印結果會隨目前模式而不同", settings_help)
         self.assertIn("一般使用者唯讀", browse_help)
         self.assertIn("歸檔管理可修改、不可刪除", browse_help)

@@ -85,7 +85,7 @@ def test_bundle_checker_is_documented_as_fail_closed():
 def test_new_tab_checklist_points_at_per_flow_report_mode():
     developer = _developer()
 
-    assert "新 Tab 若有日期／發文欄位要接自助取號模式" not in developer
+    assert "新 Tab 若有日期／發文欄位要接發文結算模式" not in developer
     assert ("會發文的輸入頁才依需求接陳報模式（`REPORT_MODE_KEYS` 逐流程一把"
             in developer)
 

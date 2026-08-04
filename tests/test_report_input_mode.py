@@ -1,5 +1,5 @@
 """
-test_report_input_mode.py — 自助取號模式純邏輯測試
+test_report_input_mode.py — 發文結算模式純邏輯測試
 
 涵蓋：
   - isSelfServiceMode：未設定＝False、"1"＝True、壞值 fallback False
@@ -368,7 +368,7 @@ class TestPerKindMode(unittest.TestCase):
             self._db({"report_input_mode": "1"}), "assignment"))
 
     def test_reward_never_uses_legacy_global_fallback(self):
-        """舊庫殘留 report_input_mode=1 不得讓敘獎莫名變自助取號。
+        """舊庫殘留 report_input_mode=1 不得讓敘獎莫名變發文結算。
 
         reward 是後來才掛回陳報模式的流程，只認自己的 report_mode_reward。
         """
@@ -387,7 +387,7 @@ class TestPerKindMode(unittest.TestCase):
             "reward"))
 
     def test_any_self_service_ignores_legacy_key_for_reward_only_db(self):
-        """只有敘獎設自助時 anySelfServiceMode 為真；只有舊 key 時 reward 不算。"""
+        """只有敘獎設發文結算模式時 anySelfServiceMode 為真；只有舊 key 時 reward 不算。"""
         from lib.db_utils import anySelfServiceMode
         self.assertTrue(anySelfServiceMode(self._db({"report_mode_reward": "1"})))
 
@@ -1038,7 +1038,7 @@ class TestInputModePanelSave(unittest.TestCase):
             "SELECT detail FROM Audit_Log").fetchall()]
         conn.close()
         self.assertTrue(
-            any("刑案陳報：送文者輸入 → 自助取號" in d for d in details),
+            any("刑案陳報：送文者輸入 → 發文結算" in d for d in details),
             f"稽核未帶舊值：{details}")
 
     def test_save_is_rejected_for_non_admin(self):

@@ -40,7 +40,7 @@
           <property name="topMargin"><number>0</number></property>
           <property name="rightMargin"><number>0</number></property>
           <property name="bottomMargin"><number>0</number></property>
-          <item><widget class="QLabel" name="reward_sender_hint"><property name="text"><string>自助取號模式：發文日期與發文人員免填</string></property><property name="minimumSize"><size><width>0</width><height>36</height></size></property><property name="maximumSize"><size><width>16777215</width><height>36</height></size></property><property name="styleSheet"><string notr="true">background-color: #fdf3e0; color: #8a5c14; border: 1px solid #f0d9a8; border-radius: 7px; padding: 4px 12px;</string></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignVCenter</set></property></widget></item>
+          <item><widget class="QLabel" name="reward_sender_hint"><property name="text"><string>發文結算模式</string></property><property name="minimumSize"><size><width>0</width><height>36</height></size></property><property name="maximumSize"><size><width>16777215</width><height>36</height></size></property><property name="styleSheet"><string notr="true">background-color: #fdf3e0; color: #8a5c14; border: 1px solid #f0d9a8; border-radius: 7px; padding: 4px 12px;</string></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignVCenter</set></property></widget></item>
           <item><spacer name="rewardHintStretch"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>0</width><height>0</height></size></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
          </layout>
         </item>

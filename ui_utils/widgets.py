@@ -351,7 +351,7 @@ def setupDateEditToToday(date_edit):
         cal   = date_edit.calendarWidget()
         today = QDate.currentDate()
         if cal:
-            # specialValueText 有值＝刻意顯示空白的哨兵狀態（如自助取號模式
+            # specialValueText 有值＝刻意顯示空白的哨兵狀態（如發文結算模式
             # 反灰的陳報日期），勿自動補回今天
             if (date_edit.date() == date_edit.minimumDate()
                     and not date_edit.specialValueText()):

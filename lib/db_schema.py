@@ -65,7 +65,7 @@ _TABLES = (
     last_modified DATETIME
 )""",
     # Document_Ticket（罰單登錄）
-    # 三態同 Document_Reward：register_date NULL＝軟刪除空殼、''＝自助登錄未發文、
+    # 三態同 Document_Reward：register_date NULL＝軟刪除空殼、''＝發文結算登錄未發文、
     # 非空日期＝發文者登錄。CHECK 保證「整列全空」或「業務欄齊備且編號為 ASCII 英數」
     # 兩種狀態擇一，防止半殘列繞過 domain helper 寫進來。
     # sender_id／issuer_id 為真外鍵（getConn 已開 PRAGMA foreign_keys=ON）。

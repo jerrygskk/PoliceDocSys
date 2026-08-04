@@ -114,7 +114,7 @@ def _set_backup(panel):
 
 
 def _set_input_mode(panel):
-    panel._radios["ticket"][1].setChecked(True)      # (送文者鈕, 自助鈕)
+    panel._radios["ticket"][1].setChecked(True)      # (送文者鈕, 發文結算鈕)
 
 
 PANELS = {

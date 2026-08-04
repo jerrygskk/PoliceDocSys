@@ -21,7 +21,7 @@ from ui_utils import (
 from ui_utils.date_guard import confirmDateGap
 
 
-_SELF_SERVICE_HINT = "自助取號模式：發文日期與發文人員免填"
+_SELF_SERVICE_HINT = "發文結算模式"
 
 
 class TabReward(BaseTab, InputLockMixin):
@@ -100,14 +100,14 @@ class TabReward(BaseTab, InputLockMixin):
         return [(sid, name) for sid, name, _ in self._personnel]
 
     def _applyInputLock(self):
-        """覆寫：先套唯讀設定鎖，再疊加自助取號模式的欄位反灰。
-        否則自助模式下該反灰的兩欄會被唯讀鎖解除時一併解鎖回可用
+        """覆寫：先套唯讀設定鎖，再疊加發文結算模式的欄位反灰。
+        否則發文結算模式下該反灰的兩欄會被唯讀鎖解除時一併解鎖回可用
         （比照 tab_report／tab_ticket）。"""
         super()._applyInputLock()
         self._applySelfServiceMode()
 
     def _applySelfServiceMode(self):
-        """自助取號模式：發文日期與發文人員兩欄一起反灰，改由結算時自動填入；
+        """發文結算模式：發文日期與發文人員兩欄一起反灰，改由結算時自動填入；
         切回送文者模式清哨兵並還原今天（照 tab_report._applySelfServiceMode 精神）。
 
         提示以可見 QLabel（`reward_sender_hint`）呈現、比照罰單登錄頁：tooltip
@@ -115,7 +115,7 @@ class TabReward(BaseTab, InputLockMixin):
 
         日期用 specialValueText 哨兵顯示空白：僅在反灰（不可互動）狀態下，無鍵盤／
         滑鼠路徑，不踩 QDateEdit 可編輯空白欄的雷；widgets.setupDateEditToToday
-        已對此哨兵放行。送出值與此無關（自助模式 _submit 一律帶 register_date=''、
+        已對此哨兵放行。送出值與此無關（發文結算模式 _submit 一律帶 register_date=''、
         sender_id NULL）。"""
         if not getattr(self, "reward_date", None):
             return
@@ -133,7 +133,7 @@ class TabReward(BaseTab, InputLockMixin):
             self.reward_date.setSpecialValueText(" ")
             self.reward_date.setDate(self.reward_date.minimumDate())
         elif self.reward_date.specialValueText():
-            # 從自助切回送文者模式：清哨兵、還原今天（僅切換當下做一次）
+            # 從發文結算模式切回送文者模式：清哨兵、還原今天（僅切換當下做一次）
             self.reward_date.setSpecialValueText("")
             self.reward_date.setDate(QDate.currentDate())
 
@@ -229,12 +229,12 @@ class TabReward(BaseTab, InputLockMixin):
                 and isInputLocked(self.db_path, "reward")):
             msgWarning("目前為唯讀", "此年度的敘獎登錄已鎖定，無法新增資料。")
             return
-        # 自助取號模式：發文日期留空哨兵（''）、發文人員 NULL，事後由列印頁結算
+        # 發文結算模式：發文日期留空哨兵（''）、發文人員 NULL，事後由列印頁結算
         # 補發文日期與送文者；送文者模式則兩者當下填入（發文人員必填）。
         # ⚠️ 登錄日期 create_date 與模式無關，兩模式一律帶今天。
         is_self = isSelfServiceMode(self.db_path, "reward")
         if is_self:
-            # 自助模式一律送空值：反灰欄可能有殘留值，此處不得讀取。
+            # 發文結算模式一律送空值：反灰欄可能有殘留值，此處不得讀取。
             register_date = ""
             sender_id = None
         else:
@@ -251,7 +251,7 @@ class TabReward(BaseTab, InputLockMixin):
         if missing:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(missing)}")
             return
-        # 發文人員必填（僅送文者模式；自助模式由結算補填），比照 tab_dispatch。
+        # 發文人員必填（僅送文者模式；發文結算模式由結算補填），比照 tab_dispatch。
         if not is_self and not sender_id:
             msgWarning("欄位未填", "請選擇發文人員。")
             return

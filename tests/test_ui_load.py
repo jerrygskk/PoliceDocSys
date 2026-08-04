@@ -77,7 +77,7 @@ class TestUiLoad(unittest.TestCase):
                 self.assertIsNotNone(w.findChild(cls, name))
         table = w.findChild(QTableWidget, "reward_tableWidget")
         self.assertEqual(table.columnCount(), 5)
-        # 發文日期／發文人員兩欄固定寬（比照陳報頁），送文者模式填、自助模式反灰。
+        # 發文日期／發文人員兩欄固定寬（比照陳報頁），送文者模式填、發文結算模式反灰。
         for cls, name in ((QDateEdit, "reward_date"),
                           (QComboBox, "reward_sender")):
             field = w.findChild(cls, name)
