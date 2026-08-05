@@ -79,45 +79,16 @@
 - release note 給 `.md` 檔（不入庫），**不要打在對話裡**
 - 打包**只用 onefile**、build 一律用 PowerShell tool、每次砍 spec 全新 build（指令見 DEVELOPER §7）
 
-#### commit 訊息寫法（唯一來源，Codex／Claude 同適用）
+#### commit 訊息寫法（本專案補充）
 
-⚠️ **不得只寫一行標題帶過**。commit 訊息是這個專案的第二層歷史（第一層是 HISTORY.md），
-半年後回頭查「這行為什麼改成這樣」時，`git log` 就是答案；只寫「修正罰單簽收表」等於沒寫。
+**通用寫法（格式、正文三件事、手動斷行、署名、PowerShell 的正解、禁止的空訊息）見全域設定**，
+Codex／其他工具開工前自行讀取全域檔。下面只列本專案專屬的部分：
 
-- **格式**：標題行 `類型: 中文摘要` → 空一行 → 正文。類型用
-  `feat`／`fix`／`perf`／`docs`／`refactor`／`test`／`chore`／`release`。
-  標題不超過約 25 個全形字、句尾不加句號；發版用 `release: v1.2.9 摘要`。
-- **正文一定要寫的三件事**：①**為什麼改**（原本的錯誤行為或需求，寫得出使用者看到的症狀最好）
-  ②**改成什麼**（做法與關鍵取捨）③**影響範圍**（連帶動到哪些檔案／流程／文件／測試）。
-  只寫「改了什麼」不寫「為什麼」是最常見的失敗。
-- **踩雷類改動**：把症狀與根因寫進正文（例：`msjh.ttc` 與 `msjhbd.ttc` family 名相同
-  導致靠名字切字重靜默失效），這是往後 PITFALLS 條目的素材來源。
-- **分行技巧**：正文**手動斷行**在約 40 個全形字（不靠編輯器自動折），避免 `git log`
-  在終端機被硬折斷；一個主題一段、段間空一行；同一版含多項改動時段內用 ①②③ 條列。
-- **結尾**固定加 `Co-Authored-By:` 一行（Claude 用制式署名）。
-- **寫法**：多行訊息一律 `git commit -F - <<'EOF' … EOF`（Bash heredoc），
-  **不要用 PowerShell here-string**（踩過多次）。
-- ⚠️ **只有 PowerShell 可用時（Codex 常見）別硬塞 heredoc**：把 Bash 多行字串當參數
-  丟給 PowerShell，引號會被 PowerShell 先解析一次而中止，**commit 沒改到、但前面的
-  `git reset` 之類可能已經跑掉**（實際踩過）。正解是**訊息落檔再 `-F` 讀檔**，
-  全程不經過 shell 引號：
-  ```powershell
-  $msg = @"
-  類型: 標題
-  
-  正文……
-  "@
-  [System.IO.File]::WriteAllText("$env:TEMP\cm.txt", $msg,
-      (New-Object System.Text.UTF8Encoding $false))
-  git commit -F "$env:TEMP\cm.txt"
-  Remove-Item "$env:TEMP\cm.txt"
-  ```
-  ⚠️ 兩個細節：①**必須無 BOM 的 UTF-8**（`Set-Content -Encoding utf8` 在
-  Windows PowerShell 5.1 會帶 BOM，BOM 會跟著跑進 commit 標題），故用
-  `UTF8Encoding $false`；②訊息檔用完即刪，不要留在專案目錄裡（會被誤 add）。
-  不要為了跑 heredoc 另外生一支 `.sh` 腳本——多一層檔案就多一個忘了刪與編碼出錯的機會。
-- **禁止**：`update files`／`fix bug`／`調整` 這類無資訊量的訊息；也不要把整段 diff
-  貼進訊息（要看程式碼去看 diff，訊息負責交代意圖）。
+- commit 訊息是這個專案的**第二層歷史**（第一層是 `HISTORY.md`）——半年後查
+  「這行為什麼改成這樣」時 `git log` 就是答案，只寫「修正罰單簽收表」等於沒寫。
+- 發版用 `release: v1.2.9 摘要` 當標題。
+- 踩雷類改動把症狀與根因寫進正文（例：`msjh.ttc` 與 `msjhbd.ttc` family 名相同
+  導致靠名字切字重靜默失效），那是往後 `PITFALLS.md` 條目的素材來源。
 
 ### D. 派工給 subagent（主程序的準備責任）
 
