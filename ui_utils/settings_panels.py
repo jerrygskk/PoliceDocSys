@@ -771,9 +771,16 @@ class BackupPanel(_SettingsPanel):
         """更新「最近副本備份」狀態字：未設定→隱藏；有設定→顯示最新日期，
         無備份／過舊給提醒色。"""
         from datetime import date
-        from lib.db_backup import latest_backup_date
+        from lib.db_backup import latest_backup_date, last_backup_error
         if not path:
             self.lbl_status.setText("")
+            return
+        # 本次開啟程式時這個位置備份失敗 → 直接顯示原因短句（純顯示，不重試）
+        failed = last_backup_error(path)
+        if failed:
+            self.lbl_status.setStyleSheet(
+                "color: #c0392b; font-size: 11pt; font-weight: 400;")
+            self.lbl_status.setText(f"⚠ {failed}")
             return
         latest = latest_backup_date(path)
         if latest is None:

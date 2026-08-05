@@ -3,6 +3,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+import unittest.mock
 from datetime import date
 
 from lib import db_backup
@@ -163,6 +164,139 @@ class TestExtraDirs(unittest.TestCase):
     def test_latest_backup_date_none_when_missing(self):
         self.assertIsNone(
             db_backup.latest_backup_date(os.path.join(self.tmp, "nope")))
+
+
+class TestEnsureDirOnExisting(unittest.TestCase):
+    """已存在的備份資料夾不得再呼叫 os.makedirs。
+
+    現場踩過：異地備份填 UNC 分享根目錄（`\\\\host\\share`）時，Windows 對該路徑的
+    makedirs 回 WinError 50，`exist_ok=True` 吞不掉（它只吞 FileExistsError），
+    於是資料夾明明存在、異地備份卻每次開機都靜默失敗。
+    """
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_existing_dir_skips_makedirs(self):
+        calls = []
+        real = os.makedirs
+
+        def spy(path, **kw):
+            calls.append(path)
+            return real(path, **kw)
+
+        os.makedirs(os.path.join(self.tmp, "here"), exist_ok=True)
+        with unittest.mock.patch.object(os, "makedirs", spy):
+            db_backup._ensure_dir(os.path.join(self.tmp, "here"))
+        self.assertEqual(calls, [])
+
+    def test_missing_dir_still_created(self):
+        target = os.path.join(self.tmp, "new", "deep")
+        db_backup._ensure_dir(target)
+        self.assertTrue(os.path.isdir(target))
+
+    def test_share_root_like_error_does_not_break_backup(self):
+        """模擬 WinError 50：資料夾存在但 makedirs 會拋 → 備份仍應完成。"""
+        src = os.path.join(self.tmp, "dbfile.db")
+        conn = sqlite3.connect(src)
+        conn.execute("CREATE TABLE t(id INTEGER PRIMARY KEY)")
+        conn.commit(); conn.close()
+        second = os.path.join(self.tmp, "share_root")
+        os.makedirs(second, exist_ok=True)
+
+        def boom(path, **kw):
+            raise OSError(22, "不支援這個要求。", path, 50)
+
+        with unittest.mock.patch.object(os, "makedirs", boom):
+            db_backup.run_auto_backup(src, extra_dirs=[second])
+        self.assertEqual(len(db_backup.parse_daily_dates(os.listdir(second))), 1)
+
+
+class TestDescribeBackupErrors(unittest.TestCase):
+    """備份失敗訊息白話化：一律以 winerror／errno 判斷，不比對訊息文字。"""
+    def _win(self, code):
+        return OSError(22, "whatever", r"\\host\share", code)
+
+    def test_share_root_not_supported(self):
+        msg = db_backup.describeBackupDirError(
+            self._win(50), r"\\10.107.43.104\long", is_extra=True)
+        self.assertIn("異地備份位置無法使用", msg)
+        self.assertIn(r"\\10.107.43.104\long", msg)
+        self.assertIn("分享名稱", msg)
+        self.assertIn("主備份不受影響", msg)
+
+    def test_network_path_not_found(self):
+        msg = db_backup.describeBackupDirError(self._win(53), r"\\h\s", is_extra=True)
+        self.assertIn("找不到這個網路路徑", msg)
+
+    def test_main_dir_failure_wording_is_stronger(self):
+        msg = db_backup.describeBackupDirError(
+            PermissionError(13, "denied"), "C:/x/backups", is_extra=False)
+        self.assertIn("備份資料夾無法使用", msg)
+        self.assertIn("沒有寫入權限", msg)
+        self.assertIn("error.log", msg)
+
+    def test_disk_full(self):
+        e = OSError(28, "No space left on device")
+        self.assertIn("磁碟空間不足",
+                      db_backup.describeBackupDirError(e, "D:/b", is_extra=True))
+
+    def test_missing_folder(self):
+        e = FileNotFoundError(2, "not found")
+        self.assertIn("找不到這個資料夾",
+                      db_backup.describeBackupDirError(e, "D:/b", is_extra=True))
+
+    def test_unknown_falls_back(self):
+        msg = db_backup.describeBackupDirError(RuntimeError("?"), "D:/b")
+        self.assertIn("無法存取", msg)
+
+    def test_write_error_message(self):
+        msg = db_backup.describeBackupWriteError(
+            self._win(64), r"\\h\s\dbfile_backup_day_20260804.db")
+        self.assertIn("備份檔寫入失敗", msg)
+        self.assertIn("連線已中斷", msg)
+        self.assertIn("其餘備份不受影響", msg)
+
+    def test_brief_message_has_no_reason_parens(self):
+        msg = db_backup.briefBackupDirError(r"\\10.107.43.104\long", is_extra=True)
+        self.assertEqual(
+            msg, r"異地備份位置無法使用：\\10.107.43.104\long。本次已略過異地備份。")
+
+    def test_last_backup_error_recorded_and_cleared(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            src = os.path.join(tmp, "dbfile.db")
+            conn = sqlite3.connect(src)
+            conn.execute("CREATE TABLE t(id INTEGER PRIMARY KEY)")
+            conn.commit(); conn.close()
+            second = os.path.join(tmp, "offsite")
+
+            def boom(path, **kw):
+                raise OSError(22, "不支援這個要求。", path, 50)
+
+            with unittest.mock.patch.object(db_backup, "_ensure_dir", boom):
+                db_backup.run_auto_backup(src, extra_dirs=[second])
+            self.assertIn("異地備份位置無法使用",
+                          db_backup.last_backup_error(second))
+            # 下次成功即清掉
+            db_backup.run_auto_backup(src, extra_dirs=[second])
+            self.assertIsNone(db_backup.last_backup_error(second))
+        finally:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_last_backup_error_none_for_unknown_path(self):
+        self.assertIsNone(db_backup.last_backup_error("D:/never/used"))
+
+    def test_locale_independent(self):
+        """同一錯誤碼、不同語系文字，分類結果必須相同。"""
+        zh = OSError(22, "不支援這個要求。", r"\\h\s", 50)
+        en = OSError(22, "The request is not supported", r"\\h\s", 50)
+        self.assertEqual(db_backup.describeBackupDirError(zh, "p"),
+                         db_backup.describeBackupDirError(en, "p"))
 
 
 class TestQuickCheck(unittest.TestCase):

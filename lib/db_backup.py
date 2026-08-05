@@ -25,7 +25,7 @@ import re
 import sqlite3
 from datetime import datetime
 
-from lib.db_utils import REWARD_ACTIVE_SQL
+from lib.db_utils import REWARD_ACTIVE_SQL, isDiskFullError
 from lib.ticket_utils import TICKET_ACTIVE_SQL
 
 BACKUP_DIR_NAME = "backups"
@@ -131,8 +131,8 @@ def do_backup(db_path, dest):
             src.close()
         os.replace(tmp, dest)
         return True
-    except Exception:
-        logging.error("自動備份寫入失敗：%s", dest, exc_info=True)
+    except Exception as e:
+        logging.error("%s", describeBackupWriteError(e, dest), exc_info=True)
         try:
             if os.path.exists(tmp):
                 os.remove(tmp)
@@ -150,9 +150,23 @@ def _prune(bdir, prefix, dates, keep):
             pass
 
 
+def _ensure_dir(bdir):
+    """確保備份資料夾存在。
+
+    ⚠️ **不可只寫 `os.makedirs(bdir, exist_ok=True)`**：`exist_ok` 只吞
+    `FileExistsError`，而 Windows 對「UNC 分享根目錄」（如 `\\\\10.107.43.104\\long`，
+    後面沒有再帶子資料夾）回的是 `OSError [WinError 50] 不支援這個要求`——
+    **即使該資料夾明明存在也照樣拋**，於是異地備份每次開機都靜默失敗。
+    故先判斷已存在就直接放行。
+    """
+    if os.path.isdir(bdir):
+        return
+    os.makedirs(bdir, exist_ok=True)
+
+
 def _run_gfs(db_path, bdir, today):
     """對單一備份資料夾跑一輪每日＋每週＋每月 GFS 輪替修剪。"""
-    os.makedirs(bdir, exist_ok=True)
+    _ensure_dir(bdir)
 
     # 每日
     daily = parse_daily_dates(os.listdir(bdir))
@@ -176,6 +190,82 @@ def _run_gfs(db_path, bdir, today):
     _prune(bdir, MONTHLY_PREFIX, monthly, MONTHLY_KEEP)
 
 
+# 備份資料夾存取失敗的白話分類（純邏輯，可單測）
+# key＝Windows 錯誤碼（OSError.winerror），value＝原因短句。
+# ⚠️ 一律以 winerror／errno 判斷，**不要比對錯誤訊息字串**——同一個錯誤碼在不同
+# 語系 Windows 上的文字不同（本案現場是「不支援這個要求」，英文版是
+# "The request is not supported"），比字串換台機器就失效。
+_WINERR_REASONS = {
+    50:   "網路位置不接受這項操作（常見於備份路徑只填到分享名稱、後面沒有再帶子資料夾）",
+    51:   "無法連線到網路上的這台電腦",
+    53:   "找不到這個網路路徑",
+    55:   "網路資料夾已不存在或未分享",
+    64:   "與這台電腦的連線已中斷",
+    67:   "網路名稱不正確或該分享已移除",
+    1231: "無法連上網路，可能網路線鬆脫或電腦不在單位網路內",
+}
+
+
+def describeBackupDirError(exc, path, is_extra=False):
+    """把備份資料夾的存取例外轉成承辦看得懂的一句話（純邏輯，可單測）。
+
+    `is_extra`＝True 表示這是「異地副本」位置，失敗只是略過、主備份不受影響；
+    False 表示主備份（db 旁 backups/）失敗，較嚴重，要提示聯繫維護人員。
+    技術細節（traceback、錯誤碼）不進這句話，仍另行寫進 error.log。
+    """
+    where = "異地備份位置" if is_extra else "備份資料夾"
+    tail = ("本次已略過異地備份，主備份不受影響。" if is_extra
+            else "本次未能建立備份，請聯繫維護人員並提供 error.log。")
+    return f"{where}無法使用：{path}（{_reason_for(exc)}）。{tail}"
+
+
+def briefBackupDirError(path, is_extra=False):
+    """給畫面顯示的短句（不含原因括號，原因留在 error.log）。
+
+    面板空間有限，巢狀括號的說明在畫面上讀不動；使用者要知道的只有
+    「哪個位置沒備到」。純顯示，不觸發任何動作。
+    """
+    if is_extra:
+        return f"異地備份位置無法使用：{path}。本次已略過異地備份。"
+    return f"備份資料夾無法使用：{path}。本次未能建立備份。"
+
+
+# 本次啟動的備份失敗紀錄：{備份資料夾路徑: 短句}。
+# 由 run_auto_backup 於失敗時寫入、成功時清掉；供系統設定面板顯示。
+# ⚠️ 只是顯示用的一份記錄，不重試、不影響備份流程本身。
+_LAST_ERRORS = {}
+
+
+def last_backup_error(bdir):
+    """回本次啟動時該備份位置的失敗短句；本次成功或未跑過回 None。"""
+    return _LAST_ERRORS.get((bdir or "").strip())
+
+
+def describeBackupWriteError(exc, dest):
+    """備份「寫入單一檔案」失敗的白話說明（純邏輯，可單測）。"""
+    return (f"備份檔寫入失敗：{dest}（{_reason_for(exc)}）。"
+            "本次未能建立這份備份，其餘備份不受影響。")
+
+
+def _reason_for(exc):
+    """把例外對應成一句原因短語；對照不到回「無法存取」。"""
+    winerr = getattr(exc, "winerror", None)
+    errno_ = getattr(exc, "errno", None)
+    if winerr in _WINERR_REASONS:
+        return _WINERR_REASONS[winerr]
+    if isDiskFullError(exc):
+        return "磁碟空間不足"
+    if isinstance(exc, PermissionError) or errno_ == 13 or winerr == 5:
+        return "沒有寫入權限，或檔案正被其他程式開啟"
+    if isinstance(exc, NotADirectoryError):
+        return "這個路徑是檔案、不是資料夾"
+    if isinstance(exc, FileNotFoundError) or errno_ == 2 or winerr == 3:
+        return "找不到這個資料夾"
+    if isinstance(exc, sqlite3.DatabaseError):
+        return "資料庫檔案讀取失敗，可能損毀或正被鎖定"
+    return "無法存取"
+
+
 def run_auto_backup(db_path, now=None, extra_dirs=None):
     """啟動時呼叫：主備份（db 旁 backups/）＋可選異地副本（extra_dirs 各一份），
     每處各自跑每日／每週輪替修剪。全程靜默，絕不阻擋開程式。
@@ -184,15 +274,20 @@ def run_auto_backup(db_path, now=None, extra_dirs=None):
     獨立 try——某處失敗（如網路碟斷線、權限不足）不影響其他處，也不擋開程式。
     """
     today = (now or datetime.now()).date()
-    dirs = [backup_dir(db_path)]
+    dirs = [(backup_dir(db_path), False)]
     for d in (extra_dirs or []):
         if d and d.strip():
-            dirs.append(d.strip())
-    for bdir in dirs:
+            dirs.append((d.strip(), True))
+    for bdir, is_extra in dirs:
         try:
             _run_gfs(db_path, bdir, today)
-        except Exception:
-            logging.error("自動備份程序異常：%s", bdir, exc_info=True)
+            _LAST_ERRORS.pop(bdir, None)
+        except Exception as e:
+            # 白話結論寫在訊息第一行（承辦看 error.log 時看得懂），
+            # 技術細節仍由 exc_info 附完整 traceback 於其後。
+            logging.error("%s", describeBackupDirError(e, bdir, is_extra),
+                          exc_info=True)
+            _LAST_ERRORS[bdir] = briefBackupDirError(bdir, is_extra)
 
 
 def latest_backup_date(bdir):
