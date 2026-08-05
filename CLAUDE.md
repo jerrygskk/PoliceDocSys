@@ -54,6 +54,10 @@
 
 - ⚠️ **產品 runtime 相依是封閉清單，只有 `PySide6`**（全域設計原則「優先用成熟函式庫」在本專案的明確例外）：多一個套件就多一段開機解壓與載入時間，而**開啟速度是本專案刻意付出代價換來的**——PDF 產出因此走 Qt 的 `QPdfWriter`／`QPrinter` 而不引入 reportlab。要往 `requirements.txt` 加東西**一律先問他**；`tools/` 與測試相依（`requirements-dev.txt`）不受此限。分界由 `tests/test_environment_contract.py` 守著
 
+- ⚠️ **完整版與獨立版的差異，一律加在 `AppProfile` 的欄位裡；現場要調的東西，一律做成 `App_Settings` 的 key。不要在程式各處寫「如果是獨立版就……」這種判斷。**
+  理由很簡單：差異寫在一個地方，下次要改只改那一處；散在各處，下次就會漏改其中幾處。
+  全域設計原則有一條說「不要做臆測性的設定項」，那是指**還沒有人需要**就先做一個開關（例如「以後說不定要換資料庫，先做個抽象層」）。本專案這兩樣**是已經存在的真實需求**（真的有兩支 exe、現場真的要調），不在那條的範圍內，別拿那條當理由改回散落的判斷式
+
 - **README 與 DEVELOPER.md 都不主動改**，他要才改；例外：「發布版本」流程要更新 DEVELOPER 技術章節與 §8 版本記錄
 - 改完**先 `py_compile` 驗證語法**，並主動自我迭代驗證：能單測就單測、能模擬（演算法／SQL round-trip）就跑一輪再交付。容器有 PySide6 可 import（跑非 GUI 純邏輯測試），但**無法開 GUI／截圖**——Tab 互動、Dialog、表格渲染請他上機測
 - **單元測試在 `tests/`**：完整既有 suite 用 `python -m unittest discover -s tests`，檔名 `test_*.py` 勿改名；兩個 pytest/pytest-qt pilot 用 `$env:QT_QPA_PLATFORM = 'offscreen'` 後執行 `C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe -m pytest tests/test_pytest_qt_runtime.py tests/test_reward_gui_pilot.py -q`。⚠️ **這支系統 Python 是正式 gate 的唯一環境**（見 DEVELOPER §4）；**不要用 Codex runtime 那支**（`.cache\codex-runtimes\...`），它沒有 pytest／PySide6／matplotlib，跑不了測試。換機器時絕對路徑會不同，改用已裝齊 `requirements-dev.txt` 的 Python，並先跑 `tests/test_environment_contract.py` 確認版本對得上。動到可單測純邏輯（解析／SQL round-trip／狀態計算／權限判斷）**一併新增或更新測試**。見 DEVELOPER §4。⚠️ **GUI 流程測試目前只有一條敘獎 pilot（`test_reward_gui_pilot.py`，登錄→編輯→待發→發文）**；擴充其餘 GUI 流程、抽 driver 或加 production 注入 seam，一律**須另立經核可的計畫**才動
