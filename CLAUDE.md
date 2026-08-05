@@ -18,7 +18,7 @@
 - **目標環境**：Windows，顯示縮放 **125%**，全域字體 **14pt**；PyInstaller `--onefile` 打包
 - **資料**：軟刪除（清空欄位、保留 `doc_id`），不做真 DELETE
 - **文件分工**：`README.md`＝使用者門面（撰寫定義見 DEVELOPER §9）；`DEVELOPER.md`＝技術文件（架構／打包／DB／版本記錄）；`PITFALLS.md`＝踩雷速查表（症狀→解法，本表任務對照見下）；`PRINTING.md`＝簽收單列印專章（引擎／版面／驗收網，自 DEVELOPER §5 拆出）；`CLAUDE.md`＝協作規則（本檔）；`docs/handover.md`＝跨對話交接（不入庫）
-- ⚠️ **入庫文件不得叫人去參照未入庫的檔案**：`CLAUDE.md`／`README.md`／`DEVELOPER.md`／`PITFALLS.md` 內不得指向 `.gitignore` 排除的路徑（`docs/*`、`dbfile.db`、根目錄 `fix_*.py`／`seed_*.py`、`*.spec`、`build/`／`dist/` 等）。**該留的結論直接寫進入庫文件本身**，不要留一個「詳見某某設計文件」的指標——未入庫檔案隨時可能不存在，`git status` 也看不出它被刪，規則會靜默失效（踩過：`docs/superpowers/` 被清掉後，CLAUDE.md 的指路變成死連結）。反向亦然：真正該長期保存的內容就要入庫，不要放在被忽略的路徑
+- ⚠️ **入庫文件不得叫人去參照未入庫的檔案**（通則與理由見全域設定）：`CLAUDE.md`／`README.md`／`DEVELOPER.md`／`PITFALLS.md` 內不得指向 `.gitignore` 排除的路徑——本專案是 `docs/*`、`dbfile.db`、根目錄 `fix_*.py`／`seed_*.py`、`*.spec`、`build/`／`dist/` 等。踩過：`docs/superpowers/` 被清掉後，CLAUDE.md 的指路變成死連結
 
 ## 任務對照表（動手前先讀哪裡）
 
@@ -61,7 +61,7 @@
 - **README 與 DEVELOPER.md 都不主動改**，他要才改；例外：「發布版本」流程要更新 DEVELOPER 技術章節與 §8 版本記錄
 - 改完**先 `py_compile` 驗證語法**，並主動自我迭代驗證：能單測就單測、能模擬（演算法／SQL round-trip）就跑一輪再交付。容器有 PySide6 可 import（跑非 GUI 純邏輯測試），但**無法開 GUI／截圖**——Tab 互動、Dialog、表格渲染請他上機測
 - **單元測試在 `tests/`**：完整既有 suite 用 `python -m unittest discover -s tests`，檔名 `test_*.py` 勿改名；兩個 pytest/pytest-qt pilot 用 `$env:QT_QPA_PLATFORM = 'offscreen'` 後執行 `C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe -m pytest tests/test_pytest_qt_runtime.py tests/test_reward_gui_pilot.py -q`。⚠️ **這支系統 Python 是正式 gate 的唯一環境**（見 DEVELOPER §4）；**不要用 Codex runtime 那支**（`.cache\codex-runtimes\...`），它沒有 pytest／PySide6／matplotlib，跑不了測試。換機器時絕對路徑會不同，改用已裝齊 `requirements-dev.txt` 的 Python，並先跑 `tests/test_environment_contract.py` 確認版本對得上。動到可單測純邏輯（解析／SQL round-trip／狀態計算／權限判斷）**一併新增或更新測試**。見 DEVELOPER §4。⚠️ **GUI 流程測試目前只有一條敘獎 pilot（`test_reward_gui_pilot.py`，登錄→編輯→待發→發文）**；擴充其餘 GUI 流程、抽 driver 或加 production 注入 seam，一律**須另立經核可的計畫**才動
-- ⚠️ **權限 gate 是每個新功能必檢項**：「受限身分不可做」的操作，只靠按鈕 `setEnabled(False)` 不夠——雙擊、行內編輯、Enter、右鍵、拖拉等替代路徑會繞過。①**所有**進入點補 guard（用 `_refEditable()`／`is_admin()` 等便捷判斷，勿字串比較）②上機以受限身分逐路徑驗證。此雷犯過，詳見 DEVELOPER §10「權限」
+- ⚠️ **權限 gate 是每個新功能必檢項**（「按鈕反灰擋不住」的通則見全域設定）：本專案用 `_refEditable()`／`is_admin()` 等便捷判斷，勿字串比較；權限矩陣與既有 gate 詳見 DEVELOPER §10「權限」，破壞性或動實體檔案的流程另加「modal 返回後再檢查一次」（§10「執行時權限複核」）
 - ⚠️ **視窗開啟時的初始焦點不得停在日期欄位**：任何 Dialog／視窗建好後都要明確
   `setFocus()` 到第一個該填的欄位（通常是必填的文字框或下拉），**不可讓焦點落在
   `QDateEdit`／`NullableDateEdit`**。日期框多半已預設今天，焦點停在上面時使用者
@@ -90,19 +90,14 @@ Codex／其他工具開工前自行讀取全域檔。下面只列本專案專屬
 - 踩雷類改動把症狀與根因寫進正文（例：`msjh.ttc` 與 `msjhbd.ttc` family 名相同
   導致靠名字切字重靜默失效），那是往後 `PITFALLS.md` 條目的素材來源。
 
-### D. 派工給 subagent（主程序的準備責任）
+### D. 派工給 subagent（本專案的環境事實）
 
-- ⚠️ **環境由主程序先備妥、實測可用，才准派工**：不得把「環境長怎樣」丟給 agent 自己摸索。
-  agent 是冷啟動、沒有本次對話脈絡，環境沒備好就會一路試錯（跑到沒有 PySide6 的直譯器、
-  找不到輸出資料夾、測試指令寫錯、在別人正在改的檔案上動手），時間全花在重試上。
-- **派工前主程序要先自己跑一遍確認、再把結論寫進 brief**（是「已驗證的事實」，不是「請你自己查」）：
-  1. **Python 直譯器**：確定要用哪一支絕對路徑，並實際 import 過 `PySide6`、確認 `pytest` 可用
-     （本專案測試環境與兩段式 pytest 規則見 DEVELOPER §4）
-  2. **執行環境變數**：離線 Qt 測試一律 `QT_QPA_PLATFORM=offscreen`
-  3. **工作目錄**：絕對路徑；程式須從專案根目錄啟動（見 DEVELOPER §4 路徑解析）
-  4. **輸出／暫存資料夾**：需要寫檔的先建好並在 brief 給絕對路徑，不讓 agent 臨時決定位置
-  5. **可直接貼上執行的測試指令**：連同該 Task 該跑哪幾支測試一起給，不讓 agent 自行拼湊
-  6. **工作區狀態**：先確認 git 乾淨或已知的未提交範圍、該 agent 的獨佔檔案範圍，
-     避免與主程序或其他 agent 撞檔
-- **未入庫的資料由 brief 直接提供**（計畫、規格、路徑約定等）：那些檔案 agent 可能根本看不到。
-- 測試一律用**暫存 DB**，絕不搬真實 `dbfile.db`。
+**「環境先備妥、實測可用才准派工」與六項準備清單見全域設定**，下面只列本專案要填進 brief 的實際值：
+
+- **直譯器**：`C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe`（正式 gate
+  唯一環境，見 DEVELOPER §4）；**不要用 Codex runtime 那支**（`.cache\codex-runtimes\...`），
+  它沒有 pytest／PySide6／matplotlib
+- **環境變數**：離線 Qt 測試一律 `QT_QPA_PLATFORM=offscreen`
+- **工作目錄**：專案根目錄（`getResourcePath` 靠當前工作目錄找 `dbfile.db`，見 DEVELOPER §4）
+- **測試指令**：兩段式 pytest（非 shell／shell）＋ `test_no_pii`，指令見 DEVELOPER §4
+- 測試一律用**暫存 DB**，絕不搬真實 `dbfile.db`
