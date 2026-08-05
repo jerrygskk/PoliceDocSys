@@ -65,7 +65,7 @@ main.py
 
 ## 2. 踩雷速查表（動手前必掃）
 
-九組症狀→解法條目已拆至 [PITFALLS.md](PITFALLS.md)（群組代號 UI／QSS／QTW／LAY／TAB／SVG／SQL／ARC／PKG，任務對照索引見 CLAUDE.md）。
+十一組症狀→解法條目已拆至 [PITFALLS.md](PITFALLS.md)（群組代號 UI／QSS／QTW／LAY／TAB／SVG／SQL／ARC／NET／PKG／TST，任務對照索引見 CLAUDE.md）。
 
 ### 跨功能影響對照表（動到左欄主題＝右欄逐項檢查）
 

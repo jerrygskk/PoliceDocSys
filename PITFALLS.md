@@ -1,6 +1,6 @@
 # 踩雷速查表（Pitfalls）
 
-依主題分組；每條為「**症狀** → 解法（必要時括註原因）」。寫過的雷再踩會被點名。本檔自 DEVELOPER.md §2 拆出；任務對照索引見 CLAUDE.md。
+依主題分組（UI／QSS／QTW／LAY／TAB／SVG／SQL／ARC／NET／PKG／TST）；每條為「**症狀** → 解法（必要時括註原因）」。寫過的雷再踩會被點名。本檔自 DEVELOPER.md §2 拆出；任務對照索引見 CLAUDE.md。
 
 #### UI：`.ui` 載入
 - **UI-1**: **`Unable to open/read ui device`** → margin 改用 `leftMargin`/`topMargin`/`rightMargin`/`bottomMargin` 四獨立 property，勿用 `contentsMargins`+`<rect>`。
@@ -65,6 +65,10 @@
 
 #### ARC：歸檔檔名解析（lib/archive_text.py）
 - **ARC-1**: **動斷詞／日期／主旨解析前** → 三條解析雷（斷詞漏字、PK 1xx 日期、無 `-` 主旨）詳述在 **DEVELOPER §10「歸檔檔名解析的雷」**，動 `archive_text.py` 前先翻。
+
+#### NET：網路磁碟／UNC 路徑
+- **NET-1**: **異地備份設在「分享根目錄」（`\\host\share`，後面沒再帶子資料夾）時，每次開機都靜默失敗，error.log 只留 `OSError [WinError 50] 不支援這個要求`** → `os.makedirs(path, exist_ok=True)` 的 `exist_ok` **只吞 `FileExistsError`**，而 Windows 對 UNC 分享根目錄回的是 WinError 50，**即使該資料夾明明存在也照樣拋**，於是整輪 GFS 在第一行就中止、一份異地備份都沒做成。修法：建資料夾前先 `os.path.isdir()` 判斷，已存在就不呼叫 `makedirs`（`lib/db_backup.py:_ensure_dir`）。⚠️ 症狀極易被忽略——備份失敗一律靜默退讓（不擋開程式、不彈窗），使用者只會在設定面板看到「尚無備份」，不會知道每天都在失敗。故同時把失敗原因白話化寫進 error.log 第一行，並在「系統設定→自動備份」以紅字顯示短句。**任何在網路路徑上建資料夾的新程式碼都要照這個模式寫**，不要只靠 `exist_ok=True`。
+- **NET-2**: **判斷 Windows 檔案／網路錯誤時比對錯誤訊息文字** → 同一個錯誤碼在不同語系 Windows 上文字不同（WinError 50 中文版是「不支援這個要求」、英文版是 `The request is not supported`），比字串換台機器就失效。一律看 `OSError.winerror`／`errno`（見 `lib/db_backup.py` 的 `_WINERR_REASONS`／`_reason_for`；`lib/db_utils.isDiskFullError` 的字串比對只是 SQLite 訊息的補充，非主判斷）。
 
 #### PKG：打包／重啟
 - **PKG-1**: **重置後重啟、打包版跳 `Failed to load Python DLL`／`unicodedata` 缺** → 啟動新程序前設 `PYINSTALLER_RESET_ENVIRONMENT=1`（新程序沿用舊 `_MEI` 所致；見 `tab_settings._restartApp()`，別用 cmd ping 延遲歪招）。
