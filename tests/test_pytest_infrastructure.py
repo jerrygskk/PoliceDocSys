@@ -199,3 +199,35 @@ def test_unittest_ids_are_normalized_to_pytest_node_ids():
     assert unittest_id_to_pytest(
         "test_ticket_data.TestTicketNaturalSort.test_natural_key"
     ) == "tests/test_ticket_data.py::TestTicketNaturalSort::test_natural_key"
+
+
+# --- 日期防呆遮蔽的單一來源契約（PITFALLS TST-4）--------------------------
+# 遮蔽少了任何一條路徑，該路徑的測試就會卡在無人可按的確認框上「不結束」，
+# 症狀是掛住而非紅燈，極難判讀（2026-08-06 兩層都踩過）。故用契約釘住。
+
+def test_unittest_path_installs_date_guard_shim():
+    """tests/__init__.py 必須在 unittest 跑法安裝遮蔽（conftest 載不到）。"""
+    src = (ROOT / "tests" / "__init__.py").read_text(encoding="utf-8")
+    assert "installAutoConfirm" in src
+    assert "date_guard_shim" in src
+
+
+def test_pytest_path_shares_the_same_shim():
+    """conftest 的 fixture 必須用同一支 shim，不得自己再寫一份遮蔽。"""
+    src = (ROOT / "conftest.py").read_text(encoding="utf-8")
+    assert "from tests.date_guard_shim import installAutoConfirm" in src
+    assert "date_guard.confirmBox" not in src
+
+
+def test_no_test_module_patches_date_guard_itself():
+    """個別測試不得自己 patch 第二份遮蔽——防呆改寫時會漏改那些。"""
+    offenders = []
+    for path in sorted((ROOT / "tests").glob("test_*.py")):
+        src = path.read_text(encoding="utf-8")
+        if path.name in ("test_date_guard.py", "test_date_guard_gui_pilot.py",
+                         "test_pytest_infrastructure.py"):
+            continue        # 防呆自己的專責測試，本來就要動它
+        if "date_guard.confirmBox" in src or "confirmDateGap" in src:
+            offenders.append(path.name)
+    assert offenders == [], (
+        f"這些測試自行遮蔽日期防呆，請改用 tests/date_guard_shim：{offenders}")
