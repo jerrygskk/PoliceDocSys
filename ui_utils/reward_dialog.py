@@ -89,8 +89,9 @@ class RewardEditDialog(_BaseEditDialog):
         form.addRow("編號：", self.lbl_doc_id)
         self.w_create_date = QLabel("")
         form.addRow("登錄日期：", self.w_create_date)
-        # 發文日期／發文人員屬「發文資訊」，僅資料庫瀏覽（管理者）可改狀態時才出現；
-        # 敘獎登錄頁（entry）只可改事由與人員，故 entry 來源不建立這兩欄、儲存時
+        # 發文日期／發文人員屬「發文資訊」：僅資料庫瀏覽（管理者）可改，登錄頁
+        # （entry）改為唯讀 QLabel 顯示（比照罰單登錄修改，兩頁行為一致）——
+        # 承辦人看得到這筆發文了沒、誰送的，但不在登錄頁竄改；entry 儲存時
         # 亦不觸碰 register_date/sender_id（發文一律走登錄頁或列印頁結算）。
         personnel, alias_map = loadActivePersonnel(self.db_path)
         if self.source == "browse":
@@ -106,6 +107,13 @@ class RewardEditDialog(_BaseEditDialog):
             for sid, sname, _ in personnel:
                 self.w_sender.addItem(sname, sid)
             form.addRow("發文人員：", self.w_sender)
+        else:
+            # entry：發文資訊一律唯讀純文字（不用反灰輸入框——反灰看起來像
+            # 「等一下會開放」，純文字才宣告這是狀態不是輸入）。
+            self.w_register_date = QLabel("")
+            form.addRow("發文日期：", self.w_register_date)
+            self.w_sender_name = QLabel("")
+            form.addRow("發文人員：", self.w_sender_name)
         self.w_reason = QLineEdit()
         self.w_reason.setPlaceholderText("請輸入敘獎原因")
         form.addRow("敘獎事由：", self.w_reason)
@@ -139,9 +147,12 @@ class RewardEditDialog(_BaseEditDialog):
         conn = getConn(self.db_path)
         try:
             row = conn.execute(
-                "SELECT create_date,register_date,sender_id,reason,recipients "
-                "FROM Document_Reward "
-                f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL}", (self.doc_id,)).fetchone()
+                "SELECT r.create_date,r.register_date,r.sender_id,r.reason,"
+                "r.recipients,p.staff_name "
+                "FROM Document_Reward r "
+                "LEFT JOIN Ref_Personnel p ON p.staff_id=r.sender_id "
+                f"WHERE r.doc_id=? AND r.{REWARD_ACTIVE_SQL}",
+                (self.doc_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -160,6 +171,10 @@ class RewardEditDialog(_BaseEditDialog):
             else:
                 self.w_date.clear()
             self._set_combo(self.w_sender, row[2])
+        else:
+            # register_date 三態：''＝尚未發文（發文結算登錄），日期字串＝已發文。
+            self.w_register_date.setText(str(row[1]) if row[1] else "未發文")
+            self.w_sender_name.setText(str(row[5] or "－"))
         self.w_reason.setText(row[3] or "")
         self.w_recipients.setCurrentText(row[4] or "")
 

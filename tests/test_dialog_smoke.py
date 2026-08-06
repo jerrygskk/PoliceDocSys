@@ -265,8 +265,9 @@ class TestEditDialogs(_DialogBase):
         dlg.deleteLater()
 
     def test_reward_entry_save_only_touches_reason_and_recipients(self):
-        # 敘獎登錄頁（entry）：無發文日期／發文人員欄，儲存只改事由與人員，
-        # register_date／sender_id 一律不動。
+        # 敘獎登錄頁（entry）：發文日期／發文人員為唯讀 QLabel（比照罰單登錄修改），
+        # 儲存只改事由與人員，register_date／sender_id 一律不動。
+        from PySide6.QtWidgets import QLabel
         from ui_utils.reward_dialog import RewardEditDialog
         conn = sqlite3.connect(self.db)
         conn.execute("UPDATE Document_Reward SET sender_id='P02' WHERE doc_id='4'")
@@ -275,6 +276,10 @@ class TestEditDialogs(_DialogBase):
         dlg = RewardEditDialog(self.db, "4", source="entry")
         self.assertFalse(hasattr(dlg, "w_date"))
         self.assertFalse(hasattr(dlg, "w_sender"))
+        self.assertIsInstance(dlg.w_register_date, QLabel)
+        self.assertEqual(dlg.w_register_date.text(), "2026-07-17")
+        self.assertIsInstance(dlg.w_sender_name, QLabel)
+        self.assertEqual(dlg.w_sender_name.text(), "陳志豪")
         dlg.w_reason.setText("登錄者改事由")
         dlg._on_save()
         conn = sqlite3.connect(self.db)
@@ -284,6 +289,20 @@ class TestEditDialogs(_DialogBase):
         conn.close()
         # 發文日期／發文人員原封不動，只有事由更新
         self.assertEqual(row, ("2026-07-16", "2026-07-17", "P02", "登錄者改事由"))
+        dlg.deleteLater()
+
+    def test_reward_entry_shows_unissued_placeholders(self):
+        # 未結算列（register_date=''、sender_id 為 NULL）：登錄頁唯讀欄顯示
+        # 「未發文」／「－」，不留空白讓人以為系統沒記。
+        from ui_utils.reward_dialog import RewardEditDialog
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE Document_Reward SET register_date='', sender_id=NULL "
+                     "WHERE doc_id='4'")
+        conn.commit()
+        conn.close()
+        dlg = RewardEditDialog(self.db, "4", source="entry")
+        self.assertEqual(dlg.w_register_date.text(), "未發文")
+        self.assertEqual(dlg.w_sender_name.text(), "－")
         dlg.deleteLater()
 
     def test_reward_edit_shows_blank_label_for_missing_create_date(self):
