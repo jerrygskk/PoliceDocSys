@@ -238,7 +238,7 @@ graph LR
      的函式，仍走真實驗證邏輯，只是不進 modal 事件迴圈。
   ⚠️ pilot 的價值來自**能抓到回歸**，不是綠燈本身：每支交付前都以「故意破壞被測機制、
   確認對應那支會紅」反證過。新增時照做。
-- **無 pytest 環境備援**：只能執行 `python -m unittest discover -s tests`；pytest-only、packaging 與 GUI pilot 可能被跳過，因此不得拿這個結果取代正式 gate。
+- **無 pytest 環境備援**：只能執行 `python -m unittest discover -s tests -t .`（⚠️ `-t .` 不可省，否則 `tests/__init__.py` 不會載入、日期防呆遮蔽裝不上而整包卡死，見 PITFALLS TST-4）；pytest-only、packaging 與 GUI pilot 可能被跳過，因此不得拿這個結果取代正式 gate。
 - **趨勢紀錄**：根 `conftest.py` 在指定 `PYTEST_RUN_RECORD` 時輸出實際執行 node IDs 與最慢 20 筆；`python -m tools.pytest_trend --collection <collection.json> --layer pure_db=<run.json> --previous <history.jsonl> --output <history.jsonl>` 可追加完整 collection、各層數量／耗時、durations 與相對前次變化。長期結論寫入經審閱的實驗報告，`.tmp` 單次輸出只作原始證據。
 - **PII gate**：`tests/test_no_pii.py` 的文字檔清單只取自 `git ls-files`，因此不掃
   untracked／ignored 檔（含正式 `dbfile.db`）。每個 tracked path 依序讀取：①解析後

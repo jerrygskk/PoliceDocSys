@@ -188,26 +188,17 @@ def pytest_runtest_protocol(item, nextitem):
 
 
 # --- 日期防呆的測試處置（PITFALLS TST-4）---------------------------------
-# ui_utils/date_guard 會在送出的日期與本日落差過大時彈確認框。離線環境的 modal
-# 會無限等待，任何「以非今日日期送出」的測試都會整支卡住（實際踩過：新增防呆後
-# 非 shell 段直接掛住不結束）。故一律自動回「確認無誤」，並清掉「本次已確認」的
-# 模組層狀態避免跨測試汙染。
-#
-# ⚠️ 這只遮蔽「防呆的提示」，不影響其他行為；防呆本身由下列兩支專責測試涵蓋
-# （純邏輯門檻 + 六個送出點的接線與取消行為），它們自行覆寫本 fixture 的替身。
-DATE_GUARD_OWN_TESTS = {"test_date_guard.py", "test_date_guard_gui_pilot.py"}
+# 實作在 tests/date_guard_shim.py，是 pytest 與 unittest 共用的唯一一份；
+# unittest 跑法載不到本檔，由 tests/__init__.py 匯入同一支安裝。
+from tests.date_guard_shim import OWN_TESTS as DATE_GUARD_OWN_TESTS   # noqa: E402
+from tests.date_guard_shim import installAutoConfirm                  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def _auto_confirm_date_guard(request, monkeypatch):
     if request.path.name in DATE_GUARD_OWN_TESTS:
         return
-    try:
-        import ui_utils.date_guard as date_guard
-    except Exception:
-        return          # 無 PySide6 的環境（純 stdlib 測試）不需處置
-    date_guard.resetConfirmedDates()
-    monkeypatch.setattr(date_guard, "confirmBox", lambda *a, **kw: True)
+    installAutoConfirm(monkeypatch)
 
 
 def classify_test_module(module_name: str) -> str:

@@ -971,6 +971,8 @@ class TestSettleDialog(_DialogBase):
         dlg.issue_date.setDate(QDate(2026, 7, 9))
         dlg.cmb_sender.setCurrentIndex(1)
 
+        # 本例刻意選過去日期會觸發日期防呆的確認框；遮蔽由 tests/date_guard_shim
+        # 統一處置（PITFALLS TST-4），這裡不再自己 patch 第二份。
         with mock.patch("ui_utils.settle_dialog.confirmBox", return_value=True), \
              mock.patch("ui_utils.settle_dialog.settle_selected", return_value=1) as settle:
             dlg._on_confirm()
