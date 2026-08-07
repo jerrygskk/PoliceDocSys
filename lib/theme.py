@@ -38,6 +38,41 @@ QMainWindow, QDialog {
     background-color: #f2f2f7;
 }
 
+/* ── 彈窗公版（2026-08-08）──
+   本區塊是**彈窗專用的一組標準值**，用 `QDialog` 限定範圍。它還原 v1.2.10 的
+   彈窗外觀：白底、輸入框 4px 圓角、較緊的內距（欄位自然高 33px，分頁是 37px）。
+
+   為什麼要有這一組：v1.2.10 時六個編輯彈窗、設定彈窗與救援視窗**各自帶一份**
+   同樣數值的區域 QSS，其中五份漏了 `:disabled`，於是「欄位鎖住了卻看不出來」
+   （見 PITFALLS QSS-8）。那些複製品已全部移除，改由這裡統一提供——外觀一樣，
+   但只有一個地方，日後改彈窗外觀不必再找六個檔案。
+
+   ⚠️ **範圍只到彈窗，刻意不動分頁**：分頁與 `.ui` 裡有 71 處寫死 36／38 的高度、
+   程式另有 5 處 `setFixedHeight`／`FIELD_H`。把這組值套到全域會讓沒鎖死的欄位
+   矮 4px、鎖死的不動，同一頁高低不齊——正是 PITFALLS LAY-6 記過的雷。
+
+   ⚠️ **不宣告 `color`**：維持公版的 `#1c1c1e`（`TEXT_COLOR` token）。v1.2.10 那份
+   寫的是 `#000000`，但 `attachComboHint` 的正常色吃的是 `TEXT_COLOR`，還原純黑會
+   讓同一個下拉在彈窗內外呈現兩種黑。
+
+   ⚠️ **不宣告任何停用態**：`QLineEdit:disabled` 等帶偽狀態、特異度高於這裡的
+   兩個型別選擇器，公版的反灰照樣生效（2026-08-08 以算繪像素實測確認）。
+   **不要為了「補齊」在這裡加 `:disabled`**，那會把反灰又鎖死成固定值。
+
+   ⚠️ 位置在 `QMessageBox` 區塊**之前**是刻意的：QMessageBox 是 QDialog 子類，
+   它自己那條底色規則在後面、同特異度後者勝，故訊息框維持灰底（與 v1.2.10 一致）。*/
+QDialog {
+    background-color: #ffffff;
+}
+QDialog QLineEdit, QDialog QComboBox, QDialog QDateEdit {
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+QDialog QComboBox, QDialog QDateEdit {
+    padding: 4px 32px 4px 8px;
+}
+
 /* ── 標籤 ── */
 QLabel {
     color: #1c1c1e;

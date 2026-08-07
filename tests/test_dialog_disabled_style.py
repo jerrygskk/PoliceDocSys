@@ -52,7 +52,8 @@ _app = QApplication.instance() or QApplication([])
 # 公版 `lib/theme.py` 的停用色（灰底）。⚠️ 不要在本檔另寫一組色碼——
 # 這裡刻意從 theme 的實際值抄一份常數只是為了斷言可讀，改色時兩邊要一起改，
 # 由 test_matches_theme_tokens 釘住兩者一致。
-THEME_WINDOW_BG = (0xF2, 0xF2, 0xF7)   # 公版的視窗／對話框底色
+THEME_WINDOW_BG = (0xF2, 0xF2, 0xF7)   # 公版的主視窗／訊息框底色
+DIALOG_BG = (0xFF, 0xFF, 0xFF)         # 公版「彈窗公版」區塊的彈窗底色
 DISABLED_BG = (0xE5, 0xE5, 0xEA)
 ENABLED_BG = (0xFF, 0xFF, 0xFF)
 NORMAL_TEXT = (0x1C, 0x1C, 0x1E)
@@ -167,6 +168,41 @@ class TestThemeTokens(unittest.TestCase):
         self.assertLess(
             widget_rule, window_rule,
             "QWidget 透明那條必須在視窗底色之前，否則視窗底色會被中和成透明（全黑）")
+
+    def test_dialog_template_block_exists(self):
+        """⚠️ 彈窗公版區塊：還原 v1.2.10 外觀，但只此一份、且限定 QDialog。
+
+        它取代了六個彈窗各自帶的那份區域 QSS（其中五份漏 `:disabled`，造成
+        「欄位鎖住了卻看不出來」）。⚠️ 範圍必須留在 `QDialog`——套到全域會讓
+        分頁沒鎖死高度的欄位矮 4px、鎖死的不動，同頁高低不齊（LAY-6）。
+        """
+        self.assertIn("QDialog QLineEdit", STYLE_RULES)
+        self.assertIn("QDialog {\n    background-color: #ffffff;", STYLE_RULES)
+
+    def test_dialog_block_declares_no_disabled_state(self):
+        """⚠️ 彈窗公版**不得**宣告停用態。
+
+        `QLineEdit:disabled` 帶偽狀態、特異度高於這裡的兩個型別選擇器，公版的
+        反灰本來就生效；在此「補齊」反而會把反灰鎖死成固定值，重演 QSS-8。
+        """
+        selectors = [sel for sel, _ in
+                     re.findall(r"([^{}]+)\{([^{}]*)\}", STYLE_RULES)
+                     if "QDialog " in sel]
+        self.assertTrue(selectors, "找不到彈窗公版的規則，區塊被刪了？")
+        for sel in selectors:
+            self.assertNotIn(
+                ":disabled", sel,
+                f"彈窗公版出現 `{sel.strip()}`；停用態交給全域規則處理")
+
+    def test_message_box_keeps_window_background(self):
+        """訊息框是 QDialog 子類，但底色要維持灰（與 v1.2.10 一致）。
+
+        靠的是 `QMessageBox` 規則排在彈窗公版**之後**、同特異度後者勝；
+        把彈窗公版往後搬會讓訊息框一起變白。
+        """
+        self.assertLess(STYLE_RULES.index("QDialog QLineEdit"),
+                        STYLE_RULES.index("QMessageBox {"),
+                        "彈窗公版必須排在 QMessageBox 之前")
 
     def test_no_container_patch_rule(self):
         """⚠️ `QDialog > QWidget` 那條補丁不得復活。
@@ -309,10 +345,11 @@ class TestDialogsCarryNoLocalStyleSheet(_DisabledStyleBase):
         dlg.show()
         _app.processEvents()
 
-        # 彈窗底色必須是公版色；壞掉那版是白底彈窗＋灰色容器色塊。
+        # 彈窗底色由公版的「彈窗公版」區塊提供（白）；壞掉那版是白底彈窗
+        # ＋灰色容器色塊，容器色會讓下面的面積檢查抓到。
         self.assertEqual(
-            _corner_color(dlg), THEME_WINDOW_BG,
-            "彈窗底色不是公版色；八成又自帶區域樣式了")
+            _corner_color(dlg), DIALOG_BG,
+            "彈窗底色不是公版指定的白；八成又自帶區域樣式了")
 
         # 容器不得與底色不同：把整張影像的顏色分佈拿出來，佔比 >3% 的顏色
         # 只允許是「底色、輸入框白、停用灰」三種。壞掉那版的灰色容器色塊
@@ -324,7 +361,7 @@ class TestDialogsCarryNoLocalStyleSheet(_DisabledStyleBase):
             for x in range(image.width()):
                 c = image.pixelColor(x, y)
                 counter[(c.red(), c.green(), c.blue())] += 1
-        allowed = {THEME_WINDOW_BG, ENABLED_BG, DISABLED_BG}
+        allowed = {DIALOG_BG, ENABLED_BG, DISABLED_BG}
         big = {col for col, n in counter.items() if n / total > 0.03}
         self.assertTrue(
             big <= allowed,

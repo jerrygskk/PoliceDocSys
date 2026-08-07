@@ -44,6 +44,7 @@ MARKER_MODULES = {
         "test_dialog_disabled_style.py", "test_dialog_smoke.py",
         "test_dispatch_tab.py", "test_edit_dialog_optimistic_lock.py",
         "test_help_content_contract.py",
+        "test_idle_timeout_live_apply.py",
         "test_loading_screen_banner.py", "test_nullable_date.py",
         "test_pytest_qt_runtime.py", "test_report_mode_switch.py",
         "test_reset_gui_pilot.py", "test_restore_gui_pilot.py",

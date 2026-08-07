@@ -4,7 +4,7 @@ settings_panels.py — 設定頁「系統設定」子頁的嵌入式面板
 包含（皆為 QGroupBox，掛進 page_system 的 systemLayout，各自帶「儲存」）：
   - ArchiveRootPanel   歸檔資料夾（年度層 UNC + 刑案/一般子夾名；admin/archive 皆可改）
   - PrintTitlePanel    簽收表標題（5 欄自訂文字＋1 註記；僅 admin）
-  - IdleTimeoutPanel   閒置逾時（自動登出／強制關閉，分；僅 admin，重啟生效）
+  - IdleTimeoutPanel   閒置逾時（自動登出／強制關閉，分；僅 admin，存檔即時生效）
   - InputLockPanel     唯讀設定（七種輸入／發文流程；僅 admin；即時生效）
   - BackupPanel        自動備份（第二備份位置／異地副本；僅 admin；下次開啟生效）
 
@@ -13,7 +13,7 @@ settings_panels.py — 設定頁「系統設定」子頁的嵌入式面板
 """
 import os
 
-from PySide6.QtCore    import Qt
+from PySide6.QtCore    import Qt, Signal
 from PySide6.QtWidgets import (
     QGroupBox, QFrame, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox,
@@ -461,9 +461,13 @@ class PrintTitlePanel(_SettingsPanel):
 
 
 # ══════════════════════════════════════════════════════════════════
-# 閒置逾時（僅 admin；archive 整塊反灰；重啟生效）
+# 閒置逾時（僅 admin；archive 整塊反灰；存檔即時生效）
 # ══════════════════════════════════════════════════════════════════
 class IdleTimeoutPanel(_SettingsPanel):
+    # 存檔成功且值真的變了才 emit；接收端（主視窗）重讀 DB 並重設兩個計時器。
+    # 面板本身不碰計時器：它拿不到主視窗，也不該知道計時器怎麼跑。
+    timeouts_changed = Signal()
+
     def __init__(self, db_path, parent=None):
         super().__init__("閒置逾時", db_path, parent)
 
@@ -478,7 +482,7 @@ class IdleTimeoutPanel(_SettingsPanel):
 
         # 說明置頂，與其他區塊風格一致
         hint = QLabel(
-            "強制關閉時間需大於自動登出時間。儲存後於程式下次啟動時生效。(設為0時不作用)\n"
+            "強制關閉時間需大於自動登出時間。儲存後立即生效。(設為0時不作用)\n"
             "閒置自動登出僅適用於管理者與歸檔管理身分。")
         hint.setStyleSheet(_HINT_SS)
         hint.setWordWrap(True)
@@ -570,6 +574,10 @@ class IdleTimeoutPanel(_SettingsPanel):
                                "系統", "修改",
                                f"閒置逾時：登出 {fmt(old_logout)}→{fmt(logout)} 分、"
                                f"關閉 {fmt(old_close)}→{fmt(close)} 分"))
+            # 立即套用到執行中的計時器（不必重啟程式）。踩過：只寫進 DB，
+            # 正在跑的那支仍拿著開機時讀到的舊值，使用者把 1 分改成 10 分
+            # 存檔後照樣一分鐘被登出，看起來像存檔沒生效。
+            self.timeouts_changed.emit()
         self.reload()   # 重設 dirty 基準（儲存鈕隨之回灰）
         return True
 

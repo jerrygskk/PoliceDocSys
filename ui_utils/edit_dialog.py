@@ -613,11 +613,18 @@ class CriminalEditDialog(_BaseEditDialog):
         ('CS03', '未到'),
     ]
 
-    def __init__(self, db_path, doc_id, parent=None, disable_convert=False):
+    def __init__(self, db_path, doc_id, parent=None, hide_manager_tools=False):
         super().__init__(parent)
         self.db_path = db_path
         self.doc_id  = doc_id
-        self._disable_convert = disable_convert
+        # ⚠️ 陳報頁傳 True：那一頁**不提供**類別轉換與歸檔狀態。
+        # 轉換只在歸檔頁與資料庫瀏覽頁做；歸檔狀態同理，屬歸檔業務。
+        # 2026-08-08 前是「建出來再反灰」，但那顆鈕在陳報頁**永遠不會亮**，
+        # 唯一的說明掛在 tooltip 上、而 tooltip 在深色模式整塊黑（QSS-7），
+        # 使用者看到的就是一顆沒有解釋的灰鈕，只會以為自己權限不夠。
+        # 且該 tooltip 文字（「已陳報之公文不可變更類別」）也是錯的——
+        # 結算模式下陳報頁預覽也有未發文的列，一樣被反灰。故改為不建立。
+        self._hide_manager_tools = hide_manager_tools
         self.setWindowTitle('刑案陳報修改')
 
 
@@ -725,13 +732,10 @@ class CriminalEditDialog(_BaseEditDialog):
         btn_cancel.clicked.connect(self.reject)
 
         btn_row = QHBoxLayout()
-        # 轉換類別鈕：最左側，之後 stretch 隔開儲存/取消（§5.1）
-        if AuthManager.instance().is_manager():
-            _cbtn = _make_convert_button(self, "crim")
-            if getattr(self, "_disable_convert", False):
-                _cbtn.setEnabled(False)
-                _cbtn.setToolTip("已陳報之公文不可變更類別")
-            btn_row.addWidget(_cbtn)
+        # 轉換類別鈕：最左側，之後 stretch 隔開儲存/取消（§5.1）。
+        # ⚠️ 陳報頁不建立（見 __init__ 的 hide_manager_tools 說明）。
+        if AuthManager.instance().is_manager() and not self._hide_manager_tools:
+            btn_row.addWidget(_make_convert_button(self, "crim"))
         btn_row.addStretch()
         btn_row.addWidget(btn_save)
         btn_row.addWidget(btn_cancel)
@@ -741,8 +745,11 @@ class CriminalEditDialog(_BaseEditDialog):
         root.addSpacing(8)
 
         # 歸檔狀態區塊（管理者／歸檔管理）
+        # ⚠️ 陳報頁不建立歸檔狀態（同上）。不建立時 `w_arch_reported` 維持
+        # None，`_load_arch_status`／`_confirm_arch_clear`／`_audit_arch_cancel`
+        # 與 `_on_save` 都已對 None 做 no-op，不必另外處理。
         self.w_arch_reported = None
-        if AuthManager.instance().is_manager():
+        if AuthManager.instance().is_manager() and not self._hide_manager_tools:
             root.addWidget(_build_archive_group(self))
             root.addSpacing(4)
 
@@ -897,11 +904,18 @@ class GeneralEditDialog(_BaseEditDialog):
         ('GC02', '相驗'),
     ]
 
-    def __init__(self, db_path, doc_id, parent=None, disable_convert=False):
+    def __init__(self, db_path, doc_id, parent=None, hide_manager_tools=False):
         super().__init__(parent)
         self.db_path = db_path
         self.doc_id  = doc_id
-        self._disable_convert = disable_convert
+        # ⚠️ 陳報頁傳 True：那一頁**不提供**類別轉換與歸檔狀態。
+        # 轉換只在歸檔頁與資料庫瀏覽頁做；歸檔狀態同理，屬歸檔業務。
+        # 2026-08-08 前是「建出來再反灰」，但那顆鈕在陳報頁**永遠不會亮**，
+        # 唯一的說明掛在 tooltip 上、而 tooltip 在深色模式整塊黑（QSS-7），
+        # 使用者看到的就是一顆沒有解釋的灰鈕，只會以為自己權限不夠。
+        # 且該 tooltip 文字（「已陳報之公文不可變更類別」）也是錯的——
+        # 結算模式下陳報頁預覽也有未發文的列，一樣被反灰。故改為不建立。
+        self._hide_manager_tools = hide_manager_tools
         self.setWindowTitle('一般陳報修改')
 
 
@@ -985,13 +999,10 @@ class GeneralEditDialog(_BaseEditDialog):
         btn_cancel.clicked.connect(self.reject)
 
         btn_row = QHBoxLayout()
-        # 轉換類別鈕：最左側，之後 stretch 隔開儲存/取消（§5.1）
-        if AuthManager.instance().is_manager():
-            _cbtn = _make_convert_button(self, "gen")
-            if getattr(self, "_disable_convert", False):
-                _cbtn.setEnabled(False)
-                _cbtn.setToolTip("已陳報之公文不可變更類別")
-            btn_row.addWidget(_cbtn)
+        # 轉換類別鈕：最左側，之後 stretch 隔開儲存/取消（§5.1）。
+        # ⚠️ 陳報頁不建立（見 __init__ 的 hide_manager_tools 說明）。
+        if AuthManager.instance().is_manager() and not self._hide_manager_tools:
+            btn_row.addWidget(_make_convert_button(self, "gen"))
         btn_row.addStretch()
         btn_row.addWidget(btn_save)
         btn_row.addWidget(btn_cancel)
@@ -1001,8 +1012,11 @@ class GeneralEditDialog(_BaseEditDialog):
         root.addSpacing(8)
 
         # 歸檔狀態區塊（管理者／歸檔管理）
+        # ⚠️ 陳報頁不建立歸檔狀態（同上）。不建立時 `w_arch_reported` 維持
+        # None，`_load_arch_status`／`_confirm_arch_clear`／`_audit_arch_cancel`
+        # 與 `_on_save` 都已對 None 做 no-op，不必另外處理。
         self.w_arch_reported = None
-        if AuthManager.instance().is_manager():
+        if AuthManager.instance().is_manager() and not self._hide_manager_tools:
             root.addWidget(_build_archive_group(self))
             root.addSpacing(4)
 

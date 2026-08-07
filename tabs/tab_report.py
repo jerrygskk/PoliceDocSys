@@ -818,11 +818,8 @@ class TabReport(BaseTab, InputLockMixin):
             msgWarning(*blocked)
             self._onRolePerm()
             return
-        dlg = CriminalEditDialog(self.db_path, doc_id, self.crim_table, disable_convert=True)
+        dlg = CriminalEditDialog(self.db_path, doc_id, self.crim_table, hide_manager_tools=True)
         if dlg.exec():
-            if getattr(dlg, "converted", False):
-                self._afterConvertReport("crim", doc_id)
-                return
             updated = dlg.get_updated()
             if updated:
                 # updated = (送文編號, 登錄日期, 發文分類, 案類, 嫌疑人_案由, 主承辦人, 受理人, 受理日期, 報案人)
@@ -847,11 +844,8 @@ class TabReport(BaseTab, InputLockMixin):
             msgWarning(*blocked)
             self._onRolePerm()
             return
-        dlg = GeneralEditDialog(self.db_path, doc_id, self.gen_table, disable_convert=True)
+        dlg = GeneralEditDialog(self.db_path, doc_id, self.gen_table, hide_manager_tools=True)
         if dlg.exec():
-            if getattr(dlg, "converted", False):
-                self._afterConvertReport("gen", doc_id)
-                return
             updated = dlg.get_updated()
             if updated:
                 # updated = (送文編號, 登錄日期, 業務單位, 陳報主旨, 陳報人, 分類)
@@ -867,17 +861,12 @@ class TabReport(BaseTab, InputLockMixin):
                 self._setDateTooltips(self.gen_table, row, {2: create_date})
                 QTimer.singleShot(0, lambda: autoResizeTable(self.gen_table))
 
-    def _afterConvertReport(self, key, doc_id):
-        """類別互轉後：移除本頁已作廢的原列（session 預覽無全量重載），
-        並標記瀏覽／歸檔頁下次顯示時重載兩類別（新單於彼處呈現）。"""
-        table = self.crim_table if key == "crim" else self.gen_table
-        if table:
-            for r in range(table.rowCount()):
-                lbl = table.cellWidget(r, 1)
-                if lbl and self._docIdFromLabel(lbl) == doc_id:
-                    table.removeRow(r)
-                    break
-        self._flagConvertReload(("crim", "gen"))
+    # ⚠️ 這裡原本有 `_afterConvertReport`（類別互轉後移除本頁作廢的原列、
+    # 標記瀏覽／歸檔頁重載）。2026-08-08 陳報頁改為**不建立**類別轉換鈕之後，
+    # `dlg.converted` 永遠不會為真，該方法與兩個呼叫分支都成了走不到的路徑，
+    # 故一併移除（專案原則：不留過時路徑）。
+    # ⚠️ 日後若決定讓陳報頁也能轉換，要連同這段一起補回來——少了它，轉換後
+    # 本頁預覽會留著一列指向已作廢的文號。
 
     # ── 刪除（第1點：doc_id 驅動，不需重新綁定）────────────
     def _deleteCrimByDocId(self, doc_id):

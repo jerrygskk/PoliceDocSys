@@ -216,8 +216,20 @@ class TabSettings(BaseTab):
         3: "system", 4: "trash", 5: "backup",
     }
     # 系統設定子頁六個嵌入面板的固定順序（與 profile.system_panels 對照）。
+    # ⚠️ **新增面板時這裡也要補**：`enabled_system_panel_keys` 是拿
+    # `profile.system_panels` 與本清單取交集，漏列的面板會被靜默過濾掉——
+    # profile 加了、建立那段也寫了，畫面上就是不出現，而且不會有任何錯誤。
+    # 2026-08-08 踩過（罰單編號長度）。本清單同時決定面板由上而下的排列順序。
+    # 由上而下的排列順序（2026-08-08 維護者指定）：先環境與資料落點，
+    # 再日常作業設定，最後是安全性／時間類。
     _SYSTEM_PANEL_ORDER = (
-        "archive_root", "print_title", "idle", "input_lock", "backup", "input_mode",
+        "archive_root",   # 歸檔資料夾
+        "backup",         # 自動備份
+        "print_title",    # 簽收表標題
+        "input_mode",     # 陳報模式
+        "ticket_len",     # 罰單編號長度
+        "input_lock",     # 唯讀設定
+        "idle",           # 閒置逾時
     )
 
     def __init__(self, tab_widget, db_path, profile: AppProfile = FULL_PROFILE):
@@ -400,6 +412,8 @@ class TabSettings(BaseTab):
         self._panel_idle = (
             IdleTimeoutPanel(self.db_path, sys_content)
             if "idle" in enabled_panels else None)
+        if self._panel_idle:
+            self._panel_idle.timeouts_changed.connect(self._onIdleTimeoutsChanged)
         self._panel_input_lock = (
             InputLockPanel(self.db_path, sys_content, flow_keys=lock_flow_keys)
             if "input_lock" in enabled_panels else None)
@@ -412,12 +426,23 @@ class TabSettings(BaseTab):
         self._panel_ticket_len = (
             TicketNoLengthPanel(self.db_path, sys_content)
             if "ticket_len" in enabled_panels else None)
+        # ⚠️ 畫面排列一律由 `_SYSTEM_PANEL_ORDER` 驅動，**不要在這裡另寫一份
+        # 順序**。2026-08-08 前這裡是自己列一個 tuple，於是「過濾用的順序」與
+        # 「畫面上的順序」是兩份、改一邊另一邊不動——調整順序時會以為改好了，
+        # 實際畫面沒變。
+        self._system_panels_by_key = {
+            "archive_root": self._panel_archive_root,
+            "print_title": self._panel_print_title,
+            "idle": self._panel_idle,
+            "input_lock": self._panel_input_lock,
+            "backup": self._panel_backup,
+            "input_mode": self._panel_input_mode,
+            "ticket_len": self._panel_ticket_len,
+        }
         if sys_content and sys_content.layout():
             sys_lay = sys_content.layout()
-            for p in (self._panel_archive_root, self._panel_print_title,
-                      self._panel_idle, self._panel_input_lock,
-                      self._panel_backup, self._panel_input_mode,
-                      self._panel_ticket_len):
+            for p in (self._system_panels_by_key[k]
+                      for k in self._SYSTEM_PANEL_ORDER):
                 if p:
                     sys_lay.addWidget(p)
             sys_lay.addStretch()
@@ -1105,6 +1130,18 @@ class TabSettings(BaseTab):
         st["dirty"] = was_dirty
         st["save_btn"].setEnabled(was_dirty)
         self._renderSortTable(key)
+
+
+    def _onIdleTimeoutsChanged(self):
+        """閒置逾時存檔後即時套用到主視窗的計時器（不必重啟程式）。
+
+        主視窗是 `_manager`（建立 Tab 時掛上）。單獨建立 TabSettings 的
+        測試沒有 manager，取不到就當作沒有計時器可更新，直接略過。
+        """
+        mgr = getattr(self, "_manager", None)
+        apply_fn = getattr(mgr, "applyIdleTimeouts", None)
+        if apply_fn:
+            apply_fn()
 
     def _dirtyPanels(self):
         """系統設定子頁各面板中有未存變更者（切頁/離開提示用）。"""

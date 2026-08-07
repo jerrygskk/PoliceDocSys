@@ -227,7 +227,8 @@ class DocumentManager:
         AuthManager.instance().role_changed.connect(self._onRoleChanged)
 
         # 閒置逾時（分）可於設定頁「系統設定」調整，存 App_Settings；
-        # 啟動時讀一次（改值須重啟生效），讀不到／不合法走預設（登出 10、關閉 14.5），
+        # 啟動時讀一次，之後由設定頁存檔透過 applyIdleTimeouts() 即時更新；
+        # 讀不到／不合法走預設（登出 10、關閉 14.5），
         # 0＝停用該機制（不啟動計時器）。自動登出：僅管理者／歸檔管理計時。
         from lib.db_utils import getIdleTimeoutsMs
         logout_ms, close_ms = getIdleTimeoutsMs(self.db_path)
@@ -257,6 +258,33 @@ class DocumentManager:
         self._installIdleFilter()
 
     _CLOSE_WARN_MS = 90 * 1000   # 關閉前多久開始倒數警示（技術參數，不放 UI）
+
+    def applyIdleTimeouts(self):
+        """重讀閒置逾時並即時套用（設定頁存檔後由 TabSettings 呼叫）。
+
+        踩過：分鐘數只在開機時讀一次，現場把自動登出 1 分改成 10 分並存檔後，
+        正在跑的那支仍拿著舊的 1 分照樣把人踢出去，看起來像存檔沒生效。
+
+        兩個計時器一律「重新起算」而非換算剩餘：新值較短時不會沿用舊的長倒數，
+        新值較長時也不會留著舊的短倒數。自動關閉重新起算只會比原本早關或等長，
+        不牴觸「趕在單位鎖螢幕前關掉、清乾淨 dbfile.lock」那條鐵則。
+        """
+        from lib.db_utils import getIdleTimeoutsMs
+        logout_ms, close_ms = getIdleTimeoutsMs(self.db_path)
+        self._IDLE_TIMEOUT_MS = logout_ms
+        self._CLOSE_TIMEOUT_MS = close_ms
+        # 自動登出僅管理者／歸檔管理計時（與事件過濾器同一條件）
+        if logout_ms > 0 and AuthManager.instance().is_manager():
+            self._idle_timer.start(logout_ms)
+        else:
+            self._idle_timer.stop()
+        if close_ms > 0:
+            self._resetCloseTimer()     # 內含停倒數、藏橫幅
+        else:
+            self._close_timer.stop()
+            self._countdown_timer.stop()
+            if getattr(self, "_idle_banner", None):
+                self._idle_banner.setVisible(False)
 
     def _buildIdleBanner(self):
         """在主視窗中央 layout 頂端（QTabWidget 之上）插一條隱藏紅色橫幅。

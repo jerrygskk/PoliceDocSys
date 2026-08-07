@@ -62,6 +62,9 @@
 - **PRM-5**: **測試建立的分頁沒拆 `role_changed` 連線，改成逐列重刷後會炸得更明顯** → TST-6 記的是「懸空連線打到已釋放的 C++ 物件」；逐列重刷會**再多查一次資料庫**，於是殭屍分頁在別支測試切換身分時去查一個早就被刪掉的暫存 DB（`no such table: Document_Reward`），紅在毫不相干的檔案上。處置同 TST-6：`tearDown` 逐一 `auth.role_changed.disconnect(tab._onRoleRefresh)`。
 - **PRM-6**: **唯讀鎖只擋一般使用者、管理身分照樣能動** → 2026-08-07 起**三種身分一律不准動**（含 admin），且連新增一起擋。原本六支硬 gate 與 `_applyInputLock` 都寫 `not is_manager() and isInputLocked(...)`，豁免已全部拿掉。唯讀的語意是「這個功能停用」，留任何入口都與它衝突；要改資料就先到「資料庫設定 → 系統設定」把唯讀關掉（**該入口不受本鎖影響，所以鎖住 admin 不會沒有解鎖路徑**）。⚠️ 新增流程時不要把 `is_manager()` 豁免加回來。
 
+#### CFG：設定值即時生效
+- **CFG-1**: **改了設定並存檔，執行中的程式仍照舊值跑** → 症狀：把閒置自動登出從 1 分改成 10 分、按了儲存，沒重啟程式時**照樣一分鐘就被登出**。根因是分鐘數只在開機時 `getIdleTimeoutsMs` 讀一次存進 `DocumentManager._IDLE_TIMEOUT_MS`，設定面板存檔只寫 `App_Settings`，**沒有人去通知正在跑的計時器**（面板說明還寫著「下次啟動時生效」，等於把缺口寫成規格）。2026-08-08 改為存檔即時生效：面板 emit `timeouts_changed` → `TabSettings._onIdleTimeoutsChanged` → `DocumentManager.applyIdleTimeouts()` 重讀 DB 並**重新起算**兩個計時器。⚠️ **新增任何「開機讀一次就快取起來」的設定時，一併想好存檔後誰負責重新套用**；面板不要自己去碰計時器／視窗（它拿不到、也不該知道），一律 emit 訊號讓上層處理。⚠️ 自動關閉一律**重新起算**而非換算剩餘：只會比原本早關或等長，才不會牴觸「趕在單位鎖螢幕前關閉、清乾淨 `dbfile.lock`」那條鐵則。測試 `tests/test_idle_timeout_live_apply.py`。
+
 #### SVG：SVG／icon
 - **SVG-1**: **Material icon 白邊太多／在按鈕裡偏一邊** → 裁 viewBox 到圖案實際 bounding box 並置中、移除非對稱裝飾，width/height 統一 512px（`0 -960 960 960` 圖案只佔中央 70%）。
 - **SVG-2**: **HELP 新增按鈕顯示破圖佔位符** → `tools/gen_buttons.py` 只產 SVG、**不會自動登記 qrc**；新增 key 後須手動在 `res/resources.qrc` 補 `<file alias="btn/<key>.svg">buttons/<key>.svg</file>` 再 `pyside6-rcc res/resources.qrc -o res/resources_rc.py` 重編。

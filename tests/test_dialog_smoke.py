@@ -111,6 +111,52 @@ class TestEditDialogs(_DialogBase):
         self.assertEqual(dlg.w_subject.text(), "刑案主旨")
         dlg.deleteLater()
 
+    def test_report_page_hides_convert_button_and_archive_group(self):
+        """⚠️ 陳報頁的修改視窗**不建立**類別轉換鈕與歸檔狀態區塊。
+
+        現場回報：歸檔管理與管理者在陳報頁看得到這兩樣，但那一頁根本不能轉換
+        （只能在歸檔頁或資料庫瀏覽頁做），容易誤會成自己權限不夠。
+        2026-08-08 前是「建出來再反灰」，而唯一的說明掛在 tooltip 上、tooltip
+        在深色模式整塊黑（QSS-7），等於沒有說明；那段 tooltip 文字也是錯的
+        （結算模式下未發文的列一樣被反灰）。故改為不建立。
+        """
+        from PySide6.QtWidgets import QGroupBox, QPushButton
+        from lib.auth_manager import AuthManager
+        from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
+        AuthManager.instance()._role = "admin"
+        self.addCleanup(lambda: setattr(AuthManager.instance(), "_role", "user"))
+        for cls, doc in ((CriminalEditDialog, "2"), (GeneralEditDialog, "3")):
+            with self.subTest(cls=cls.__name__):
+                dlg = cls(self.db, doc, hide_manager_tools=True)
+                self.addCleanup(dlg.deleteLater)
+                labels = [b.text() for b in dlg.findChildren(QPushButton)]
+                self.assertNotIn("⇄ 轉換類別", labels,
+                                 "陳報頁不該出現類別轉換鈕")
+                self.assertIsNone(dlg.w_arch_reported,
+                                  "陳報頁不該建立歸檔狀態區塊")
+                titles = [g.title() for g in dlg.findChildren(QGroupBox)]
+                self.assertNotIn("歸檔狀態", titles)
+
+    def test_other_pages_still_offer_convert_and_archive(self):
+        """歸檔頁與資料庫瀏覽頁照常提供（它們不傳 hide_manager_tools）。
+
+        少了這條，上面那條可能只是「管理身分根本沒建過這兩樣」而假綠。
+        """
+        from PySide6.QtWidgets import QGroupBox, QPushButton
+        from lib.auth_manager import AuthManager
+        from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
+        AuthManager.instance()._role = "admin"
+        self.addCleanup(lambda: setattr(AuthManager.instance(), "_role", "user"))
+        for cls, doc in ((CriminalEditDialog, "2"), (GeneralEditDialog, "3")):
+            with self.subTest(cls=cls.__name__):
+                dlg = cls(self.db, doc)
+                self.addCleanup(dlg.deleteLater)
+                labels = [b.text() for b in dlg.findChildren(QPushButton)]
+                self.assertIn("⇄ 轉換類別", labels)
+                self.assertIsNotNone(dlg.w_arch_reported)
+                titles = [g.title() for g in dlg.findChildren(QGroupBox)]
+                self.assertIn("歸檔狀態", titles)
+
     def test_report_edits_show_and_preserve_readonly_create_date(self):
         from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
         for cls, doc, subject_attr, changed_subject, table in (

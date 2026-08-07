@@ -10,7 +10,7 @@
     trash／backup nav button 不得被再次 `setVisible(True)`。
   - `InputLockPanel`／`InputModePanel` 的 `flow_keys` 只建立、只讀寫白名單
     內的流程，不動其他流程既有 App_Settings 值。
-  - 完整版（預設 profile=FULL_PROFILE）行為零變化：六頁六面板全部建立。
+  - 完整版（預設 profile=FULL_PROFILE）：六頁全部建立，系統設定七面板。
 
 人名一律虛構（push 前有 test_no_pii 掃真名）。
 """
@@ -93,13 +93,42 @@ class TestEntrySettingsAssembly(_SettingsBase):
         s = self._make_settings(profile=ENTRY_PROFILE)
         self.assertEqual(s.enabled_page_keys, ("personnel", "system"))
         self.assertEqual(s.enabled_system_panel_keys,
-                          ("idle", "input_lock", "input_mode"))
+                          ("input_mode", "ticket_len", "input_lock", "idle"))
         self.assertIsNone(s._trash_panel)
         self.assertIsNone(s._panel_restore)
         self.assertIsNone(s._panel_archive_root)
         self.assertIsNone(s._panel_print_title)
         self.assertIsNone(s._panel_backup)
         self.assertTrue(s._btn_year_reset.isHidden())
+
+    def test_every_profile_panel_actually_gets_built(self):
+        """⚠️ profile 列出的每個系統設定面板都必須真的被建出來。
+
+        `enabled_system_panel_keys` 是拿 `profile.system_panels` 與
+        `TabSettings._SYSTEM_PANEL_ORDER` **取交集**，只加 profile、忘了加順序
+        清單的話，面板會被靜默過濾掉——建立那段程式明明寫了，畫面上就是不出現，
+        而且沒有任何錯誤訊息。2026-08-08 實際踩過（罰單編號長度上線後看不到）。
+
+        ⚠️ 這條要走**設定頁的組裝路徑**才有意義：直接 new 面板類別測不到這個洞
+        （先前的 `test_settings_panel_pilot` 就是那樣，所以沒抓到）。
+        """
+        for profile in (FULL_PROFILE, ENTRY_PROFILE):
+            with self.subTest(profile=profile.exe_name):
+                s = self._make_settings(profile=profile)
+                missing = [k for k in profile.system_panels
+                           if k not in s.enabled_system_panel_keys]
+                self.assertEqual(
+                    missing, [],
+                    f"{missing} 在 profile 裡但被 _SYSTEM_PANEL_ORDER 濾掉了")
+
+    def test_ticket_length_panel_is_built_for_both_profiles(self):
+        """罰單編號長度兩支 exe 都要有（獨立版同樣有罰單登錄）。"""
+        for profile in (FULL_PROFILE, ENTRY_PROFILE):
+            with self.subTest(profile=profile.exe_name):
+                s = self._make_settings(profile=profile)
+                self.assertIsNotNone(
+                    s._panel_ticket_len,
+                    "罰單編號長度面板沒被建立，現場就沒有地方調這個限制")
 
     def test_entry_hides_dept_casetype_trash_backup_nav_buttons(self):
         s = self._make_settings(profile=ENTRY_PROFILE)
@@ -211,16 +240,39 @@ class TestEntryRoleBaseline(_SettingsBase):
 
 
 class TestFullSettingsUnchanged(_SettingsBase):
-    """完整版（預設 profile）：六頁六面板全部建立，行為零變化。"""
+    """完整版（預設 profile）：六頁全部建立，系統設定七面板。"""
 
-    def test_full_profile_default_builds_all_six_pages_and_panels(self):
+    def test_panel_layout_order_follows_the_single_source(self):
+        """畫面由上而下的順序必須就是 `_SYSTEM_PANEL_ORDER`。
+
+        踩過：排列順序另外寫死在 addWidget 的 tuple 裡，與過濾用的
+        `_SYSTEM_PANEL_ORDER` 是兩份；調整順序時改了其中一份，畫面完全沒變
+        也沒有任何錯誤。這支測試直接讀版面實際擺放的順序，不看建立順序。
+        """
+        from PySide6.QtWidgets import QGroupBox, QWidget
+        for label, profile in (("full", FULL_PROFILE), ("entry", ENTRY_PROFILE)):
+            with self.subTest(profile=label):
+                s = self._make_settings(profile=profile)
+                content = s.tab_widget.findChild(QWidget, "system_scroll_content")
+                lay = content.layout()
+                laid_out = []
+                for i in range(lay.count()):
+                    w = lay.itemAt(i).widget()
+                    if isinstance(w, QGroupBox):
+                        laid_out.append(w)
+                by_key = s._system_panels_by_key
+                expected = [by_key[k] for k in s.enabled_system_panel_keys]
+                self.assertEqual(laid_out, expected)
+
+    def test_full_profile_default_builds_all_pages_and_panels(self):
         s = self._make_settings()   # 不傳 profile → 預設 FULL_PROFILE
         self.assertEqual(s.enabled_page_keys,
                           ("personnel", "dept", "casetype", "system",
                            "trash", "backup"))
         self.assertEqual(s.enabled_system_panel_keys,
-                          ("archive_root", "print_title", "idle",
-                           "input_lock", "backup", "input_mode"))
+                          ("archive_root", "backup", "print_title",
+                           "input_mode", "ticket_len", "input_lock",
+                           "idle"))
         self.assertIsNotNone(s._trash_panel)
         self.assertIsNotNone(s._panel_restore)
         for i in range(6):
