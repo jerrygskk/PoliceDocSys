@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 
 from lib.auth_manager import AuthManager
 from lib.base_tab import BaseTab, InputLockMixin
+from lib.row_perm import canDeleteRow, canEditRow, isDispatched
 from lib.db_utils import (
     REWARD_ACTIVE_SQL, getResourcePath, isInputLocked, isSelfServiceMode,
     loadActivePersonnel, nextDocId, softDeleteDoc,
@@ -89,7 +90,7 @@ class TabReward(BaseTab, InputLockMixin):
                 self.btn_submit,
                 self.btn_clear,
             ],
-            clear_tables=[self.reward_table],
+            refresh_tables=[self.reward_table],
         )
         self.reward_reason.setFocus()
         self._applySelfServiceMode()
@@ -186,25 +187,20 @@ class TabReward(BaseTab, InputLockMixin):
         # 切回本頁一律重讀唯讀設定並重套（唯讀狀態可能在他頁被改）。
         self._applyInputLock()
 
-    def _onRoleClearList(self, *args):
-        """降權清空必須具『持續性』，故連本次登錄清單一併清掉。
+    def _refreshRowPermissions(self, tables):
+        """降權時重建整份本次登錄清單（`InputLockMixin` 的 hook）。
 
-        基底 `InputLockMixin._onRoleClearList` 只把預覽表 widget 清成 0 列、
-        不動 `self._session_doc_ids`。本頁 `on_activated` 的 dirty-flag 守衛
-        只是「掩蓋」而非防線：`reward_data_dirty` 會被其他不設角色 gate 的路徑
-        （如列印頁結算發文、瀏覽頁還原）設為 True，一般使用者走得到；
-        旗標一開，切回本頁就會
-        `_refresh_session_rows()` 依殘留的 `_session_doc_ids` 把整份清單從 DB
-        重建回來——降權後的一般使用者因此拿到「編輯（`_onEditRow`）／刪除
-        （`_deleteByDocId`）管理身分建立之敘獎」的入口，而同一筆資料在資料庫
-        瀏覽頁是僅 admin 可改（DEVELOPER §10 權限矩陣）。實測過的權限回歸，
-        勿只還原 widget。清 `_session_doc_ids` 不動 DB：資料仍在，只是不再
-        留在本頁的操作入口內（比照 `tab_ticket._onRoleClearList`）。
+        ⚠️ **2026-08-07 起不再清空清單、也不再清 `_session_doc_ids`**。原本
+        清空的理由是「降權後的一般使用者不該拿到編輯／刪除管理身分建立之敘獎
+        的入口」，但那是把資料庫瀏覽頁「僅 admin 可改」的規則錯套到登錄頁上
+        ——登錄頁本來就對三種身分開放刪改（維護者 2026-08-04 裁示）。
+
+        本頁走**整表重建**而非逐列手術：`_refresh_session_rows()` 已經會依
+        `_session_doc_ids` 從 DB 重讀，天然拿到三態真值，不會有逐列判斷誤判
+        的空間；重建時每一列的可點與可刪由 `row_perm` 計算，因此
+        「降權當下對、dirty-flag 重建後走樣」的問題也一併消失（規則只有一份）。
         """
-        super()._onRoleClearList(*args)
-        if AuthManager.instance().is_manager():
-            return
-        self._session_doc_ids = []
+        self._refresh_session_rows()
 
     def _rebuild_personnel_list(self):
         """候選人員名條：一律照人員清單（`Ref_Personnel` 的 sort_order）排。
@@ -225,8 +221,7 @@ class TabReward(BaseTab, InputLockMixin):
 
     def _submit(self):
         # 硬性 guard：反灰只擋 UI 觸發，Enter／程式路徑仍會進來。
-        if (not AuthManager.instance().is_manager()
-                and isInputLocked(self.db_path, "reward")):
+        if isInputLocked(self.db_path, "reward"):
             msgWarning("目前為唯讀", "此年度的敘獎登錄已鎖定，無法新增資料。")
             return
         # 發文結算模式：發文日期留空哨兵（''）、發文人員 NULL，事後由列印頁結算
@@ -281,12 +276,22 @@ class TabReward(BaseTab, InputLockMixin):
         self._flag_browse_dirty()
         self._form_clear()
 
-    def _append_preview(self, doc_id, date, reason, recipients):
+    def _append_preview(self, doc_id, date, reason, recipients, perm=None):
         row = self.reward_table.rowCount()
         self.reward_table.insertRow(row)
-        container, _ = makeDeleteBtn(lambda _=False, d=doc_id: self._deleteByDocId(d))
+        # 每一列的可改／可刪由 row_perm 計算：未發文全開、已發文對一般使用者
+        # 鎖住；唯讀凍結另外只鎖一般使用者。`date` 是 DB 的 register_date 真值
+        # （''＝未發文、日期＝已發文），不是表格上的顯示字串。
+        if perm is None:
+            _, perm = self._rowPermContext("reward", [])
+        dispatched = isDispatched(date)
+        container, del_btn = makeDeleteBtn(
+            lambda _=False, d=doc_id: self._deleteByDocId(d))
+        del_btn.setEnabled(canDeleteRow("reward", dispatched=dispatched, **perm))
         self.reward_table.setCellWidget(row, 0, container)
-        setDocIdLinkCell(self.reward_table, row, 1, doc_id, self._onEditRow, clickable=True)
+        setDocIdLinkCell(
+            self.reward_table, row, 1, doc_id, self._onEditRow,
+            clickable=canEditRow("reward", dispatched=dispatched, **perm))
         # 發文日期（col2）：尚未發文時為空 → 橘字「未發文」置中。
         if date:
             date_item = QTableWidgetItem(date)
@@ -319,18 +324,31 @@ class TabReward(BaseTab, InputLockMixin):
         by_id = {str(r[0]): r for r in rows}
         self._session_doc_ids = [d for d in self._session_doc_ids if d in by_id]
         self.reward_table.setRowCount(0)
+        # 權限素材只取一次（身分與唯讀設定對整份清單相同），逐列只差發文狀態。
+        _, perm = self._rowPermContext("reward", [])
         for doc_id in self._session_doc_ids:
             row = by_id[doc_id]
-            self._append_preview(str(row[0]), row[1], row[2], row[3])
+            self._append_preview(str(row[0]), row[1], row[2], row[3], perm=perm)
 
     def _row_for_doc_id(self, doc_id):
-        for row in range(self.reward_table.rowCount()):
-            widget = self.reward_table.cellWidget(row, 1)
-            if self._docIdFromLabel(widget) == str(doc_id):
+        """找出該 doc_id 在預覽表的列號，查無回 -1。
+
+        ⚠️ 必須同時認「連結（cellWidget）」與「純文字（item）」兩種欄型：
+        編號欄不可點時是純文字（見 `setDocIdLinkCell`），只查 cellWidget 會在
+        已發文列上回 -1，刪除後那一列就移不掉。
+        """
+        for row, value in self._rowDocIds(self.reward_table).items():
+            if value == str(doc_id):
                 return row
         return -1
 
     def _onEditRow(self, _row, doc_id):
+        # 入口複核：反灰／純文字化只是提示，這一層才是防線（見計畫 S0 ①）。
+        blocked = self._rowActionBlockReason("reward", doc_id, delete=False)
+        if blocked:
+            msgWarning(*blocked)
+            self._refresh_session_rows()
+            return
         dlg = RewardEditDialog(self.db_path, doc_id, self.reward_table, source="entry")
         updated = dlg.exec() and dlg.get_updated()
         if getattr(dlg, "_row_missing", False):
@@ -346,6 +364,12 @@ class TabReward(BaseTab, InputLockMixin):
         self._flagConvertReload(("reward",))
 
     def _deleteByDocId(self, doc_id):
+        # 入口複核：先於確認框，避免使用者按完「刪除」才被擋（見計畫 S0 ①）。
+        blocked = self._rowActionBlockReason("reward", doc_id, delete=True)
+        if blocked:
+            msgWarning(*blocked)
+            self._refresh_session_rows()
+            return
         row = self._row_for_doc_id(doc_id)
         if not confirmBox(
                 "確認刪除",

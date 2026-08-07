@@ -65,7 +65,7 @@ main.py
 
 ## 2. 踩雷速查表（動手前必掃）
 
-十一組症狀→解法條目已拆至 [PITFALLS.md](PITFALLS.md)（群組代號 UI／QSS／QTW／LAY／TAB／SVG／SQL／ARC／NET／PKG／TST，任務對照索引見 CLAUDE.md）。
+十二組症狀→解法條目已拆至 [PITFALLS.md](PITFALLS.md)（群組代號 UI／QSS／QTW／LAY／TAB／PRM／SVG／SQL／ARC／NET／PKG／TST，任務對照索引見 CLAUDE.md）。
 
 ### 跨功能影響對照表（動到左欄主題＝右欄逐項檢查）
 
@@ -92,7 +92,7 @@ graph LR
 | **唯讀設定**（`input_lock_*` 六 key） | `InputLockPanel`；`isInputLocked`/`INPUT_LOCK_KEYS`；六種流程的硬 gate（`handleDispatch`/`tab_receive._submit`/`_submitCriminal`/`_submitGeneral`/`tab_reward._submit`/`tab_ticket._submit`）；五頁 `_applyInputLock` 反灰＋橫幅＋`_onShown`＋`_onRoleClearList`；tab_report `_currentLockKind`/`_switchFormType` 重套。敘獎發文結算模式下鎖 `reward` 即擋住發文源頭（不另設發文鎖） | §10「六種輸入流程唯讀鎖」＋權限矩陣＋§5 面板表；HELP/QUICKSTART；`tests/test_input_lock` |
 | **自動備份／備份還原**（`backup_second_dir`／異地／quick_check／還原子頁） | `run_auto_backup(extra_dirs=)`＋`_run_gfs`＋`quick_check`／`list_backups`／`verify_backup`／`restore_backup`（db_backup）；`main.py` 啟動 quick_check→備份；`BackupPanel`（settings_panels）；`BackupRestorePanel`（backup_restore_panel）；tab_settings nav 第 6 子頁四處掛載（`_nav_btns`／兩份 loaders／`_applyRolePermissions`）；Reset 不清 `backup_second_dir` | §10「平時自動備份（`lib/db_backup.py`）」＋§5 面板表＋「備份還原子頁」＋§6 App_Settings 列；HELP 設定頁；QUICKSTART；README FAQ 資料安全段；`tests/test_db_backup` |
 | **陳報模式**（`report_input_mode`／發文結算） | `isSelfServiceMode`（db_utils）；`InputModePanel`（settings_panels）；陳報頁、敘獎登錄頁與罰單頁 `_applyInputLock`→`_applySelfServiceMode`，提交帶 NULL 與放行發文人員（三頁皆以可見 QLabel 提示條 `*_sender_hint` 顯示「發文結算模式」，不用 tooltip，見 PITFALLS QSS-7；陳報頁的提示條放 `Layout3.ui` row0 的 col7／col8，見 §5「tab_report.py 特殊架構」）；**刑案／一般編輯彈窗 `_BaseEditDialog._lockReportFieldsIfSelfService()`**（發文結算模式且非管理身分才反灰陳報日期／發文人員，涵蓋陳報／瀏覽／歸檔三處開啟點）；列印頁 `_settle_group`／`_refresh_settle_group`／`_on_settle`＋`SettleDialog`／`count_unissued`（settle_dialog 的 `SETTLE_META` 含刑案／一般／敘獎／罰單，罰單衝突 strict rollback）；歸檔 `_queryUnarchived`／`_tableSignature` 排除未發文列；瀏覽頁未發文欄位橘字提示；Reset 不清。⚠️ `reward` **不吃**舊 `report_input_mode` 全域 fallback（見 `LEGACY_MODE_FALLBACK_KINDS`） | §5「發文結算模式」＋§5 面板表＋§6 App_Settings 列；HELP 陳報/列印/設定頁；QUICKSTART；README 功能段＋陳報模式 TIP；`tests/test_report_input_mode` |
-| **權限／角色**（新增任何「受限身分不可做」） | **每條觸發路徑 guard**（按鈕/雙擊/行內編輯/Enter/右鍵/拖拉，見 CLAUDE.md 協作偏好 B）；`role_changed`→`_onRolePerm`/`_applyRolePermissions`；遮罩頁（歸檔/稽核）；閒置登出後的行為；**破壞性或動實體檔案的流程另加「modal 返回後再檢查一次」**（見 §10「執行時權限複核」） | **§10「權限」權限矩陣必更新**＋§10「執行時權限複核」；HELP 各頁的權限描述；QUICKSTART 權限段；上機以受限身分逐路徑驗證 |
+| **權限／角色**（新增任何「受限身分不可做」） | **每條觸發路徑 guard**（按鈕/雙擊/行內編輯/Enter/右鍵/拖拉，見 CLAUDE.md 協作偏好 B）；`role_changed`→`_onRolePerm`/`_applyRolePermissions`；遮罩頁（歸檔/稽核）；閒置登出後的行為；**破壞性或動實體檔案的流程另加「modal 返回後再檢查一次」**（見 §10「執行時權限複核」）；**新增預覽表要接上逐列重刷**（`_setupInputLock(refresh_tables=)`＋覆寫 `_refreshRowPermissions`，規則走 `lib/row_perm.py`，見 §10「預覽列權限」）；**新增動作進入點要補入口複核**（`_rowActionBlockReason`） | **§10「權限」權限矩陣必更新**＋§10「預覽列權限」＋§10「執行時權限複核」；HELP 各頁的權限描述；QUICKSTART 權限段；`tests/test_row_perm.py`；上機以受限身分逐路徑驗證 |
 | **角色 TAB 顯隱**（user／archive／admin） | `visibleTabKeys` 權限矩陣；`DocumentManager` 執行期顯隱與登出 fallback；`MainMenu` 全入口 `requestTab`；設定頁登入與待前往目標 | §10「權限」9／10／11 TAB 清單；HELP 固定 Profile index 映射；QUICKSTART 權限段；README 登入說明；角色切換、主選單導向、登出／閒置登出與 HELP mapping 測試 |
 | **新增 App_Settings key**（通用步驟） | db_utils 常數＋讀取 helper（含 fallback 預設）；`db_seed` 要不要播種；Reset 清不清（`performYearEndReset`）；生效時機（即時讀 vs 重啟） | §6 App_Settings 那一列；對應 tests |
 | **系統設定新面板** | `settings_panels.py` 新類別＋`ui_utils/__init__` 匯出；tab_settings **四份清單**（建立/`_applyRolePermissions`/`_loadSystem`/`_dirtyPanels`）；`_save()` 開頭權限 guard；儲存鈕 dirty UX（亮/灰/clearFocus） | §5 面板表；HELP 設定頁；QUICKSTART |
@@ -873,6 +873,59 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 | 設定 Tab8 | 全可用 | 可視：變更密碼／登出／系統設定子頁（僅歸檔資料夾面板可改，簽收表標題／閒置逾時面板整塊反灰）；參照維護＋跨年度重置 disable 灰掉 | **TAB 保持顯示作登入入口**；未登入時不開放設定內容 |
 | 操作紀錄 Tab9 | 可檢視（唯讀／篩選／匯出 CSV） | **TAB 隱藏**；主選單入口導向設定登入 | **TAB 隱藏**；主選單入口導向設定登入 |
 
+#### 預覽列權限（2026-08-07）
+
+⚠️⚠️ **凌駕一切的原則（維護者裁示）**：
+
+> **不管權限與設定怎麼調整，都不允許擋住「還在預覽列裡、剛登錄完」的資料的
+> 修改與刪除。例外只有兩個：交辦單發文，以及唯讀鎖。**
+
+理由是維護者定義的作業節奏：那些預覽列就是承辦人自己這一次打進去的東西，
+打錯字當場自己改掉、按 ✕ 重來，是最高頻的日常操作。任何把它擋下來的規則，
+都會逼使用者為了一個錯字去找管理身分。
+
+⚠️ **這是「改回開發初期的行為」，不是新規則。** 中途曾被改成「降權就把預覽清單
+整張清空」「已發文列鎖住一般使用者」，維護者當時即覺得不合理、事後還得花時間
+調回來。**看到相關程式不要再「修正」一次**——要動先問維護者。
+
+| 頁 | 預覽列的可改／可刪 |
+|---|---|
+| 交辦單收文 Tab1、公文陳報 Tab2、敘獎 Tab3、罰單 Tab4 | **三身分一律可改可刪**，不看發文狀態 |
+| 交辦單發文 Tab0（例外一） | 未發文：三身分皆可改（一般使用者只能改承辦人）；**已發文：只有 admin** |
+| 任何一頁，唯讀鎖開啟時（例外二） | **三身分一律不准動**（連 admin），也不能新增 |
+| 資料庫瀏覽 Tab6（不是預覽列） | 依 `_canEditKey`（交辦／敘獎／罰單僅 admin；刑案／一般 `is_manager`）；刪除一律 admin |
+
+- **為什麼交辦單發文除外**：它的預覽列不是「剛登錄的資料」——是**掃入文號後從
+  資料庫拉出來的既有公文**（`tab_dispatch.handleQuery`／`_insertRow`），本來就
+  可能是別人建立、甚至已經發文的單
+- **為什麼那四頁的「在預覽列裡」等同「本次登錄的」**：它們的預覽列**只**由
+  「本次送出」寫入（`_insertCrimRow`／`_insertGenRow`／`_insertPreviewRow`／
+  `_append_preview`／`_appendPreview` 都只在 submit 成功後才被呼叫），故不需要
+  另外維護一份 session 名單。⚠️ **日後若讓這些預覽列載入非本次登錄的資料
+  （例如開頁時撈出今天已登錄的），這個等式就不成立，必須改成明確判斷。**
+- ⚠️ **唯讀鎖 2026-08-07 起不再豁免管理身分**：原本六支硬 gate 與 `_applyInputLock`
+  都寫 `not is_manager() and isInputLocked(...)`，現已全部拿掉豁免。唯讀＝這個功能
+  停用，不分身分；要改資料就先到「資料庫設定 → 系統設定」把唯讀關掉（該入口
+  不受本鎖影響）。**新增流程時不要把 `is_manager()` 豁免加回來。**
+
+- **規則單一來源**：`lib/row_perm.py`（`canEditRow`／`canDeleteRow`／`isDispatched`／
+  `isLiveRow`／`liveRowSql`／`rowStateSql`／`dispatchEditIsRestricted`／
+  `SESSION_PREVIEW_PAGES`）。純邏輯、不 import Qt，測試在 `tests/test_row_perm.py`。
+  頁面代號沿用 `db_utils.INPUT_LOCK_KEYS` 的詞彙，不另造第二套
+- ⚠️ **三態逐頁不同**：敘獎／罰單的未發文是 `register_date=''`、軟刪除是 `NULL`；
+  **刑案／一般陳報的未發文是 `report_date IS NULL`**，軟刪除則是看主旨欄被清空。
+  畫面上兩者都是空白，故**一律回查 DB、不得讀表格顯示字串**
+- **降權行為**：`InputLockMixin._setupInputLock(..., refresh_tables=[...])`（原名
+  `clear_tables`），身分變更走 `_onRoleRefresh` → 各頁覆寫的
+  `_refreshRowPermissions()`。**降權不再清空預覽清單**——清空等於讓使用者失去
+  本來就有的入口
+- ⚠️ **反灰與純文字化只是提示，不是防線**：每個動作進入點（`_onEditRow`／
+  `_deleteByDocId`）都要自己再檢查一次——`BaseTab._rowActionBlockReason(page,
+  doc_id, delete=)` 重查 DB 現值後回傳擋下原因，**由各頁自己的 `msgWarning` 彈出**
+  （在共用層直接彈，離線測試 patch 不掉而會卡在無人可按的 modal 上，見
+  PITFALLS TST-7）。它現在會擋下的只有兩件事：唯讀鎖，以及「這筆已被別台電腦刪除」
+- ⚠️ **新增預覽表時記得接上逐列重刷**，否則唯讀開啟後那張表的入口不會跟著鎖
+
 > 敘獎登錄與罰單登錄本身不設角色 gate（三身分皆可登錄／改／刪本次登錄清單）。**瀏覽頁編輯改為逐子頁判定**（`tab_dbbrowse._canEditKey(key)`）：**交辦（task）／敘獎（reward）／罰單（ticket）僅 admin 可改**；**刑案（crim）／一般（gen）** 維持 `is_manager()`（歸檔管理者可改）。刪除一律 `is_admin()`。編輯 gate 涵蓋四條進入點：`_onRolePerm`、`_fillRow`、`_onLinkCell`、`_onEdit`；各 browse 對話框儲存另有 admin 內層防線。測試 `tests/test_reward_browse.py`／`tests/test_ticket_browse.py`。
 
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；身分變更時 `_onRolePerm` 重刷編號連結與刪除鈕。瀏覽頁已改純 item，`_onRolePerm` 只切編號欄 `setForeground`（藍＝可點）、`refreshDeleteBtns` 切 ✕ 字色，點擊走 `cellClicked`；收/發/陳報頁仍由 `setDocIdLinkCell(clickable=…)`（cellWidget）控制。
@@ -944,20 +997,47 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 - **結算發文（`ui_utils/settle_dialog.py` 的 reward entry）**：UPDATE 帶 `WHERE register_date=''` 本身即並行防護——他機已刪（`NULL`）或已發文（有值）時 rowcount=0 自然跳過，不必另做 CAS
 - SQL round-trip 測試在 `tests/test_reward_lost_update_sql.py`
 
-**罰單（2026-08-02 補上，`lib/ticket_utils.py`）**：與敘獎同一套語意，不另創第二種並行控制寫法
-（`last_modified` 由 trigger 維護、只有秒精度，見 PITFALLS SQL-7，不可拿來當版本欄）。
+**罰單（2026-08-02 補上，`lib/ticket_utils.py`）**：與敘獎同一套語意，不另創第二種並行控制寫法。
 
-- `updateTicket()`（登錄頁編輯）與 `updateTicketFromBrowse()`（瀏覽頁 admin 編輯）都改為
-  **五欄原值 CAS**（`create_date`／`register_date`／`sender_id`／`issuer_id`／`ticket_no`，一律 `IS ?`），
-  並**強制呼叫端傳入開窗當下的快照** `original_values`——漏傳直接 `TypeError`。
-  ⚠️ 不可在儲存時才重查原值：那等於拿自己剛讀到的最新值跟自己比，是假保護
+- `updateTicket()`（登錄頁編輯）與 `updateTicketFromBrowse()`（瀏覽頁 admin 編輯）原為
+  **五欄原值 CAS**（`create_date`／`register_date`／`sender_id`／`issuer_id`／`ticket_no`）
 - rowcount≠1 時走 `_raiseTicketUpdateMiss()` 分流：查得到有效列＝`TicketConflictError`（被他機改），
   查不到＝`TicketNotFoundError`（被刪除），兩者訊息不同；對話框收到衝突會提示後**重新載入該筆最新值**，
   不讓使用者在舊值上二次送出
 - 測試在 `tests/test_ticket_runtime_cas.py`（domain 層分流）與 `tests/test_ticket_data.py`
 
-> 其餘三張主表（交辦／刑案／一般）沿用既有的並行保護（結算 UPDATE 的「仍未發文」條件、
-> 敘獎 `register_date IS NOT NULL` 軟刪除哨兵），未改為全欄 CAS。
+### 編輯彈窗的 `last_modified` 樂觀鎖（2026-08-07，五個彈窗統一）
+
+⚠️ **本節取代上一節的欄位比對做法**，上面兩段保留只為說明歷史（`git log` 對得上）。
+
+2026-08-07 之前，「你正在存的是一份過期的資料」這件事有**三種做法並存**：罰單比對五個欄位、
+敘獎比對四個欄位（`ui_utils/reward_dialog.py`），而**交辦收發文、刑案陳報、一般陳報完全沒有
+保護**——直接 `UPDATE ... WHERE doc_id=?`，誰後存誰蓋掉。既然要補上缺的三處，三套一併收斂成
+一套：開窗時讀走該筆的 `last_modified` 存成快照，儲存時放進 UPDATE 的 `WHERE`，rowcount=0
+就整筆擋下。
+
+- **單一來源**：`lib/db_utils.py` 的 `LAST_MODIFIED_CAS_SQL`、`readLastModified()`，
+  與四個共用提示常數（`ROW_GONE_TITLE`／`ROW_GONE_MSG`／`ROW_CHANGED_TITLE`／`ROW_CHANGED_MSG`）。
+  各彈窗經 `_BaseEditDialog._snapshotLastModified()` 取快照、`_rejectIfStale()` 判讀
+- **為什麼是 `last_modified` 而不是逐欄位比對**：①欄位比對抓不到「改成 B 又改回 A」，
+  也抓不到不在比對清單裡的欄位被動過；`last_modified` 由 trigger 對**任何**異動更新，涵蓋整列
+  ②不必在每個彈窗維護一份「要比對哪些欄位」的清單——那種清單漏一欄就靜默失效
+- ⚠️ **呼叫端必須傳開窗當下的快照，漏傳直接 `TypeError`**。不可在儲存時重查：那等於拿自己剛
+  讀到的最新值跟自己比，是假保護
+- ⚠️ **已知限制（勿當新 bug 修）**：`last_modified` 只有**秒精度**（trigger 用
+  `datetime('now','localtime')`，見 PITFALLS SQL-7），故「他機的修改與開窗時讀到的異動時間
+  落在同一秒」這個極窄窗擋不到。要撞到必須：這筆在我開窗的同一秒才剛被改過、且他機又在那一秒
+  內再改一次。2026-08-07 與維護者議定**接受**（改毫秒＝動五張主表 trigger 與所有指紋比較點，
+  須另立經核可的全域計畫）。⚠️ **不要為了補這個縫把欄位比對加回去並存**——兩套機制並存正是
+  這次要消滅的東西。此限制由 `tests/test_ticket_runtime_cas.py::TestKnownBlindSpot` 明確釘住
+- ⚠️ **登錄頁彈窗不提供發文日期／發文人員欄位，是權限設計的一部分**
+  （`ui_utils/reward_dialog.py`、`ui_utils/ticket_dialog.py` 的 `source='entry'` 分支只放唯讀
+  `QLabel`，儲存路徑也不觸碰 `register_date`／`sender_id`）。**日後若把這兩個 `QLabel` 換成任何
+  可輸入的元件，必須同步補欄位級複核**，否則這道防線會無聲失效且不會有測試變紅
+- **結算發文**（`ui_utils/settle_dialog.py`）不走樂觀鎖：UPDATE 帶 `WHERE register_date=''`
+  本身即並行防護——他機已刪（`NULL`）或已發文（有值）時 rowcount=0 自然跳過
+- 測試：`tests/test_reward_lost_update_sql.py`（SQL round-trip）、`tests/test_ticket_data.py`
+  （domain 層）、`tests/test_ticket_runtime_cas.py`（彈窗實跑＋已知窄縫）
 
 ### 降權即關窗（2026-08-03，modal 期間降權的正解）
 

@@ -27,23 +27,16 @@ from lib.db_backup import formatDocCounts
 
 from .ui_common import msgInfo, msgWarning
 
+# ⚠️ 只保留「公版沒有的」：標題／錯誤訊息的字級與紅字，以及危險動作鈕
+# （`#danger`）。輸入框與一般按鈕的樣式**一律交給公版**——2026-08-07 之前這裡
+# 各自重寫了一份且都漏了 `:disabled`，而本視窗**真的會停用欄位**
+# （`_updateButtons`：沒選到備份時 `w_pw` 與 `btn_restore` 都 setEnabled(False)），
+# 於是資料庫損毀的救援畫面上，密碼欄與還原鈕看起來可用、實際點不動。
+# 這是本輪唯一「真的會被使用者遇到」的那條，見 PITFALLS QSS-8。
 _DIALOG_SS = """
-    QDialog { background-color: #ffffff; }
-    QLabel { color: #1c1c1e; background: transparent; font-size: 13pt; }
+    QLabel { font-size: 13pt; }
     QLabel#title { font-size: 16pt; font-weight: 700; color: #c0392b; }
     QLabel#err { color: #c0392b; font-size: 11pt; }
-    QLineEdit {
-        background-color: #ffffff; color: #000000;
-        border: 1px solid #cccccc; border-radius: 4px; padding: 6px 10px;
-        font-size: 13pt;
-    }
-    QLineEdit:focus { border: 1px solid #8fa8c8; }
-    QPushButton {
-        background-color: #ffffff; color: #1c1c1e;
-        border: 1px solid #c6c6c8; border-radius: 8px;
-        padding: 8px 20px; font-weight: 600;
-    }
-    QPushButton:hover { background-color: #f2f2f7; }
     QPushButton#danger {
         background-color: #e74c3c; color: #ffffff; border: none;
     }

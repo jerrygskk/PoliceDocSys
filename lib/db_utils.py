@@ -26,6 +26,54 @@ def rewardState(register_date):
     return "issued"
 
 
+# ══════════════════════════════════════════════════════════════════
+# 編輯彈窗的樂觀鎖（五個編輯彈窗共用的單一來源）
+# ──────────────────────────────────────────────────────────────────
+# 要防的是「你正在存的是一份過期的資料」：開窗到按儲存之間，這筆可能已經被
+# 結算發文、被別人改掉，或你自己已閒置登出降權。作法是開窗時把該筆的
+# `last_modified` 讀走，儲存時放進 UPDATE 的 WHERE，rowcount=0 就整筆擋下。
+#
+# 2026-08-07 之前這件事有**三種不同做法**並存：罰單比對五個欄位原值
+# （ticket_utils）、敘獎比對四個欄位原值（reward_dialog），而交辦單收發文、
+# 刑案與一般陳報**完全沒有保護**（直接 UPDATE ... WHERE doc_id=?，誰後存誰
+# 蓋掉）。既然要補上缺的三處，三套一併收斂成這一套（維護者裁示）。
+#
+# 為什麼是 `last_modified` 而不是逐欄位比對：
+#   ①欄位比對抓不到「改成 B 又改回 A」，也抓不到不在比對清單裡的欄位被動過；
+#     `last_modified` 由 trigger 對**任何**異動更新，涵蓋整列
+#   ②不必在每個彈窗維護一份「要比對哪些欄位」的清單——那種清單漏一欄就靜默
+#     失效，正是這次要消滅的東西
+#
+# ⚠️ **已知限制（勿當新 bug 修）**：`last_modified` 只有秒精度（trigger 用
+# `datetime('now','localtime')`，見 PITFALLS SQL-7），故「別人的修改剛好與你
+# 開窗落在同一秒」這個極窄窗擋不到。要撞到得剛好在開窗那一秒有人改同一筆，
+# 2026-08-07 與維護者議定接受。⚠️ 不要因此把欄位比對加回去並存。
+LAST_MODIFIED_CAS_SQL = "last_modified IS ?"
+
+# 五個彈窗共用的白話提示（措辭統一，勿各頁自己寫一份）
+ROW_GONE_TITLE = "資料已刪除"
+ROW_GONE_MSG = "本筆資料已被刪除，畫面將更新。"
+ROW_CHANGED_TITLE = "資料已更新"
+ROW_CHANGED_MSG = "這筆資料已被異動，請關閉後重新開啟修改。"
+
+
+def readLastModified(conn, table, doc_id, *, active_sql=None):
+    """讀開窗快照：回傳 `(exists, last_modified)`。
+
+    `active_sql` 為該表「有效列」的額外條件（敘獎／罰單傳
+    `register_date IS NOT NULL`，其餘表不必傳）；不符即視為不存在。
+    ⚠️ 回傳兩個值是刻意的——`last_modified` 本身可能是 NULL，
+    單看它分不出「這筆不在了」與「這筆沒有異動時間」。
+    """
+    sql = f"SELECT last_modified FROM {table} WHERE doc_id=?"
+    if active_sql:
+        sql += f" AND {active_sql}"
+    row = conn.execute(sql, (str(doc_id),)).fetchone()
+    if row is None:
+        return False, None
+    return True, row[0]
+
+
 def getConn(db_path):
     """sqlite3 連線單一來源；呼叫端負責 commit/close。
     後續若要統一加 PRAGMA / timeout / row_factory，集中改這一處即可。

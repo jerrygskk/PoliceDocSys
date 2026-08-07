@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFontMetrics
 
-from lib.db_utils import (getConn, isSelfServiceMode,
+from lib.db_utils import (LAST_MODIFIED_CAS_SQL, getConn, isSelfServiceMode,
                           writeAudit, buildDetail, auditStaffName)
 from .ui_common import BTN_CONFIRM, BTN_CANCEL, confirmBox
 from lib.auth_manager import AuthManager
@@ -205,21 +205,20 @@ def _set_combo_value(combo, value):
 
 
 # ── Task EditDialog ────────────────────────────────────────────
-_CRIMGEN_QSS = """
-            QDialog, QWidget {
-                background-color: #FFFFFF;
-                color: #000000;
-            }
-            QLineEdit, QComboBox, QDateEdit {
-                background-color: #FFFFFF;
-                color: #000000;
-                border: 1px solid #CCCCCC;
-                border-radius: 4px;
-                padding: 4px 8px;
-            }
-            QCheckBox, QRadioButton { color: #000000; }
-            QLabel { color: #000000; }
-        """
+# ⚠️ **這裡曾經有一份 `_CRIMGEN_QSS`（六個彈窗共用的區域樣式），2026-08-07 整份移除。**
+#
+# 它的由來是 PITFALLS QSS-3「新 Dialog 繼承到深色底、文字看不見」，當年的解法是
+# 每個彈窗自帶背景與文字色。但現在的公版 `lib/theme.py` 已經替 `QDialog`、
+# `QLabel`、輸入元件與各種停用態都定義好了，QSS-3 的前提早就不存在。
+#
+# 留著它反而製造兩個問題：①它把輸入元件的樣式又寫了一份（比公版差，而且沒有
+# `:disabled`），於是「反灰」在這些彈窗裡整個失效——現場回報的「發文結算模式下
+# 陳報日期與發文人員明明鎖住卻看不出來」就是它造成的；②它用 `QWidget` 這種寬
+# 選擇器把彈窗內所有元件塗白，一旦拿掉輸入元件那段，容器又會變成一塊一塊的灰。
+#
+# ⚠️ **不要再為這些彈窗加任何區域 QSS。** 要調整外觀就去改 `lib/theme.py`，
+# 那是唯一來源；彈窗底色因此與程式其他視窗一致（`#f2f2f7`）。
+# 由 `tests/test_dialog_disabled_style.py` 以實際算繪的像素釘住。
 
 
 # 「轉換類別」鈕樣式（§5.1：低調紅框白底，比儲存重、比刪除溫和）
@@ -302,6 +301,39 @@ class _BaseEditDialog(QDialog):
                 w.setEnabled(False)
                 w.setToolTip(tip)
 
+    # ── 樂觀鎖（五個編輯彈窗共用，見 db_utils.LAST_MODIFIED_CAS_SQL）────
+    def _snapshotLastModified(self, conn, table):
+        """開窗時讀走該筆的 `last_modified` 存成快照。
+
+        ⚠️ 只能在載入資料時呼叫一次；儲存前重查等於沒有鎖。
+        """
+        from lib.db_utils import readLastModified
+        _, value = readLastModified(conn, table, self.doc_id)
+        self._orig_last_modified = value
+
+    def _rejectIfStale(self, conn, table, rowcount):
+        """UPDATE 影響 0 列時判斷原因並彈白話提示。
+
+        回傳 True 代表「已擋下，呼叫端必須 return、不得 commit」。
+        0 列只有兩種可能：這筆在開窗期間被別人刪了，或被別人改了
+        （`last_modified` 對不上）。兩者提示不同——被刪要收掉視窗，
+        被改則留著讓使用者關閉後重開。
+        """
+        from .ui_common import msgWarning
+        from lib.db_utils import (ROW_CHANGED_MSG, ROW_CHANGED_TITLE,
+                                  ROW_GONE_MSG, ROW_GONE_TITLE,
+                                  readLastModified)
+        if rowcount:
+            return False
+        conn.rollback()
+        exists, _ = readLastModified(conn, table, self.doc_id)
+        if exists:
+            msgWarning(ROW_CHANGED_TITLE, ROW_CHANGED_MSG)
+        else:
+            msgWarning(ROW_GONE_TITLE, ROW_GONE_MSG)
+            self.reject()
+        return True
+
 
 class TaskEditDialog(_BaseEditDialog):
     """交辦單修改彈窗（Tab 0 / Tab 1 共用）"""
@@ -320,31 +352,6 @@ class TaskEditDialog(_BaseEditDialog):
         self._DATE_W     = self._FIELD_W - self._SPACING_W - self._CHECKBOX_W  # = 260
 
         self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)  # = 580
-        self.setStyleSheet("""
-            QDialog, QWidget {
-                background-color: #FFFFFF;
-                color: #000000;
-            }
-            QLineEdit, QComboBox, QDateEdit {
-                background-color: #FFFFFF;
-                color: #000000;
-                border: 1px solid #CCCCCC;
-                border-radius: 4px;
-                padding: 4px 8px;
-            }
-            QLineEdit:disabled, QComboBox:disabled, QDateEdit:disabled {
-                background-color: #e5e5ea;
-                color: #aeaeb2;
-                border-color: #d1d1d6;
-            }
-            QCheckBox { color: #000000; }
-            QCheckBox:disabled { color: #aeaeb2; }
-            QCheckBox::indicator:disabled {
-                background-color: #e5e5ea;
-                border-color: #d1d1d6;
-            }
-            QLabel { color: #000000; }
-        """)
         self._build_ui()
         self._load_data()
         if self.restricted:
@@ -470,6 +477,7 @@ class TaskEditDialog(_BaseEditDialog):
                    processor_id, deadline, dispatch_date
             FROM Document_Task WHERE doc_id=?
         """, (self.doc_id,)).fetchone()
+        self._snapshotLastModified(conn, "Document_Task")
         conn.close()
         if not row:
             return
@@ -550,12 +558,16 @@ class TaskEditDialog(_BaseEditDialog):
                     (self.doc_id,)).fetchone()
                 if r:
                     old_proc, old_sender = r[0], r[1]
-            conn.execute("""
+            cur = conn.execute(f"""
                 UPDATE Document_Task
                 SET receive_date=?, receive_id=?, dept_id=?,
                     subject=?, processor_id=?, deadline=?
-                WHERE doc_id=?
-            """, (recv_date, recv_id, dept_id, subject, proc_id, deadline, self.doc_id))
+                WHERE doc_id=? AND {LAST_MODIFIED_CAS_SQL}
+            """, (recv_date, recv_id, dept_id, subject, proc_id, deadline,
+                  self.doc_id, self._orig_last_modified))
+            if self._rejectIfStale(conn, "Document_Task", cur.rowcount):
+                conn.close()
+                return
             if self.source == 'dispatch' and old_proc != proc_id:
                 writeAudit(conn,
                            role=AuthManager.instance().current_role,
@@ -590,29 +602,9 @@ class TaskEditDialog(_BaseEditDialog):
 class CriminalEditDialog(_BaseEditDialog):
     """刑案陳報修改彈窗（Tab 2）"""
 
+    # ⚠️ 這裡曾經有 `RADIO_STYLE`（與公版逐項相同的複製品），2026-08-07 移除；
+    # 理由與 tabs/tab_report.py 開頭那段相同，radio 外觀一律走公版。
     _mode_kind = "crim"
-    RADIO_STYLE = """
-QRadioButton {
-    spacing: 6px;
-    color: #1c1c1e;
-    font-size: 14pt;
-}
-QRadioButton::indicator {
-    width: 14px;
-    height: 14px;
-    border: 2px solid #c6c6c8;
-    border-radius: 7px;
-    background-color: #ffffff;
-}
-QRadioButton::indicator:checked {
-    background-color: #8fa8c8;
-    border: 4px solid #ffffff;
-    outline: 2px solid #8fa8c8;
-}
-QRadioButton:checked {
-    color: #8fa8c8;
-}
-"""
 
     # Radio 對應表：(db_value, display_label)
     STATUS_OPTIONS = [
@@ -630,7 +622,6 @@ QRadioButton:checked {
 
 
         self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)
-        self.setStyleSheet(_CRIMGEN_QSS)
         self._build_ui()
         self._load_data()
         self._lockReportFieldsIfSelfService()
@@ -690,7 +681,6 @@ QRadioButton:checked {
         self._status_group  = QButtonGroup(self)
         for i, (val, label) in enumerate(self.STATUS_OPTIONS):
             rb = QRadioButton(label)
-            rb.setStyleSheet(self.RADIO_STYLE)
             rb.setMinimumWidth(65)   # 比照 Layout3.ui：125% 下 sizeHint 算不準會切字
             self._status_group.addButton(rb, i)
             self._status_radios.append((val, rb))
@@ -770,6 +760,7 @@ QRadioButton:checked {
                    occurrence_date, reporter_name, is_reported, is_electronic
             FROM Document_Criminal WHERE doc_id=?
         """, (self.doc_id,)).fetchone()
+        self._snapshotLastModified(conn, "Document_Criminal")
         conn.close()
         if not row:
             return
@@ -853,15 +844,18 @@ QRadioButton:checked {
             return
         try:
             conn = _get_conn(self.db_path)
-            conn.execute("""
+            cur = conn.execute(f"""
                 UPDATE Document_Criminal
                 SET report_date=?, sender_id=?, case_type=?, case_status=?,
                     processor_id=?, receiver_id=?, subject_summary=?,
                     occurrence_date=?, reporter_name=?
-                WHERE doc_id=?
+                WHERE doc_id=? AND {LAST_MODIFIED_CAS_SQL}
             """, (report_date, sender_id, case_type, status_id,
                   proc_id, recv_id, subject, occ_date, reporter or None,
-                  self.doc_id))
+                  self.doc_id, self._orig_last_modified))
+            if self._rejectIfStale(conn, "Document_Criminal", cur.rowcount):
+                conn.close()
+                return
             if self.w_arch_reported is not None:
                 conn.execute(
                     "UPDATE Document_Criminal SET is_reported=? WHERE doc_id=?",
@@ -896,7 +890,6 @@ class GeneralEditDialog(_BaseEditDialog):
     """一般陳報修改彈窗（Tab 2）"""
 
     _mode_kind = "gen"
-    RADIO_STYLE = CriminalEditDialog.RADIO_STYLE
 
     CAT_OPTIONS = [
         ('GC01', '業務'),
@@ -913,7 +906,6 @@ class GeneralEditDialog(_BaseEditDialog):
 
 
         self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)
-        self.setStyleSheet(_CRIMGEN_QSS)
         self._build_ui()
         self._load_data()
         self._lockReportFieldsIfSelfService()
@@ -966,7 +958,6 @@ class GeneralEditDialog(_BaseEditDialog):
         self._cat_group  = QButtonGroup(self)
         for i, (val, label) in enumerate(self.CAT_OPTIONS):
             rb = QRadioButton(label)
-            rb.setStyleSheet(self.RADIO_STYLE)
             rb.setMinimumWidth(65)   # 比照 Layout3.ui：125% 下 sizeHint 算不準會切字
             self._cat_group.addButton(rb, i)
             self._cat_radios.append((val, rb))
@@ -1027,6 +1018,7 @@ class GeneralEditDialog(_BaseEditDialog):
                    subject, processor_id, is_reported, is_electronic
             FROM Document_General WHERE doc_id=?
         """, (self.doc_id,)).fetchone()
+        self._snapshotLastModified(conn, "Document_General")
         conn.close()
         if not row:
             return
@@ -1089,13 +1081,16 @@ class GeneralEditDialog(_BaseEditDialog):
             return
         try:
             conn = _get_conn(self.db_path)
-            conn.execute("""
+            cur = conn.execute(f"""
                 UPDATE Document_General
                 SET report_date=?, sender_id=?, dept_id=?, gen_cat_id=?,
                     subject=?, processor_id=?
-                WHERE doc_id=?
+                WHERE doc_id=? AND {LAST_MODIFIED_CAS_SQL}
             """, (report_date, sender_id, dept_id, cat_id,
-                  subject, proc_id, self.doc_id))
+                  subject, proc_id, self.doc_id, self._orig_last_modified))
+            if self._rejectIfStale(conn, "Document_General", cur.rowcount):
+                conn.close()
+                return
             if self.w_arch_reported is not None:
                 conn.execute(
                     "UPDATE Document_General SET is_reported=? WHERE doc_id=?",

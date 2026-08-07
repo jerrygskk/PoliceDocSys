@@ -5,31 +5,34 @@ from PySide6.QtWidgets import (
 )
 
 from lib.auth_manager import AuthManager
-from lib.db_utils import REWARD_ACTIVE_SQL, getConn, loadActivePersonnel
+from lib.db_utils import (
+    LAST_MODIFIED_CAS_SQL, REWARD_ACTIVE_SQL,
+    ROW_CHANGED_MSG as _CONFLICT_MSG,
+    ROW_CHANGED_TITLE as _CONFLICT_TITLE,
+    ROW_GONE_MSG as _ROW_GONE_MSG,
+    ROW_GONE_TITLE as _ROW_GONE_TITLE,
+    getConn, loadActivePersonnel,
+)
 from .ui_common import BTN_CONFIRM, BTN_CANCEL, msgWarning, reportError
-from .edit_dialog import _BaseEditDialog, _CRIMGEN_QSS
+from .edit_dialog import _BaseEditDialog
 from .widgets import (
     NullableDateEdit, RecipientCombo, parse_recipient_names, setupRecipientCombo,
 )
 
 
-# 併發刪除白話提示（開啟時列已不存在／儲存時 0 列受影響共用）
-_ROW_GONE_TITLE = "資料已刪除"
-_ROW_GONE_MSG = "本筆敘獎資料已被刪除，畫面將更新。"
-_CONFLICT_TITLE = "資料已更新"
-_CONFLICT_MSG = "本筆資料已被其他電腦修改，本次未儲存。"
+# 併發刪除／併發修改的白話提示改由 `lib.db_utils` 統一提供（見上方 import
+# 的別名）：五個編輯彈窗措辭一致，勿在此再寫一份 敘獎專屬 的字串。
 
+# ⚠️ 2026-08-07 起樂觀鎖由比對四個欄位原值改為比對 `last_modified`，與罰單、
+# 交辦、刑案、一般共用同一套（理由與已知限制見 db_utils.LAST_MODIFIED_CAS_SQL）。
+# 欄位比對抓不到「改成 B 又改回 A」，也抓不到不在清單裡的欄位被動過。
 _REWARD_EDIT_UPDATE_SQL = (
     "UPDATE Document_Reward SET reason=?,recipients=? "
-    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL} "
-    "AND register_date IS ? AND sender_id IS ? "
-    "AND reason IS ? AND recipients IS ?"
+    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL} AND {LAST_MODIFIED_CAS_SQL}"
 )
 _REWARD_BROWSE_UPDATE_SQL = (
     "UPDATE Document_Reward SET register_date=?,sender_id=?,reason=?,recipients=? "
-    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL} "
-    "AND register_date IS ? AND sender_id IS ? "
-    "AND reason IS ? AND recipients IS ?"
+    f"WHERE doc_id=? AND {REWARD_ACTIVE_SQL} AND {LAST_MODIFIED_CAS_SQL}"
 )
 
 
@@ -51,8 +54,9 @@ def _classify_reward_update_miss(conn, conn_factory, db_path, doc_id):
 class RewardEditDialog(_BaseEditDialog):
     """敘獎修改對話框；entry 開放三角色，browse 僅管理角色。
 
-    沿用 ``_BaseEditDialog`` 的版面常數（_LABEL_W/_FIELD_W/_MARGIN）與
-    共用白底樣式，與交辦／刑案／一般三彈窗一致（不另抄 stylesheet）。
+    沿用 ``_BaseEditDialog`` 的版面常數（_LABEL_W/_FIELD_W/_MARGIN），與交辦／
+    刑案／一般三彈窗一致。⚠️ **外觀完全交給全域公版 `lib/theme.py`，本彈窗不設
+    任何 stylesheet**（2026-08-07 起，見 PITFALLS QSS-8）。
     """
 
     def __init__(self, db_path, doc_id, parent=None, *, source="entry"):
@@ -66,7 +70,6 @@ class RewardEditDialog(_BaseEditDialog):
         self._row_missing = False   # 開啟時或儲存時偵測到該列已被併發刪除
         self.setWindowTitle("敘獎登錄修改")
         self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)
-        self.setStyleSheet(_CRIMGEN_QSS)
         self._build_ui()
         self._load_data()
         if not self._row_missing:
@@ -148,7 +151,7 @@ class RewardEditDialog(_BaseEditDialog):
         try:
             row = conn.execute(
                 "SELECT r.create_date,r.register_date,r.sender_id,r.reason,"
-                "r.recipients,p.staff_name "
+                "r.recipients,p.staff_name,r.last_modified "
                 "FROM Document_Reward r "
                 "LEFT JOIN Ref_Personnel p ON p.staff_id=r.sender_id "
                 f"WHERE r.doc_id=? AND r.{REWARD_ACTIVE_SQL}",
@@ -161,7 +164,9 @@ class RewardEditDialog(_BaseEditDialog):
             self._row_missing = True
             return
         self.w_create_date.setText(str(row[0] or ""))
-        self._orig_values = (row[1], row[2], row[3], row[4])
+        # 樂觀鎖快照：儲存時比對，不一致代表這筆在開窗期間被動過（見
+        # db_utils.LAST_MODIFIED_CAS_SQL）。⚠️ 不可在儲存時重查，重查等於沒有鎖。
+        self._orig_last_modified = row[6]
         self._orig_register_date = row[1]
         if self.source == "browse":
             # register_date=''（未發文哨兵）→ 日期框留空；有日期＝已發文。
@@ -211,13 +216,14 @@ class RewardEditDialog(_BaseEditDialog):
                 cur = conn.execute(
                     _REWARD_BROWSE_UPDATE_SQL,
                     (date, sender_id, reason, recipients, self.doc_id,
-                     *self._orig_values))
+                     self._orig_last_modified))
             else:
                 # 敘獎登錄頁：只改事由與人員，發文欄位（register_date/sender_id）不動。
                 date = self._orig_register_date
                 cur = conn.execute(
                     _REWARD_EDIT_UPDATE_SQL,
-                    (reason, recipients, self.doc_id, *self._orig_values))
+                    (reason, recipients, self.doc_id,
+                     self._orig_last_modified))
             if cur.rowcount == 0:
                 active = _classify_reward_update_miss(
                     conn, getConn, self.db_path, self.doc_id)

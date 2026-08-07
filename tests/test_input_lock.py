@@ -112,13 +112,18 @@ class _Table:
 
 class _Panel(InputLockMixin):
     """裸持有 mixin 需要的屬性，不繼承 BaseTab（避免要 Qt）。"""
-    def __init__(self, kind, widgets, banner=None, clear=None):
+    def __init__(self, kind, widgets, banner=None, refresh=None):
         self.db_path = "dummy.db"
         self._tab_index = 3
         self._lock_kind = kind
         self._lock_widgets = widgets
         self._readonly_banner = banner
-        self._lock_clear_tables = clear or []
+        self._lock_refresh_tables = refresh or []
+        self.refreshed_with = None
+
+    def _refreshRowPermissions(self, tables):
+        """記下 hook 有沒有被呼叫、拿到哪些表（不動列數）。"""
+        self.refreshed_with = tables
 
 
 def _apply(panel, *, is_manager, locked_kinds):
@@ -151,12 +156,17 @@ class TestApplyInputLockList(unittest.TestCase):
         self.assertFalse(w2.enabled)
         self.assertTrue(banner.visible)
 
-    def test_manager_never_locked(self):
+    def test_manager_is_locked_too(self):
+        """⚠️ 2026-08-07 起唯讀對**三種身分**一律生效（原本管理身分豁免）。
+
+        唯讀＝這個功能停用，不分身分；要改資料就先到「資料庫設定 → 系統設定」
+        把唯讀關掉（那個入口不受本鎖影響）。全專案六支硬 gate 同步改。
+        """
         w1, banner = _W(), _Banner()
         p = _Panel("task", [w1], banner)
         _apply(p, is_manager=True, locked_kinds={"task"})
-        self.assertTrue(w1.enabled)
-        self.assertFalse(banner.visible)
+        self.assertFalse(w1.enabled)
+        self.assertTrue(banner.visible)
 
     def test_unlocked_kind_stays_editable(self):
         w1, banner = _W(), _Banner()
@@ -189,25 +199,41 @@ class TestApplyInputLockDict(unittest.TestCase):
         self.assertFalse(banner.visible)
 
 
-class TestRoleClearList(unittest.TestCase):
-    def _clear(self, panel, is_manager):
+class TestRoleRefresh(unittest.TestCase):
+    """⚠️ 2026-08-07 起降權**不再清空預覽清單**，改為呼叫逐列重刷 hook。
+
+    原本的斷言是「降權把表清成 0 列」，那是把資料庫瀏覽頁的規則錯套到登錄／
+    收發文頁上——這些頁對三種身分都開放刪改，清空等於讓一般使用者失去他本來
+    就有的入口。
+    """
+
+    def _refresh(self, panel, is_manager):
         fake_am = mock.Mock()
         fake_am.instance.return_value.is_manager.return_value = is_manager
         with mock.patch("lib.auth_manager.AuthManager", fake_am):
-            panel._onRoleClearList()
+            panel._onRoleRefresh()
 
-    def test_general_user_clears_tables(self):
+    def test_general_user_triggers_refresh_without_touching_rows(self):
         t1, t2 = _Table(), _Table()
-        p = _Panel("task", [], clear=[t1, t2])
-        self._clear(p, is_manager=False)
-        self.assertEqual(t1.rows, 0)
-        self.assertEqual(t2.rows, 0)
+        p = _Panel("task", [], refresh=[t1, t2])
+        self._refresh(p, is_manager=False)
+        self.assertEqual(p.refreshed_with, [t1, t2])
+        self.assertEqual(t1.rows, 5)     # 列數不動
+        self.assertEqual(t2.rows, 5)
 
-    def test_manager_keeps_tables(self):
+    def test_manager_skips_refresh(self):
+        """管理身分 early return：升權由 on_activated 整份重刷，
+        唯讀凍結又只鎖一般使用者，故不會漏鎖任何情境。"""
         t1 = _Table()
-        p = _Panel("task", [], clear=[t1])
-        self._clear(p, is_manager=True)
+        p = _Panel("task", [], refresh=[t1])
+        self._refresh(p, is_manager=True)
+        self.assertIsNone(p.refreshed_with)
         self.assertEqual(t1.rows, 5)
+
+    def test_default_hook_is_a_noop(self):
+        """沒實作 hook 的頁不會壞（預設 no-op）。"""
+        panel = InputLockMixin()
+        self.assertIsNone(panel._refreshRowPermissions([]))
 
 
 if __name__ == "__main__":

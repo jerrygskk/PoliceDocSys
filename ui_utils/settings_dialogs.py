@@ -22,25 +22,13 @@ from PySide6.QtWidgets import (
 
 from .ui_common import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER, reportError
 
-# ── 共用樣式 ───────────────────────────────────────────────────────
-_DIALOG_SS = """
-    QDialog, QWidget {
-        background-color: #FFFFFF;
-        color: #000000;
-    }
-    QLineEdit {
-        background-color: #FFFFFF;
-        color: #000000;
-        border: 1px solid #CCCCCC;
-        border-radius: 4px;
-        padding: 4px 8px;
-    }
-    QLineEdit:focus {
-        border: 1px solid #8fa8c8;
-    }
-    QCheckBox { color: #000000; }
-    QLabel    { color: #000000; }
-"""
+# ⚠️ 這裡曾經有一份 `_DIALOG_SS`（`QDialog, QWidget {白底黑字}` ＋ 一份
+# QLineEdit 樣式），2026-08-07 整份移除，外觀全部交給公版 `lib/theme.py`。
+#
+# 它與六個編輯彈窗那份 `_CRIMGEN_QSS` 是同一個形狀、同一組毛病：
+# ①重寫輸入元件樣式卻漏了 `:disabled`，把公版的反灰蓋掉；
+# ②用 `QWidget` 寬選擇器塗背景，連輸入元件一起匹配到。
+# 詳見 PITFALLS **QSS-8**。⚠️ 新彈窗不要自帶區域 QSS。
 
 _LABEL_W = 100
 _FIELD_W = 280
@@ -212,7 +200,6 @@ class RefItemDialog(QDialog):
             self._old_active = None
         self.setWindowTitle(cfg["title_edit"] if self.is_edit else cfg["title_add"])
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
-        self.setStyleSheet(_DIALOG_SS)
         self._build()
 
     def _build(self):
@@ -382,7 +369,6 @@ class ChangePasswordDialog(QDialog):
         self._actor = AuthManager.instance().actor_name()
         self.setWindowTitle(f'變更{self._actor}密碼')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
-        self.setStyleSheet(_DIALOG_SS)
         self._build()
 
     def _build(self):
@@ -497,7 +483,6 @@ class ResetDialog(QDialog):
         self.doc_summary = doc_summary
         self.setWindowTitle("跨年度重置")
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
-        self.setStyleSheet(_DIALOG_SS)
         self._build()
 
     def _build(self):

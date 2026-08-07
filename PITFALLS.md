@@ -1,6 +1,6 @@
 # 踩雷速查表（Pitfalls）
 
-依主題分組（UI／QSS／QTW／LAY／TAB／SVG／SQL／ARC／NET／PKG／TST）；每條為「**症狀** → 解法（必要時括註原因）」。寫過的雷再踩會被點名。本檔自 DEVELOPER.md §2 拆出；任務對照索引見 CLAUDE.md。
+依主題分組（UI／QSS／QTW／LAY／TAB／PRM／SVG／SQL／ARC／NET／PKG／TST）；每條為「**症狀** → 解法（必要時括註原因）」。寫過的雷再踩會被點名。本檔自 DEVELOPER.md §2 拆出；任務對照索引見 CLAUDE.md。
 
 #### UI：`.ui` 載入
 - **UI-1**: **`Unable to open/read ui device`** → margin 改用 `leftMargin`/`topMargin`/`rightMargin`/`bottomMargin` 四獨立 property，勿用 `contentsMargins`+`<rect>`。
@@ -9,8 +9,14 @@
 #### QSS：Qt 樣式／顏色
 - **QSS-1**: **狀態色（紅/橘/綠）、停用灰字失效** → `QTableWidget::item` 只設 padding/border，文字色一律交 `setForeground()`（`::item{color}` 優先級會蓋過它；`:selected` 的 color 可留）。⚠ 動表格樣式前先查這條。
 - **QSS-2**: **顏色被 stylesheet 蓋掉** → 用 `QColor("#hex")`，勿用 `Qt.red` 等列舉。
-- **QSS-3**: **新 Dialog/Widget 文字看不見（深色底）** → 每個新 `QDialog`/`QWidget` 明設背景+文字色（繼承全域深色所致，範例見 DEVELOPER §5）。
-- **QSS-4**: **`setEnabled(False)` 按鈕沒變灰** → 該按鈕的 stylesheet 要含 `QPushButton:disabled { ... }`。
+- **QSS-3**: ~~新 Dialog/Widget 文字看不見（深色底）→ 每個新 Dialog 明設背景+文字色~~ **這條 2026-08-07 作廢，且照做會製造 QSS-8 那個 bug**。當年的前提（彈窗會繼承到深色底）在現行公版已不存在：`lib/theme.py` 對 `QDialog`／`QLabel`／輸入元件與各種停用態都定義好了。**新彈窗一律不要自帶區域 QSS**，要調外觀就改公版。歷史教訓見 QSS-8。
+- **QSS-8**: **彈窗自帶區域 QSS → 停用欄位看不出反灰／視窗出現一塊一塊的色差** → 三層都踩過，一次記完：
+  ①**區域 QSS 重寫一份輸入元件樣式但漏掉 `:disabled`** → 公版的反灰被整個蓋掉。現場症狀：發文結算模式下一般使用者開刑案／一般陳報修改視窗，陳報日期與發文人員明明鎖住卻長得跟可編輯的一樣。⚠️ **設在元件／祖先身上的樣式優先度高於 app 層公版，與特異度無關**——所以只要屬性重疊，區域那份就贏。
+  ②**用 `QWidget` 這種寬選擇器塗背景** → `QLineEdit`／`QComboBox`／`QDateEdit` 都是 `QWidget`，會一起被匹配到。把①刪掉但留著②，容器與輸入框的底色就會打架，視窗變成一塊一塊的（維護者回報「醜爆了」）。
+  ③**公版自己也踩過同一個坑**：`QWidget { background: transparent }` 原本寫在 `QMainWindow, QDialog { #f2f2f7 }` **後面**，同特異度、後者勝，把視窗底色中和成透明（Windows 上渲染成整塊黑）；當時是靠再補一條 `QMainWindow > QWidget, QDialog > QWidget { #f2f2f7 }` 替視窗補畫，而那條又正好打到輸入框——①的病根其實來自這裡。**正解是把 `QWidget` 透明那條移到視窗底色之前**，補丁整條移除。
+  ④**同一個病在專案裡不只一處**：2026-08-07 全面稽核（比對每份區域 QSS 與公版的偽狀態、逐項實測、再查該元件實際上會不會被停用）後修掉四處——`tab_report`／`edit_dialog` 的 `RADIO_STYLE`（與公版逐項相同的純複製品，但漏 `:disabled`，唯讀時選項文字不變灰）、`widgets.attachComboHint`（設在 combo 元件上，唯讀時案類欄文字不變灰）、`settings_dialogs._DIALOG_SS`（`_CRIMGEN_QSS` 的翻版）、`rescue_dialog._DIALOG_SS`（**唯一使用者真的會遇到的**：資料庫損毀的救援視窗在沒有可用備份時會停用密碼欄，而它看起來仍可輸入）。判準是**「區域規則宣告的屬性」與「公版偽狀態規則的屬性」是否重疊**——只有重疊才真的蓋掉，Qt 是逐屬性合併的。
+  ⚠️ **驗收一律用算繪像素，不要讀 styleSheet 字串**：讀字串只看得到「有沒有寫這條規則」，看不到「最後誰贏」，而輸掉的那一方才是 bug。回歸測試 `tests/test_dialog_disabled_style.py`（同時釘住反灰與「不得出現色塊」——上一版只驗欄位顏色，測試全綠但畫面是壞的）。
+- **QSS-4**: **`setEnabled(False)` 按鈕沒變灰** → 2026-08-07 前公版**只有** `QPushButton:hover`／`:pressed`，**沒有通用的 `:disabled`**，所以每支自訂樣式的按鈕都得自己記得補一行，忘了就不會反灰——這條長年靠人記得，是一台持續產出同類 bug 的機器。**已在 `lib/theme.py` 補上通用 `QPushButton:disabled`**，一般按鈕不必再自己寫。帶 `objectName` 的特化按鈕（`#deleteBtn`／`#btn_send`／`#danger` 等）特異度較高、不受通用規則影響，**仍須各自負責 `:disabled`**（`#danger` 已有紅調灰 `#e6b8b3`，是刻意的）。
 - **QSS-5**: **設灰字連月曆／下拉清單也變灰** → 用型別選擇器 `QDateEdit { color: ... }` / `QComboBox { color: ... }`，避免裸 `color:` 繼承到子元件。
 - **QSS-6**: **表格滑過（mouseover）整格反白** → Windows 原生 style 對 item 的**預設行為**，刪 hover 規則無效；要明寫 `QTableWidget::item:hover { background-color: transparent; }` 壓掉（tab_archive／backup_restore_panel 皆如此處理）。
 - **QSS-7**: **tooltip 整塊黑（未解，勿再嘗試已證無效的招）** → Windows 系統深色模式下（PySide6 6.11／windows11 原生 style），QToolTip 底板整塊黑。**四招皆實測無效**：①theme.py QSS `QToolTip { … }`（規則保留但壓不掉）②app palette ToolTipBase/Text ③`QToolTip.setPalette` ④`app.styleHints().setColorScheme(Qt.ColorScheme.Light)`。2026-07 議定**迴避**：新功能勿依賴 tooltip 傳達資訊（已存在的 HELP_TIPS tooltip 同樣受影響，僅深色模式使用者看不到）。要再挑戰先查 Qt 上游 windows11 style tooltip 相關 bug 是否已修。
@@ -47,6 +53,14 @@
 
 #### TAB：Tab 切換攔截
 - **TAB-1**: **從設定 Tab 切走時攔不住「未存」** → `currentChanged` 是切換後才觸發：大 Tab 只能切過去後補跳提示；子頁切換（按鈕觸發）才攔得住、可「取消＝回原狀」。
+
+#### PRM：權限（預覽列的可改／可刪）
+- **PRM-1**: **擋住了「還在預覽列、剛登錄完」的資料的修改／刪除** → ⚠️⚠️ **這是凌駕權限矩陣的原則（維護者裁示）：不管權限與設定怎麼調整，都不允許擋。例外只有兩個——交辦單發文（它的預覽列是掃入文號拉出來的既有公文，不是剛登錄的），以及唯讀鎖（見 PRM-6）。** 理由是作業節奏：預覽列就是承辦人這一次自己打進去的東西，打錯字當場自己改掉、按 ✕ 重來是最高頻操作，擋掉等於逼人為一個錯字去找管理身分。⚠️ **這是「改回開發初期的行為」**：中途曾被改成「降權就把預覽清單整張清空」「已發文列鎖住一般使用者」，維護者當時即覺得不合理、事後還得花時間調回來——**看到相關程式不要再「修正」一次，要動先問維護者**。規則單一來源 `lib/row_perm.py` 的 `SESSION_PREVIEW_PAGES`，測試 `tests/test_row_perm.py::TestSessionPreviewPrinciple`（那組紅了不要改斷言）。分界表見 DEVELOPER §10「預覽列權限」。
+- **PRM-2**: **「降權只清 widget」與「降權只重刷 widget」都不夠** → `setEnabled(False)` 與編號欄純文字化都只是**提示**：CLAUDE.md 明列反灰擋不住替代路徑，且降權與使用者實際點下去之間存在時間差。**每個動作進入點都要自己再檢查一次**（`BaseTab._rowActionBlockReason`，重查 DB 現值後回傳擋下原因）。⚠️ 舊行為清空清單時「列不存在」本身就是防線，改成留列之後那條防線消失了，**這一層是補回來的，不是多餘的**。驗收要**同時斷言「資料庫沒變」與「提示框有被叫到」**——只驗前者分不出「被正確擋下」與「根本沒跑到那一步」（同 TST-7）。
+- **PRM-3**: **共用層直接彈 `msgWarning`，離線測試整包卡死** → 擋下的提示必須**由各分頁模組自己的 `msgWarning` 名稱發出**，共用層（`lib/base_tab.py`）只回傳 `(標題, 訊息)`。測試攔的是被測模組裡的那個名字（`patch("tabs.tab_reward.msgWarning")`），換不掉共用層 import 進去的參考，於是 modal `exec()` 在無人可按的環境無限等待（2026-08-07 實際踩過，症狀是「跑到一半停住」而非紅燈）。同 TST-7 的病根。
+- **PRM-4**: **三態判斷逐頁不同，套同一條規則會整批誤判** → 敘獎／罰單的未發文是 `register_date=''`、軟刪除是 `NULL`；**刑案／一般陳報的未發文是 `report_date IS NULL`**，軟刪除則看主旨欄被清空、與日期無關。2026-08-07 的計畫書原先把「`NULL`＝軟刪除」當全頁通則，照著寫會把**陳報所有未發文列誤判成已刪除**。判斷一律走 `row_perm.isDispatched()` 與 `isLiveRow(page, ...)`，**且必須回查 DB**——畫面上「未發文」與「已刪除」都是空白，從 cell 文字在原理上分不出三態。
+- **PRM-5**: **測試建立的分頁沒拆 `role_changed` 連線，改成逐列重刷後會炸得更明顯** → TST-6 記的是「懸空連線打到已釋放的 C++ 物件」；逐列重刷會**再多查一次資料庫**，於是殭屍分頁在別支測試切換身分時去查一個早就被刪掉的暫存 DB（`no such table: Document_Reward`），紅在毫不相干的檔案上。處置同 TST-6：`tearDown` 逐一 `auth.role_changed.disconnect(tab._onRoleRefresh)`。
+- **PRM-6**: **唯讀鎖只擋一般使用者、管理身分照樣能動** → 2026-08-07 起**三種身分一律不准動**（含 admin），且連新增一起擋。原本六支硬 gate 與 `_applyInputLock` 都寫 `not is_manager() and isInputLocked(...)`，豁免已全部拿掉。唯讀的語意是「這個功能停用」，留任何入口都與它衝突；要改資料就先到「資料庫設定 → 系統設定」把唯讀關掉（**該入口不受本鎖影響，所以鎖住 admin 不會沒有解鎖路徑**）。⚠️ 新增流程時不要把 `is_manager()` 豁免加回來。
 
 #### SVG：SVG／icon
 - **SVG-1**: **Material icon 白邊太多／在按鈕裡偏一邊** → 裁 viewBox 到圖案實際 bounding box 並置中、移除非對稱裝飾，width/height 統一 512px（`0 -960 960 960` 圖案只佔中央 70%）。

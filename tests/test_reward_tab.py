@@ -32,8 +32,19 @@ class TestRewardTab(unittest.TestCase):
         conn.close()
         self.tabs = QTabWidget()
         self.tabs.addTab(QWidget(), "敘獎登錄")
+        self._tabs_made = []      # tearDown 要逐一拆 role_changed 連線（TST-6）
 
     def tearDown(self):
+        # ⚠️ 拆掉本檔分頁掛在 AuthManager 單例上的連線（PITFALLS TST-6）。
+        # 單例活過整個 session、分頁隨測試回收；不拆的話，之後任何測試切換身分
+        # 都會叫到這些殭屍分頁的 `_refreshRowPermissions`，而它們的暫存資料庫
+        # 早就被刪掉了（`no such table: Document_Reward`），紅在別支測試上。
+        am = AuthManager.instance()
+        for tab in self._tabs_made:
+            try:
+                am.role_changed.disconnect(tab._onRoleRefresh)
+            except (RuntimeError, TypeError):
+                pass
         self.tabs.deleteLater()
         try:
             os.remove(self.db)
@@ -44,6 +55,7 @@ class TestRewardTab(unittest.TestCase):
         from tabs.tab_reward import TabReward
         tab = TabReward(self.tabs, self.db)
         tab.setup(0)
+        self._tabs_made.append(tab)
         return tab
 
     def test_setup_initializes_form_with_issue_fields(self):
@@ -251,6 +263,17 @@ class TestRewardTab(unittest.TestCase):
         self.assertEqual(self._candidate_names(tab), ["測試甲", "測試乙"])
 
     def test_submit_and_delete_do_not_reorder_candidates(self):
+        """⚠️ 本測試驗的是候選人員名條的排序，不是權限，故以 admin 執行。
+
+        送文者模式下登錄當下就寫入發文日期，該列一送出即「已發文」，
+        一般使用者依權限矩陣（計畫 §2.3）當場失去改刪權——若以一般使用者
+        執行，`_deleteByDocId` 會被入口複核擋下而測不到排序。
+        """
+        from unittest.mock import patch
+        am = AuthManager.instance()
+        original_role = am.current_role
+        am._role = "admin"
+        self.addCleanup(lambda: setattr(am, "_role", original_role))
         tab = self._make_tab()
         before = self._candidate_names(tab)
         tab.reward_sender.setCurrentIndex(tab.reward_sender.findData("P01"))
@@ -259,7 +282,6 @@ class TestRewardTab(unittest.TestCase):
         tab._submit()
         self.assertEqual(self._candidate_names(tab), before)
         doc_id = tab._session_doc_ids[0]
-        from unittest.mock import patch
         with patch("tabs.tab_reward.confirmBox", return_value=True):
             tab._deleteByDocId(doc_id)
         self.assertEqual(self._candidate_names(tab), before)
@@ -295,10 +317,22 @@ class TestRewardInputLock(unittest.TestCase):
         conn.commit()
         conn.close()
         self._extra_tabs = []
+        self._tabs_made = []      # tearDown 要逐一拆 role_changed 連線（TST-6）
         AuthManager.instance()._role = "user"
 
     def tearDown(self):
-        AuthManager.instance()._role = "user"   # 還原單例（不 emit）
+        # ⚠️ 先拆掉本檔建立的分頁掛在 AuthManager 單例上的 role_changed 連線
+        # （PITFALLS TST-6）。單例活過整個 test session，分頁卻隨測試回收；
+        # 連線留著的話，之後任何測試切換身分都會打到已釋放的物件，或
+        # ——本檔實際踩過——觸發 `_refreshRowPermissions` 去查一個已被刪掉的
+        # 暫存資料庫（`no such table: Document_Reward`），紅在毫不相干的測試上。
+        am = AuthManager.instance()
+        for tab in getattr(self, "_tabs_made", []):
+            try:
+                am.role_changed.disconnect(tab._onRoleRefresh)
+            except (RuntimeError, TypeError):
+                pass
+        am._role = "user"                       # 還原單例（不 emit）
         for t in self._extra_tabs:
             t.deleteLater()
         try:
@@ -314,6 +348,7 @@ class TestRewardInputLock(unittest.TestCase):
         self._extra_tabs.append(tabs)
         tab = TabReward(tabs, self.db)
         tab.setup(0)
+        self._tabs_made.append(tab)
         return tab
 
     def _make_multi_tab(self):
@@ -326,6 +361,7 @@ class TestRewardInputLock(unittest.TestCase):
         self._extra_tabs.append(tabs)
         tab = TabReward(tabs, self.db)
         tab.setup(1)
+        self._tabs_made.append(tab)
         return tabs, tab
 
     def _set_lock(self, on):
@@ -341,6 +377,15 @@ class TestRewardInputLock(unittest.TestCase):
         if emit:
             am.role_changed.emit(role)
 
+    def _delete_btn_enabled(self, tab, row):
+        """該列的 ✕ 鈕是否啟用（widget 鈕型，見 ui_utils.table.makeDeleteBtn）。"""
+        from PySide6.QtWidgets import QPushButton
+        container = tab.reward_table.cellWidget(row, 0)
+        self.assertIsNotNone(container, f"第 {row} 列沒有刪除鈕")
+        btn = container.findChild(QPushButton, "deleteBtn")
+        self.assertIsNotNone(btn, f"第 {row} 列的刪除鈕不見了")
+        return btn.isEnabled()
+
     def _reward_count(self):
         conn = sqlite3.connect(self.db)
         try:
@@ -355,21 +400,22 @@ class TestRewardInputLock(unittest.TestCase):
         tab.reward_reason.setText(reason)
         tab.reward_recipients.setCurrentText(recipients)
 
-    def test_locked_blocks_regular_but_allows_admin_and_archive(self):
+    def test_locked_blocks_every_role_from_adding(self):
+        """⚠️ 2026-08-07 起唯讀對**三種身分**都擋新增（原本管理身分可繞過）。
+
+        唯讀＝這個功能停用，不分身分；全專案六支硬 gate 同步改。
+        """
         self._set_lock(True)
-        self._set_role("user")
-        regular = self._make_tab()
-        self._fill(regular)
-        with patch("tabs.tab_reward.msgWarning"):
-            regular._submit()
-        self.assertEqual(self._reward_count(), 0)
-        for role in ("admin", "archive"):
+        for role in ("user", "archive", "admin"):
             with self.subTest(role=role):
                 self._set_role(role)
-                manager = self._make_tab()
-                self._fill(manager)
-                manager._submit()
-        self.assertEqual(self._reward_count(), 2)
+                tab = self._make_tab()
+                self._fill(tab)
+                with patch("tabs.tab_reward.msgWarning") as warn,                      patch("tabs.tab_reward.nextDocId") as nx:
+                    tab._submit()
+                    warn.assert_called_once()
+                    nx.assert_not_called()
+        self.assertEqual(self._reward_count(), 0)
 
     def test_locked_regular_user_disables_inputs_and_shows_banner(self):
         self._set_role("user")
@@ -384,12 +430,15 @@ class TestRewardInputLock(unittest.TestCase):
         # offscreen 無 show()：以 isHidden 判斷本身可見旗標（isVisible 受祖鏈影響）
         self.assertFalse(tab._readonly_banner.isHidden())
 
-    def test_manager_never_locked_and_banner_hidden(self):
+    def test_manager_is_locked_too_and_sees_banner(self):
+        """⚠️ 管理身分不再豁免：反灰與紅色橫幅一視同仁。"""
         self._set_lock(True)
-        self._set_role("admin")
-        tab = self._make_tab()
-        self.assertTrue(tab.btn_submit.isEnabled())
-        self.assertTrue(tab._readonly_banner.isHidden())
+        for role in ("archive", "admin"):
+            with self.subTest(role=role):
+                self._set_role(role)
+                tab = self._make_tab()
+                self.assertFalse(tab.btn_submit.isEnabled())
+                self.assertFalse(tab._readonly_banner.isHidden())
 
     def test_submit_hard_guard_blocks_even_when_inputs_bypassed(self):
         # 移除 _submit 的 hard guard 此測試須轉紅。
@@ -404,25 +453,29 @@ class TestRewardInputLock(unittest.TestCase):
             nx.assert_not_called()
         self.assertEqual(self._reward_count(), 0)
 
-    def test_manager_downgrade_clears_preview(self):
+    def test_manager_downgrade_keeps_preview(self):
+        """⚠️ 2026-08-07 起降權**不再清空清單**（計畫 §2.3）。
+
+        原本整張清掉，理由是「降權後的一般使用者不該拿到管理身分建立之敘獎的
+        操作入口」；維護者 2026-08-04 裁示那是把資料庫瀏覽頁「僅 admin 可改」
+        的規則錯套到登錄頁上——登錄頁本來就對三種身分開放刪改，清空等於讓
+        一般使用者失去他本來就有的入口。
+        """
         self._set_role("admin")
         tab = self._make_tab()
         self._fill(tab)
         tab._submit()
         self.assertEqual(tab.reward_table.rowCount(), 1)
         self._set_role("user", emit=True)
-        self.assertEqual(tab.reward_table.rowCount(), 0)
+        self.assertEqual(tab.reward_table.rowCount(), 1)
 
-    def test_manager_downgrade_clears_preview_persistently_across_tab_switch(self):
-        """降權清空必須具持續性：切頁往返後仍是 0 列。
+    def test_manager_downgrade_keeps_preview_persistently_across_tab_switch(self):
+        """降權後列仍在，且切頁往返狀態一致（防「只是當下對、切頁就走樣」）。
 
-        ⚠️ 只斷言降權當下 `rowCount()==0` 是假保證：`_onRoleClearList` 若只清
-        表格 widget、不清 `self._session_doc_ids`，本頁 `on_activated` 的
-        dirty-flag 守衛只是掩蓋——`reward_data_dirty` 會被不設角色 gate 的
-        路徑（如列印頁結算發文，一般使用者走得到）設為 True，旗標一開，切回本頁就 `_refresh_session_rows()` 把整份
-        清單從 DB 重建，降權後的一般使用者即取得「編輯／刪除管理身分建立之
-        敘獎」的入口（同一筆在瀏覽頁是僅 admin 可改）。故本測試必須真的
-        `logout()`、真的設 dirty 旗標、真的 emit `currentChanged`。
+        ⚠️ 本頁走整表重建（`_refresh_session_rows`），每一列的可點與可刪由
+        `row_perm` 計算，故 dirty-flag 觸發的重建不會與降權當下的狀態不一致
+        ——規則只有一份。本測試因此必須真的 `logout()`、真的設 dirty 旗標、
+        真的 emit `currentChanged`，才驗得到重建路徑。
         """
         self._set_role("admin")
         tabs, tab = self._make_multi_tab()
@@ -435,7 +488,7 @@ class TestRewardInputLock(unittest.TestCase):
         am = AuthManager.instance()
         am.logout()
         self.assertEqual(am.current_role, "user")
-        self.assertEqual(tab.reward_table.rowCount(), 0)
+        self.assertEqual(tab.reward_table.rowCount(), 1)
 
         # 列印頁結算發文完成時對所有 tab 設的旗標（tab_print._flagRewardReload）
         tab.reward_data_dirty = True
@@ -443,11 +496,9 @@ class TestRewardInputLock(unittest.TestCase):
         tabs.setCurrentIndex(0)
         tabs.setCurrentIndex(1)
 
-        self.assertEqual(tab.reward_table.rowCount(), 0)
-        self.assertEqual(tab._session_doc_ids, [])
-        # 取不到列＝編輯（_onEditRow）／刪除（_deleteByDocId）進入點取不到 doc_id
-        self.assertEqual(tab._row_for_doc_id(doc_id), -1)
-        # 清的是入口不是資料：該筆敘獎仍在 DB
+        self.assertEqual(tab.reward_table.rowCount(), 1)
+        self.assertEqual(tab._session_doc_ids, [doc_id])
+        self.assertEqual(tab._row_for_doc_id(doc_id), 0)
         conn = sqlite3.connect(self.db)
         row = conn.execute(
             "SELECT doc_id,reason,recipients FROM Document_Reward "
@@ -455,18 +506,114 @@ class TestRewardInputLock(unittest.TestCase):
         conn.close()
         self.assertEqual(row, (doc_id, "協助查緝", "測試甲"))
 
-    def test_lock_does_not_block_delete_of_existing(self):
+    def test_downgrade_keeps_every_preview_row_operable(self):
+        """降權後兩列都還能操作——已發文與未發文混排也一樣。
+
+        ⚠️ 送文者輸入模式下登錄當下就寫入發文日期，該筆一送出即為「已發文」；
+        若把已發文列鎖住，承辦人打錯字就當場救不回來。故預覽列一律開放
+        （`row_perm.SESSION_PREVIEW_PAGES`）。⚠️ 這條紅了不要改斷言。
+        """
+        conn = sqlite3.connect(self.db)
+        conn.execute("INSERT OR REPLACE INTO App_Settings(key,value) "
+                     "VALUES('report_mode_reward','1')")
+        conn.commit()
+        conn.close()
+        self._set_role("admin")
+        tab = self._make_tab()
+        self._fill(tab)
+        tab._submit()
+        pending_id = tab._session_doc_ids[0]
+        self._fill(tab)
+        tab._submit()
+        issued_id = tab._session_doc_ids[1]
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "UPDATE Document_Reward SET register_date='2026-08-01' WHERE doc_id=?",
+            (issued_id,))
+        conn.commit()
+        conn.close()
+
+        self._set_role("user", emit=True)
+
+        self.assertEqual(tab.reward_table.rowCount(), 2)
+        self.assertEqual(tab._row_for_doc_id(pending_id), 0)
+        self.assertEqual(tab._row_for_doc_id(issued_id), 1)
+        for row in (0, 1):
+            with self.subTest(row=row):
+                # 兩列的編號都可點（連結 cellWidget）、✕ 都啟用
+                self.assertIsNotNone(tab.reward_table.cellWidget(row, 1))
+                self.assertTrue(self._delete_btn_enabled(tab, row))
+
+    def test_entry_guard_allows_edit_of_issued_row_for_plain_user(self):
+        """入口複核不得擋住預覽列——即使該列已發文、身分是一般使用者。
+
+        入口複核仍在（它擋的是「這筆已被別台電腦刪除」），但不擋權限。
+        """
+        self._set_role("admin")
+        tab = self._make_tab()
+        self._fill(tab)
+        tab._submit()
+        doc_id = tab._session_doc_ids[0]
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "UPDATE Document_Reward SET register_date='2026-08-01' WHERE doc_id=?",
+            (doc_id,))
+        conn.commit()
+        conn.close()
+        self._set_role("user", emit=True)
+
+        with patch("tabs.tab_reward.msgWarning") as warn,              patch("tabs.tab_reward.RewardEditDialog") as dlg:
+            dlg.return_value.exec.return_value = False
+            tab._onEditRow(0, doc_id)
+
+        warn.assert_not_called()
+        dlg.assert_called_once()
+
+    def test_entry_guard_blocks_row_deleted_by_another_machine(self):
+        """唯一還會擋的情況：這筆已被別台電腦刪掉了。"""
         self._set_role("user")
         tab = self._make_tab()
         self._fill(tab)
         tab._submit()
-        self.assertEqual(self._reward_count(), 1)
         doc_id = tab._session_doc_ids[0]
-        self._set_lock(True)
-        tab.on_activated()
-        with patch("tabs.tab_reward.confirmBox", return_value=True):
-            tab._deleteByDocId(doc_id)
-        self.assertEqual(self._reward_count(), 0)   # 已軟刪除（recipients 清空）
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "UPDATE Document_Reward SET register_date=NULL WHERE doc_id=?",
+            (doc_id,))
+        conn.commit()
+        conn.close()
+
+        with patch("tabs.tab_reward.msgWarning") as warn,              patch("tabs.tab_reward.RewardEditDialog") as dlg:
+            tab._onEditRow(0, doc_id)
+
+        warn.assert_called_once()
+        self.assertEqual(warn.call_args[0][0], "資料已刪除")
+        dlg.assert_not_called()
+
+    def test_lock_freezes_delete_for_every_role(self):
+        """⚠️ 唯讀鎖是「預覽列一律可改可刪」原則的**唯一例外**：
+        三種身分一律不准動（2026-08-07 維護者裁示）。
+
+        ⚠️ 兩件事都要驗——只斷言「資料庫沒變」分不出「被正確擋下」與
+        「根本沒跑到那一步」（PITFALLS TST-7）。
+        """
+        for role in ("user", "archive", "admin"):
+            with self.subTest(role=role):
+                self._set_lock(False)
+                self._set_role(role)
+                tab = self._make_tab()
+                self._fill(tab)
+                tab._submit()
+                doc_id = tab._session_doc_ids[-1]
+                before = self._reward_count()
+                self._set_lock(True)
+                tab.on_activated()
+                with patch("tabs.tab_reward.msgWarning") as warn,                      patch("tabs.tab_reward.confirmBox", return_value=True) as confirm:
+                    tab._deleteByDocId(doc_id)
+                self.assertEqual(self._reward_count(), before)   # 沒被刪掉
+                warn.assert_called_once()
+                self.assertEqual(warn.call_args[0][0], "權限不足")
+                confirm.assert_not_called()                      # 擋在確認框之前
 
 
 if __name__ == "__main__":

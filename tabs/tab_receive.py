@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
 )
 
 from lib.base_tab import BaseTab, InputLockMixin
+from lib.row_perm import canDeleteRow, canEditRow
 from lib.db_utils import (getResourcePath, nextDocId, DEBUG_MODE,
                           softDeleteDoc, isInputLocked)
 from ui_utils import loadUi, msgWarning, msgCritical, confirmBox, reportError
@@ -13,7 +14,7 @@ from ui_utils.date_guard import confirmDateGap
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
-    TaskEditDialog,
+    refreshDeleteBtns, TaskEditDialog,
     setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
     calcOverdue, colorForStatus, attachStickyScroll,
 )
@@ -104,10 +105,33 @@ class TabReceive(BaseTab, InputLockMixin):
                 self.recv_date, self.recv_receiver, self.recv_dept,
                 self.recv_subject, self.recv_processor, self._deadline_stack,
                 self.chk_no_deadline, btn_submit, btn_clear) if w],
-            clear_tables=[self.recv_table],
+            refresh_tables=[self.recv_table],
         )
 
         if self.recv_subject: self.recv_subject.setFocus()
+
+    def _refreshRowPermissions(self, tables):
+        """降權時就地重算（`InputLockMixin` 的 hook），不清空清單。
+
+        本頁**全開**：所有身分都可改全欄、可刪，且沒有「已發文」的概念
+        （權限矩陣 §2.2）。因此逐列重算實際上只反映一件事——唯讀凍結
+        （管理者把收文流程停用時，一般使用者整頁只剩可看）。
+        """
+        self._onRolePerm()
+
+    def _onRolePerm(self, _role=None):
+        """依 `row_perm` 重算每一列的刪除鈕與編號欄可點狀態。"""
+        if not self.recv_table:
+            return
+        rows = self._rowDocIds(self.recv_table)
+        states, perm = self._rowPermContext("task", rows.values())
+        # 本頁沒有已發文概念，dispatched 恆為 False；查不到＝該列已被刪除。
+        allow_edit = canEditRow("task", dispatched=False, **perm)
+        allow_delete = canDeleteRow("task", dispatched=False, **perm)
+        refreshDeleteBtns(self.recv_table, allow_delete)
+        for r, doc_id in rows.items():
+            setDocIdLinkCell(self.recv_table, r, 1, doc_id, self._onEditRow,
+                             clickable=allow_edit and doc_id in states)
 
     # ── BaseTab 介面 ──────────────────────────────────────
     def get_tables(self):
@@ -147,7 +171,7 @@ class TabReceive(BaseTab, InputLockMixin):
 
     # ── 確認收文 ──────────────────────────────────────────
     def _submit(self):
-        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "task"):
+        if isInputLocked(self.db_path, "task"):
             msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
             return
         recv_date   = self.recv_date.date().toString("yyyy-MM-dd")
@@ -245,6 +269,11 @@ class TabReceive(BaseTab, InputLockMixin):
 
     def _onEditRow(self, row, doc_id):
         """點擊超連結 → 開啟 TaskEditDialog"""
+        # 入口複核：反灰／純文字化只是提示，這一層才是防線（見計畫 S0）。
+        blocked = self._rowActionBlockReason("task", doc_id, delete=False)
+        if blocked:
+            msgWarning(*blocked)
+            return
         dlg = TaskEditDialog(self.db_path, doc_id, self.recv_table)
         if dlg.exec():
             updated = dlg.get_updated()
@@ -273,6 +302,11 @@ class TabReceive(BaseTab, InputLockMixin):
         if not self.recv_table:
             return
         # 收文頁開放一般使用者刪除（更正剛輸入的錯列）；稽核記實際刪除者。
+        # 入口複核：唯讀凍結時一般使用者不得刪（見計畫 S0 ①）。
+        blocked = self._rowActionBlockReason("task", doc_id, delete=True)
+        if blocked:
+            msgWarning(*blocked)
+            return
         reply = confirmBox(
             "確認刪除",
             "刪除後，本筆交辦單及文號將被廢棄不再使用，如有需要請重新輸入取號。",

@@ -15,13 +15,26 @@ APPLE_STYLE = """
 }
 
 /* ── 視窗 / Dialog 背景 ── */
-QMainWindow, QDialog {
-    background-color: #f2f2f7;
-}
+/* ⚠️ **這兩條的順序有意義，不可對調**（2026-08-07 以算繪像素實測定案）。
+
+   `QDialog` 也是 `QWidget`，兩條選擇器特異度相同（各一個型別選擇器），Qt 依
+   CSS 規則由**後者勝**。所以必須先宣告 `QWidget` 透明、再宣告視窗底色；反過來
+   寫的話 `transparent` 會把 `QMainWindow`／`QDialog` 的底色中和掉，視窗自己變成
+   透明——在 Windows 上會渲染成整塊黑（同 QToolTip 那段的 Qt 行為）。
+
+   容器維持 transparent 是刻意的：它們透出視窗底色，整個視窗因此是一致的一片，
+   不會出現一塊一塊的色差。
+
+   ⚠️ 這裡曾經有第三條 `QMainWindow > QWidget, QDialog > QWidget { #f2f2f7 }`，
+   是上述順序寫反時用來替視窗「補畫」內容的補丁。它有嚴重副作用：
+   `QLineEdit`／`QComboBox`／`QDateEdit` 都是 `QWidget`，只要**直接放在視窗或
+   對話框底下**就會被它匹配到，而兩個型別選擇器的特異度高於單獨的 `QLineEdit`，
+   於是輸入框的白底被容器灰底蓋掉；停用態則因 `:disabled` 特異度更高而倖存。
+   順序修正後該補丁已無必要，整條移除。**不要把它加回來。** */
 QWidget {
     background-color: transparent;
 }
-QMainWindow > QWidget, QDialog > QWidget {
+QMainWindow, QDialog {
     background-color: #f2f2f7;
 }
 
@@ -183,6 +196,17 @@ QPushButton:hover {
 }
 QPushButton:pressed {
     background-color: #d1d1d6;
+}
+/* ⚠️ 通用停用態（2026-08-07 補）。在此之前公版**只有** hover／pressed，沒有
+   `:disabled`——每一支自訂樣式的按鈕都得自己記得補一行，忘了就不會反灰
+   （PITFALLS QSS-4 記過的雷，長年靠人記得）。而「按鈕反灰」是本專案權限與
+   流程的主要視覺提示，少了它使用者會一直去點沒有反應的鈕。
+   ⚠️ 帶 objectName 的特化按鈕（#deleteBtn、#btn_send 等）特異度較高不受影響，
+   它們各自的 `:disabled` 照舊由自己負責。 */
+QPushButton:disabled {
+    background-color: #e5e5ea;
+    color: #aeaeb2;
+    border-color: #d1d1d6;
 }
 
 /* ── 刪除按鈕（表格內紅色 X） ── */

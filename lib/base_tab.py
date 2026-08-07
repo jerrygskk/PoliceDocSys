@@ -100,6 +100,25 @@ class BaseTab:
         m = re.search(r'href="([^"]+)"', lbl.text())
         return m.group(1) if m else None
 
+    def _rowDocIds(self, table, col=1):
+        """回傳 `{列號: doc_id}`，同時涵蓋編號欄的兩種表示法。
+
+        編號欄可點時是 `QLabel` 連結（cellWidget）、不可點時是純文字
+        `QTableWidgetItem`，兩者獨立儲存（見 `setDocIdLinkCell`）。逐列重算
+        權限時列可能處於任一種狀態，故兩邊都要讀。
+        """
+        rows = {}
+        if not table:
+            return rows
+        for r in range(table.rowCount()):
+            doc_id = self._docIdFromLabel(table.cellWidget(r, col))
+            if not doc_id:
+                item = table.item(r, col)
+                doc_id = item.text() if item else None
+            if doc_id:
+                rows[r] = str(doc_id)
+        return rows
+
     # ── 共用：刷新交辦單預覽表的業務組 / 承辦人欄 ────────────────
     def _refreshTaskPreviewNames(self, table, dept_col=3, proc_col=4, docid_col=1):
         """
@@ -165,13 +184,19 @@ class InputLockMixin:
          發文頁表單直接掛在 tabLayout 上（會吃到左右內距而變窄），改呼叫
          `_wrapLayoutWithBanner(outer_layout)` 讓橫幅滿版。
       2. 呼叫 `_setupInputLock(tab_index, lock_kind=..., lock_widgets=...,
-         clear_tables=...)` 完成掛鉤與初次套用。
+         refresh_tables=...)` 完成掛鉤與初次套用。
 
     參數：
-      lock_kind    — 鎖種類字串（dispatch/task/crim/gen），或回傳字串的 callable
-                     （陳報頁依當前刑案/一般模式動態決定）。
-      lock_widgets — 反灰元件 list；或 {kind: list} dict（陳報頁依模式取用）。
-      clear_tables — 登出降回一般使用者時要清空（setRowCount(0)）的預覽表清單。
+      lock_kind      — 鎖種類字串（dispatch/task/crim/gen），或回傳字串的 callable
+                       （陳報頁依當前刑案/一般模式動態決定）。
+      lock_widgets   — 反灰元件 list；或 {kind: list} dict（陳報頁依模式取用）。
+      refresh_tables — 身分變更時要重算「能不能改、能不能刪」的預覽表清單。
+
+    ⚠️ **2026-08-07 起降權不再清空預覽清單**（原參數名 `clear_tables`、原行為
+    `setRowCount(0)`）。清空等於讓一般使用者失去他本來就有的入口——登錄頁對
+    三種身分都開放刪改，那是把資料庫瀏覽頁「僅管理者可改」的規則錯套到登錄頁
+    上。現在改為**逐列重算權限**，列留著，該鎖的鎖、該開的開，規則單一來源在
+    `lib/row_perm.py`。參數一併更名，避免下一個人以為它還會清表。
     """
 
     _READONLY_TEXT = "唯讀模式：本功能目前無法使用，僅供瀏覽"
@@ -210,21 +235,22 @@ class InputLockMixin:
         outer.addWidget(banner)
         outer.addWidget(inner)
 
-    def _setupInputLock(self, tab_index, *, lock_kind, lock_widgets, clear_tables):
+    def _setupInputLock(self, tab_index, *, lock_kind, lock_widgets,
+                        refresh_tables):
         self._tab_index = tab_index
         self._lock_kind = lock_kind
         self._lock_widgets = lock_widgets
-        self._lock_clear_tables = clear_tables
+        self._lock_refresh_tables = refresh_tables
         # main._onTabChanged 不會對輸入頁呼叫 on_activated（只對設定/瀏覽頁），
         # 故自掛 currentChanged：切回本頁時重套唯讀狀態（比照 tab_print._onShown）。
         try:
             self.tab_widget.currentChanged.connect(self._onShown)
         except Exception:
             pass
-        # 登出降回一般使用者時清空預覽清單（不在原頁做即時反灰）。
+        # 降權時就地重算每一列的可改／可刪狀態（不再清空清單）。
         from lib.auth_manager import AuthManager
         try:
-            AuthManager.instance().role_changed.connect(self._onRoleClearList)
+            AuthManager.instance().role_changed.connect(self._onRoleRefresh)
         except Exception:
             pass
         self._applyInputLock()
@@ -239,9 +265,7 @@ class InputLockMixin:
         from lib.auth_manager import AuthManager
         from lib.db_utils import isInputLocked
         kind = self._resolveLockKind()
-        locked = (kind is not None
-                  and not AuthManager.instance().is_manager()
-                  and isInputLocked(self.db_path, kind))
+        locked = (kind is not None and isInputLocked(self.db_path, kind))
         widgets = getattr(self, "_lock_widgets", None)
         if isinstance(widgets, dict):
             widgets = widgets.get(kind, [])
@@ -255,12 +279,91 @@ class InputLockMixin:
         if idx == getattr(self, "_tab_index", -1):
             self._applyInputLock()
 
-    def _onRoleClearList(self, *_):
-        """登出降回一般使用者時清空預覽清單（取代原頁即時反灰）。"""
+    def _onRoleRefresh(self, *_):
+        """身分變更時就地重算預覽清單每一列的可改／可刪狀態。
+
+        ⚠️ **只處理降權方向**：升權一定發生在資料庫設定頁（登入在那裡），回到
+        本頁必然觸發 `on_activated` 而整份重刷；降權則可能在原地發生（手動登出、
+        閒置自動登出），所以降權這一側必須自己重刷。又因唯讀凍結只鎖一般使用者
+        （見 `_applyInputLock` 與 `row_perm`），對管理身分 early return 不會漏鎖
+        任何情境。
+        """
         from lib.auth_manager import AuthManager
         if AuthManager.instance().is_manager():
             return
-        for t in (getattr(self, "_lock_clear_tables", None) or []):
-            if t:
-                t.setRowCount(0)
+        self._refreshRowPermissions(
+            getattr(self, "_lock_refresh_tables", None) or [])
+
+    def _rowPermContext(self, page, doc_ids):
+        """一次查回這批 doc_id 的權限判斷素材。
+
+        回傳 `(states, kwargs)`：
+          states — `{doc_id: dispatched}`，值取自 DB 真值（查不到＝該列已不在）
+          kwargs — 直接展開餵給 `row_perm.canEditRow` / `canDeleteRow` 的
+                   `is_admin` / `is_manager` / `input_locked`
+        """
+        from lib import row_perm
+        from lib.auth_manager import AuthManager
+        from lib.db_utils import isInputLocked
+        am = AuthManager.instance()
+        kwargs = {
+            "is_admin": am.is_admin(),
+            "is_manager": am.is_manager(),
+            "input_locked": isInputLocked(self.db_path, page),
+        }
+        ids = [d for d in doc_ids if d]
+        if not ids:
+            return {}, kwargs
+        sql, params = row_perm.rowStateSql(page, ids)
+        try:
+            conn = self._getConn()
+            try:
+                rows = conn.execute(sql, params).fetchall()
+            finally:
+                conn.close()
+        except Exception:
+            # 讀不到 DB 時一律當成「已發文」，寧可多鎖不可誤放
+            return {d: True for d in ids}, kwargs
+        states = {}
+        for doc_id, date_value, live_value in rows:
+            if not row_perm.isLiveRow(page, live_value):
+                continue    # 軟刪除空殼：該列已不在，不給任何入口
+            states[str(doc_id)] = row_perm.isDispatched(date_value)
+        return states, kwargs
+
+    def _rowActionBlockReason(self, page, doc_id, *, delete):
+        """動作進入時的入口複核：重查 DB 現值再問一次權限。
+
+        放行回 `None`；擋下回 `(標題, 訊息)`，**由呼叫端自己彈**。
+
+        ⚠️ **這一層才是防線，視覺層只是提示**：舊行為清空清單時「列不存在」
+        本身就是防線；改成留列之後，畫面上只剩刪除鈕反灰與編號欄純文字化，
+        而 CLAUDE.md 明列「反灰擋不住替代路徑」，且降權與使用者操作之間存在
+        時間差。故每一個動作進入點都要自己再檢查一次。
+
+        ⚠️ **本函式刻意不呼叫 `msgWarning`**：訊息框必須由各分頁模組自己的
+        `msgWarning` 名稱發出，測試才 patch 得掉（`patch("tabs.tab_reward.
+        msgWarning")` 換不掉別的模組 import 進去的參考，見 PITFALLS TST-7）。
+        在這裡直接彈，離線測試會卡在無人可按的 modal 上。
+        """
+        from lib import row_perm
+        from lib.db_utils import ROW_GONE_MSG, ROW_GONE_TITLE
+        states, perm = self._rowPermContext(page, [doc_id])
+        if str(doc_id) not in states:
+            return ROW_GONE_TITLE, ROW_GONE_MSG
+        check = row_perm.canDeleteRow if delete else row_perm.canEditRow
+        if not check(page, dispatched=states[str(doc_id)], **perm):
+            return ("權限不足",
+                    f"目前身分無法{'刪除' if delete else '修改'}「{doc_id}」。")
+        return None
+
+    def _refreshRowPermissions(self, tables):
+        """各頁覆寫：重算 `tables` 內每一列的刪除鈕與編號欄可點狀態。
+
+        預設 no-op，讓還沒實作的頁不會壞。實作範本見 `tabs/tab_dbbrowse.py`
+        的 `_onRolePerm`；判斷一律呼叫 `lib/row_perm.py`，不得在迴圈裡自己
+        拼權限條件，也不得讀表格上的顯示字串判斷發文狀態（畫面上「未發文」與
+        「已刪除」都是空白，從 cell 文字在原理上分不出三態）。
+        """
+        return None
 

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from lib.auth_manager import AuthManager
 from lib.base_tab import BaseTab, InputLockMixin
+from lib.row_perm import canDeleteRow, canEditRow, isDispatched
 from lib.db_utils import (
     getResourcePath, isInputLocked, isSelfServiceMode, loadActivePersonnel,
 )
@@ -105,7 +106,7 @@ class TabTicket(BaseTab, InputLockMixin):
                 self.ticket_add,
                 self.ticket_candidates_list,
             ],
-            clear_tables=[self.ticket_table],
+            refresh_tables=[self.ticket_table],
         )
         self.ticket_no.setFocus()
 
@@ -182,23 +183,20 @@ class TabTicket(BaseTab, InputLockMixin):
         self.reload()
         self._applyInputLock()
 
-    def _onRoleClearList(self, *args):
-        """降權清空必須具『持續性』，故連本次登錄清單一併清掉。
+    def _refreshRowPermissions(self, tables):
+        """降權時重建整份本次登錄清單（`InputLockMixin` 的 hook）。
 
-        基底 `InputLockMixin._onRoleClearList` 只把預覽表 widget 清成 0 列、
-        不動 `self._session_doc_ids`。本頁 `_onShown` 是**無條件** `reload()`
-        （見上；`tab_reward.on_activated` 有 dirty-flag 守衛故無此問題），
-        只清 widget 的話切頁往返就會把整份清單從 DB 重建回來——降權後的一般
-        使用者因此拿到一條「編輯／刪除管理身分建立之罰單」的路徑，而同一筆
-        資料在資料庫瀏覽頁是僅 admin 可改（設計 §7.2）。實測過的權限回歸，
-        勿只還原 widget。清 `_session_doc_ids` 不動 DB：資料仍在，只是不再
-        留在本頁的操作入口內（設計 §8「管理身分登出或降權後清除本次登錄
-        預覽，避免保留管理身分建立的操作入口」）。
+        ⚠️ **2026-08-07 起不再清空清單、也不再清 `_session_doc_ids`**。原本
+        清空的理由是「降權後的一般使用者不該拿到編輯／刪除管理身分建立之罰單
+        的入口」，但那是把資料庫瀏覽頁「僅 admin 可改」的規則錯套到登錄頁上
+        ——登錄頁本來就對三種身分開放刪改（維護者 2026-08-04 裁示）。
+
+        本頁走**整表重建**而非逐列手術：`reload()` 已經會依 `_session_doc_ids`
+        從 DB 重讀，天然拿到三態真值；重建時每一列的可點與可刪由 `row_perm`
+        計算，故切頁往返（`_onShown` 無條件 `reload()`）也不會走樣——規則只有
+        一份，不再有「降權當下對、重建後走樣」的落差。
         """
-        super()._onRoleClearList(*args)
-        if AuthManager.instance().is_manager():
-            return
-        self._session_doc_ids = []
+        self.reload()
 
     # ── 模式／唯讀 ──────────────────────────────────────────
     def _inputEditable(self):
@@ -209,8 +207,7 @@ class TabTicket(BaseTab, InputLockMixin):
         kind = self._resolveLockKind()
         if kind is None:
             return True
-        return (AuthManager.instance().is_manager()
-                or not isInputLocked(self.db_path, kind))
+        return not isInputLocked(self.db_path, kind)
 
     def _applyInputLock(self):
         """唯讀鎖套用後必須再套一次發文結算模式，否則反灰的發文人員欄會被解鎖回可用。"""
@@ -284,8 +281,7 @@ class TabTicket(BaseTab, InputLockMixin):
     # ── 新增 ────────────────────────────────────────────────
     def _submit(self):
         # 硬性 guard：反灰只擋 UI 觸發，Enter／程式路徑仍會進來。
-        if (not AuthManager.instance().is_manager()
-                and isInputLocked(self.db_path, "ticket")):
+        if isInputLocked(self.db_path, "ticket"):
             msgWarning("目前為唯讀", "此年度的罰單登錄已鎖定，無法新增資料。")
             return
         missing = self._missingFields()
@@ -352,6 +348,12 @@ class TabTicket(BaseTab, InputLockMixin):
 
     # ── 修改 ────────────────────────────────────────────────
     def _onEditRow(self, _row, doc_id):
+        # 入口複核：反灰／純文字化只是提示，這一層才是防線（見計畫 S0 ①）。
+        blocked = self._rowActionBlockReason("ticket", doc_id, delete=False)
+        if blocked:
+            msgWarning(*blocked)
+            self.reload()
+            return
         dlg = TicketEditDialog(self.db_path, doc_id, self.ticket_table)
         dlg.exec()
         # 併發刪除與正常儲存都以重讀 DB 為準（不信任畫面殘值）
@@ -359,6 +361,12 @@ class TabTicket(BaseTab, InputLockMixin):
 
     # ── 刪除 ────────────────────────────────────────────────
     def _deleteByDocId(self, doc_id):
+        # 入口複核：先於確認框，避免使用者按完「刪除」才被擋（見計畫 S0 ①）。
+        blocked = self._rowActionBlockReason("ticket", doc_id, delete=True)
+        if blocked:
+            msgWarning(*blocked)
+            self.reload()
+            return
         if not confirmBox(
                 "確認刪除",
                 f"確定刪除編號 {doc_id} 的罰單登錄資料？",
@@ -403,17 +411,28 @@ class TabTicket(BaseTab, InputLockMixin):
             conn.close()
         by_id = {str(r[0]): r for r in rows}
         self._session_doc_ids = [d for d in self._session_doc_ids if d in by_id]
+        # 權限素材只取一次（身分與唯讀設定對整份清單相同），逐列只差發文狀態。
+        _, perm = self._rowPermContext("ticket", [])
         for doc_id in self._session_doc_ids:
-            self._appendPreview(by_id[doc_id])
+            self._appendPreview(by_id[doc_id], perm=perm)
 
-    def _appendPreview(self, row):
+    def _appendPreview(self, row, perm=None):
         doc_id, create_date, register_date, ticket_no, issuer_name = row
         pos = self.ticket_table.rowCount()
         self.ticket_table.insertRow(pos)
-        container, _ = makeDeleteBtn(lambda _=False, d=doc_id: self._deleteByDocId(d))
+        # 每一列的可改／可刪由 row_perm 計算：未發文全開、已發文對一般使用者
+        # 鎖住；唯讀凍結另外只鎖一般使用者。`register_date` 是 DB 真值
+        # （''＝未發文、日期＝已發文），不是表格上的顯示字串。
+        if perm is None:
+            _, perm = self._rowPermContext("ticket", [])
+        dispatched = isDispatched(register_date)
+        container, del_btn = makeDeleteBtn(
+            lambda _=False, d=doc_id: self._deleteByDocId(d))
+        del_btn.setEnabled(canDeleteRow("ticket", dispatched=dispatched, **perm))
         self.ticket_table.setCellWidget(pos, 0, container)
-        setDocIdLinkCell(self.ticket_table, pos, 1, str(doc_id), self._onEditRow,
-                         clickable=True)
+        setDocIdLinkCell(
+            self.ticket_table, pos, 1, str(doc_id), self._onEditRow,
+            clickable=canEditRow("ticket", dispatched=dispatched, **perm))
         # issuer_name 是 View 未去後綴原值；預覽表顯示去後綴姓名，與同頁
         # 下拉／候選清單一致（否則同畫面兩種姓名寫法）。
         issuer_display = _trimName(issuer_name) if issuer_name else ""

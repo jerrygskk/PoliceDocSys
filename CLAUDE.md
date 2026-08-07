@@ -38,6 +38,8 @@
 | 備份／異地備份／任何在網路路徑上建資料夾 | PITFALLS **NET 組**（`exist_ok=True` 吞不掉 UNC 分享根目錄的 WinError 50、錯誤碼不可比字串）；§10「平時自動備份」 |
 | 打包／重啟／磁碟空間 | PITFALLS PKG 組；§7 |
 | **設定／權限／面板／新 App_Settings key** | **§2 文末「跨功能影響對照表」右欄逐項檢查**（防改 A 漏 B；新增 key／權限／面板須同步補一列） |
+| 預覽列的可改／可刪、降權行為 | PITFALLS **PRM 組**；§10「權限」的「預覽列權限」分界表（三種頁面三套規則，規則單一來源 `lib/row_perm.py`） |
+| 編輯彈窗的併發防護（樂觀鎖） | §10「編輯彈窗的 `last_modified` 樂觀鎖」（五個彈窗統一；秒精度窄縫是已知並接受的） |
 | 改 README | §9「README 撰寫定義」 |
 | 改 schema／種子 | §5「結構變更原則」（唯一來源 `db_schema.py`／`db_seed.py`） |
 
@@ -68,7 +70,7 @@
   的鍵盤輸入或滾輪會直接改掉日期，且畫面變化細微不易察覺，等於靜默竄改資料。
   慣例是在 `__init__` 末尾呼叫（既有例：`reward_dialog`／`ticket_dialog`／
   `settle_dialog`）。新增視窗一律照做並上機確認焦點位置。
-- ⚠️ **本專案的公版樣板清單**（「有公版就直接套」的通則見全域設定）：全域樣式 `lib/theme.py`（`APPLE_STYLE`／`HINT_COLOR`／`TEXT_COLOR`）、按鈕 `ui_utils/ui_common.py`（`BTN_CONFIRM`／`BTN_CANCEL`／`BTN_DANGER`）、訊息與確認框（`msgInfo`／`msgWarning`／`msgCritical`／`confirmBox`）、表格（`ui_utils/table.py` 的 `setupPreviewTable`）、日期框（`NullableDateEdit`／`setupDateEditToToday`／全域滾輪 guard，見 PITFALLS QTW-10／QTW-13）、設定面板（`ui_utils/settings_panels.py` 的 `_SettingsPanel`／`_save_row`）。在新檔案裡寫死色碼／自訂按鈕樣式＝往後改主題會漏掉這一處（已有前例：對話框自帶一份區域 QSS）
+- ⚠️ **本專案的公版樣板清單**（「有公版就直接套」的通則見全域設定）：全域樣式 `lib/theme.py`（`APPLE_STYLE`／`HINT_COLOR`／`TEXT_COLOR`）、按鈕 `ui_utils/ui_common.py`（`BTN_CONFIRM`／`BTN_CANCEL`／`BTN_DANGER`）、訊息與確認框（`msgInfo`／`msgWarning`／`msgCritical`／`confirmBox`）、表格（`ui_utils/table.py` 的 `setupPreviewTable`）、日期框（`NullableDateEdit`／`setupDateEditToToday`／全域滾輪 guard，見 PITFALLS QTW-10／QTW-13）、設定面板（`ui_utils/settings_panels.py` 的 `_SettingsPanel`／`_save_row`）。在新檔案裡寫死色碼／自訂按鈕樣式＝往後改主題會漏掉這一處。⚠️ **前例已經爆過**：六個編輯彈窗曾自帶一份區域 QSS，把公版的停用反灰整個蓋掉，現場回報「欄位鎖住了卻看不出來」；連帶挖出公版自己的規則順序也寫反。2026-08-07 全部移除、彈窗一律不設 stylesheet，詳見 PITFALLS **QSS-8**（QSS-3 那條「新彈窗必設背景＋文字色」已作廢，照做會再製造同一個 bug）
 
 ### C. 版本 / Git / 發布（鐵則；完整流程與用語約定見 DEVELOPER §7「發布流程」）
 

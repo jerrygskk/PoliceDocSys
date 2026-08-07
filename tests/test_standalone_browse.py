@@ -383,10 +383,19 @@ class _EntryPreviewBase(unittest.TestCase):
         conn.commit()
         conn.close()
         self._extra_tabs = []
+        self._tabs_made = []      # tearDown 要逐一拆 role_changed 連線（TST-6）
         AuthManager.instance()._role = "user"
 
     def tearDown(self):
-        AuthManager.instance()._role = "user"
+        # ⚠️ 拆掉本檔分頁掛在 AuthManager 單例上的連線（PITFALLS TST-6／PRM-5）：
+        # 逐列重刷會再查一次資料庫，殭屍分頁會去查早已刪除的暫存 DB。
+        am = AuthManager.instance()
+        for tab in getattr(self, "_tabs_made", []):
+            try:
+                am.role_changed.disconnect(tab._onRoleRefresh)
+            except (RuntimeError, TypeError):
+                pass
+        am._role = "user"
         for t in self._extra_tabs:
             t.deleteLater()
         try:
@@ -401,6 +410,7 @@ class _EntryPreviewBase(unittest.TestCase):
         self._extra_tabs.append(tabs)
         tab = TabReward(tabs, self.db)
         tab.setup(0)
+        self._tabs_made.append(tab)
         return tab
 
     def _ticket_tab(self, role):
@@ -410,18 +420,25 @@ class _EntryPreviewBase(unittest.TestCase):
         self._extra_tabs.append(tabs)
         tab = TabTicket(tabs, self.db)
         tab.setup(0)
+        self._tabs_made.append(tab)
         return tab
 
 
 class TestEntryPreviewMutateBaseline(_EntryPreviewBase):
-    """ENTRY_PREVIEW_CAN_MUTATE：本次登錄預覽的修改／刪除三角色皆可——這條
-    路徑本身沒有角色 gate（僅新增受輸入鎖限制，見下一個 TestCase），
-    admin／archive／user 都應能修改與刪除自己剛送出的那筆。"""
+    """ENTRY_PREVIEW_CAN_MUTATE：本次登錄預覽的修改／刪除。
+
+    ⚠️ **三角色皆可改可刪**：「不允許擋住還在預覽列的資料的修改與刪除」是凌駕
+    權限矩陣的原則（2026-08-07 維護者裁示，見 `lib/row_perm.SESSION_PREVIEW_PAGES`），
+    也是開發初期原本的行為。送文者輸入模式下登錄當下就寫入發文日期、該筆一送出
+    即為「已發文」，但預覽列仍必須改得動——承辦人打錯字要能當場自己救回來。
+
+    ⚠️ 唯一會擋的是唯讀鎖（見下一個 TestCase）。這條紅了不要改斷言。
+    """
 
     ENTRY_PREVIEW_CAN_MUTATE = {"admin": True, "archive": True, "user": True}
 
-    def test_reward_preview_edit_and_delete_allowed_for_all_roles(self):
-        for role in self.ENTRY_PREVIEW_CAN_MUTATE:
+    def test_reward_preview_edit_and_delete_follow_role_matrix(self):
+        for role, allowed in self.ENTRY_PREVIEW_CAN_MUTATE.items():
             with self.subTest(role=role):
                 tab = self._reward_tab(role)
                 tab.reward_sender.setCurrentIndex(1)   # 送文者模式必填
@@ -429,21 +446,32 @@ class TestEntryPreviewMutateBaseline(_EntryPreviewBase):
                 tab.reward_recipients.setCurrentText("測試員甲")
                 tab._submit()
                 doc_id = tab._session_doc_ids[0]
-                with patch("tabs.tab_reward.RewardEditDialog") as dialog_factory:
+                with patch("tabs.tab_reward.RewardEditDialog") as dialog_factory,                      patch("tabs.tab_reward.msgWarning") as warn:
                     dialog_factory.return_value.exec.return_value = False
                     tab._onEditRow(0, doc_id)
-                    dialog_factory.assert_called_once()
-                with patch("tabs.tab_reward.confirmBox", return_value=True):
+                    if allowed:
+                        dialog_factory.assert_called_once()
+                        warn.assert_not_called()
+                    else:
+                        dialog_factory.assert_not_called()
+                        warn.assert_called_once()   # 有明確擋下的提示
+                with patch("tabs.tab_reward.confirmBox", return_value=True) as confirm,                      patch("tabs.tab_reward.msgWarning") as warn:
                     tab._deleteByDocId(doc_id)
+                    if not allowed:
+                        confirm.assert_not_called()
+                        warn.assert_called_once()
                 conn = sqlite3.connect(self.db)
                 row = conn.execute(
                     "SELECT recipients FROM Document_Reward WHERE doc_id=?",
                     (doc_id,)).fetchone()
                 conn.close()
-                self.assertIsNone(row[0])
+                if allowed:
+                    self.assertIsNone(row[0])       # 已軟刪除
+                else:
+                    self.assertIsNotNone(row[0])    # 沒被刪掉
 
-    def test_ticket_preview_edit_and_delete_allowed_for_all_roles(self):
-        for role in self.ENTRY_PREVIEW_CAN_MUTATE:
+    def test_ticket_preview_edit_and_delete_follow_role_matrix(self):
+        for role, allowed in self.ENTRY_PREVIEW_CAN_MUTATE.items():
             with self.subTest(role=role):
                 tab = self._ticket_tab(role)
                 tab.ticket_sender.setCurrentIndex(tab.ticket_sender.findData("P01"))
@@ -451,26 +479,44 @@ class TestEntryPreviewMutateBaseline(_EntryPreviewBase):
                 tab.ticket_no.setText("D4RD00001")
                 tab._submit()
                 doc_id = tab._session_doc_ids[0]
-                with patch("tabs.tab_ticket.TicketEditDialog") as dialog_factory:
+                with patch("tabs.tab_ticket.TicketEditDialog") as dialog_factory,                      patch("tabs.tab_ticket.msgWarning") as warn:
                     dialog_factory.return_value.exec.return_value = False
                     tab._onEditRow(0, doc_id)
-                    dialog_factory.assert_called_once()
-                with patch("tabs.tab_ticket.confirmBox", return_value=True):
+                    if allowed:
+                        dialog_factory.assert_called_once()
+                        warn.assert_not_called()
+                    else:
+                        dialog_factory.assert_not_called()
+                        warn.assert_called_once()
+                with patch("tabs.tab_ticket.confirmBox", return_value=True) as confirm,                      patch("tabs.tab_ticket.msgWarning") as warn:
                     tab._deleteByDocId(doc_id)
+                    if not allowed:
+                        confirm.assert_not_called()
+                        warn.assert_called_once()
                 conn = sqlite3.connect(self.db)
                 row = conn.execute(
                     "SELECT ticket_no FROM Document_Ticket WHERE doc_id=?",
                     (doc_id,)).fetchone()
                 conn.close()
-                self.assertIsNone(row[0])
+                if allowed:
+                    self.assertIsNone(row[0])
+                else:
+                    self.assertIsNotNone(row[0])
 
 
-class TestEntryPreviewInputLockOnlyBlocksNewAdd(_EntryPreviewBase):
-    """一般使用者的輸入鎖只擋新增，不得把既有資料的刪改一併鎖死。沿用
-    tests/test_reward_tab.py／tests/test_ticket_tab.py 已驗證的機制，這裡只
-    用 entry 會實際共用的敘獎/罰單登錄頁再次確認，不新建 GUI 測試基礎設施。"""
+class TestEntryPreviewInputLockFreezesEveryone(_EntryPreviewBase):
+    """⚠️ **唯讀鎖是預覽列原則的唯一例外，且三種身分一律不准動**
+    （2026-08-07 維護者裁示）。
 
-    def test_reward_lock_blocks_new_but_allows_delete_of_existing(self):
+    原本這組釘的是「輸入鎖只擋新增，不得把既有資料的刪改一併鎖死」。唯讀多用
+    於跨年度切換，意圖是「這個功能停用」，留著刪改入口與該語意衝突。
+    ⚠️ 管理身分也不豁免——要改資料就先到「資料庫設定 → 系統設定」把唯讀關掉。
+
+    沿用 tests/test_reward_tab.py／tests/test_ticket_tab.py 已驗證的機制，
+    這裡只用 entry 會實際共用的敘獎/罰單登錄頁再次確認。
+    """
+
+    def test_reward_lock_blocks_new_and_freezes_existing(self):
         tab = self._reward_tab("user")
         # 預設送文者輸入模式：發文人員為必填，未選會先被欄位檢查擋下（modal）
         tab.reward_sender.setCurrentIndex(1)
@@ -497,16 +543,18 @@ class TestEntryPreviewInputLockOnlyBlocksNewAdd(_EntryPreviewBase):
         conn.close()
         self.assertEqual(count, 1)   # 新增被擋
 
-        with patch("tabs.tab_reward.confirmBox", return_value=True):
+        with patch("tabs.tab_reward.confirmBox", return_value=True) as confirm,              patch("tabs.tab_reward.msgWarning") as warn:
             tab._deleteByDocId(doc_id)
         conn = sqlite3.connect(self.db)
         row = conn.execute(
             "SELECT recipients FROM Document_Reward WHERE doc_id=?",
             (doc_id,)).fetchone()
         conn.close()
-        self.assertIsNone(row[0])   # 既有資料仍可刪
+        self.assertIsNotNone(row[0])   # 既有資料也被凍結，刪不掉
+        warn.assert_called_once()      # 有明確擋下的提示
+        confirm.assert_not_called()    # 擋在確認框之前
 
-    def test_ticket_lock_blocks_new_but_allows_delete_of_existing(self):
+    def test_ticket_lock_blocks_new_and_freezes_existing(self):
         tab = self._ticket_tab("user")
         tab.ticket_sender.setCurrentIndex(tab.ticket_sender.findData("P01"))
         tab.ticket_issuer.setCurrentIndex(tab.ticket_issuer.findData("P02"))
@@ -531,14 +579,16 @@ class TestEntryPreviewInputLockOnlyBlocksNewAdd(_EntryPreviewBase):
         conn.close()
         self.assertEqual(count, 1)   # 新增被擋
 
-        with patch("tabs.tab_ticket.confirmBox", return_value=True):
+        with patch("tabs.tab_ticket.confirmBox", return_value=True) as confirm,              patch("tabs.tab_ticket.msgWarning") as warn:
             tab._deleteByDocId(doc_id)
         conn = sqlite3.connect(self.db)
         row = conn.execute(
             "SELECT ticket_no FROM Document_Ticket WHERE doc_id=?",
             (doc_id,)).fetchone()
         conn.close()
-        self.assertIsNone(row[0])   # 既有資料仍可刪
+        self.assertIsNotNone(row[0])   # 既有資料也被凍結，刪不掉
+        warn.assert_called_once()
+        confirm.assert_not_called()
 
 
 if __name__ == "__main__":

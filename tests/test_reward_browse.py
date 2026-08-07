@@ -88,6 +88,16 @@ class TestRewardBrowse(unittest.TestCase):
         """登錄頁開啟後遭他機發文：本機輸入不寫入，提示後直接載入最新資料。"""
         from ui_utils.reward_dialog import RewardEditDialog
 
+        # ⚠️ 先把「上次異動時間」壓成過去的值再開窗：樂觀鎖比對的 `last_modified`
+        # 只有秒精度，若讓建檔與後續的他機修改落在同一秒，字串會相同而比不出
+        # 差異（已知窄縫，見 db_utils.LAST_MODIFIED_CAS_SQL、PITFALLS SQL-7）。
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "UPDATE Document_Reward SET last_modified='2026-07-01 09:00:00' "
+            "WHERE doc_id='2'")
+        conn.commit()
+        conn.close()
+
         dlg = RewardEditDialog(self.db, "2", source="entry")
         self.addCleanup(dlg.deleteLater)
         dlg.w_reason.setText("本機尚未儲存")
@@ -104,7 +114,7 @@ class TestRewardBrowse(unittest.TestCase):
             dlg._on_save()
 
         warn.assert_called_once_with(
-            "資料已更新", "本筆資料已被其他電腦修改，本次未儲存。")
+            "資料已更新", "這筆資料已被異動，請關閉後重新開啟修改。")
         conn = sqlite3.connect(self.db)
         row = conn.execute(
             "SELECT register_date,sender_id,reason,recipients "

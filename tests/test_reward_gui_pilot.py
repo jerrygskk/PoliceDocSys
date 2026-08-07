@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QApplication, QLabel, QPushButton, QTableWidget, QTabWidget, QWidget,
 )
 
+from lib.auth_manager import AuthManager
 from lib.db_schema import applySchema
 from tabs.tab_reward import TabReward
 from ui_utils.reward_dialog import RewardEditDialog
@@ -66,12 +67,30 @@ def fetch_reward(db_path, doc_id):
         conn.close()
 
 
-def test_reward_lifecycle_pilot(qtbot, reward_db):
+def test_reward_lifecycle_pilot(qtbot, reward_db, request):
     """登錄頁送文者模式一條龍：登錄即發文 → 編號連結開修改視窗 → 儲存。
 
     未設定 report_mode_reward 即預設送文者輸入模式（reward 不吃舊
     report_input_mode 全域 fallback），故本測試不必寫任何設定。
+
+    ⚠️ **以 admin 執行**（2026-08-07 起必要）：送文者模式登錄當下就寫入發文
+    日期，該筆一送出即為「已發文」，而已發文的列對一般使用者是鎖住的
+    （編號欄變純文字、✕ 反灰，見 DEVELOPER §10「預覽列權限」）。本 pilot 要驗
+    的是「登錄→編輯→儲存」這條接縫，不是權限矩陣（那由 test_row_perm.py 與
+    各頁測試負責），故以管理身分跑完整條路徑。
     """
+    am = AuthManager.instance()
+    original_role = am.current_role
+    am._role = "admin"
+    # ⚠️ 收尾要還原身分並拆掉分頁掛在單例上的 role_changed 連線（PITFALLS TST-6）
+    def _restore():
+        try:
+            am.role_changed.disconnect(entry._onRoleRefresh)
+        except (RuntimeError, TypeError):
+            pass
+        am._role = original_role
+    request.addfinalizer(_restore)
+
     tabs = QTabWidget()
     tabs.addTab(QWidget(), "登錄")
     qtbot.addWidget(tabs)

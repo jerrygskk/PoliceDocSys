@@ -74,8 +74,20 @@ class TicketTabBase(unittest.TestCase):
         conn.close()
         self.tabs = QTabWidget()
         self.tabs.addTab(QWidget(), "罰單登錄")
+        self._tabs_made = []      # tearDown 要逐一拆 role_changed 連線（TST-6）
 
     def tearDown(self):
+        # ⚠️ 拆掉本檔分頁掛在 AuthManager 單例上的連線（PITFALLS TST-6）。
+        # 單例活過整個 session、分頁隨測試回收；不拆的話，之後任何測試切換身分
+        # 都會叫到這些殭屍分頁的 `_refreshRowPermissions`，而它們的暫存資料庫
+        # 早已被刪除，紅在毫不相干的測試上。
+        from lib.auth_manager import AuthManager
+        am = AuthManager.instance()
+        for tab in getattr(self, "_tabs_made", []):
+            try:
+                am.role_changed.disconnect(tab._onRoleRefresh)
+            except (RuntimeError, TypeError):
+                pass
         self.tabs.deleteLater()
         try:
             os.remove(self.db)
@@ -93,6 +105,7 @@ class TicketTabBase(unittest.TestCase):
         from tabs.tab_ticket import TabTicket
         tab = TabTicket(self.tabs, self.db)
         tab.setup(0)
+        self._tabs_made.append(tab)
         return tab
 
     def _index_for(self, staff_id, tab=None, combo=None):
@@ -503,6 +516,7 @@ class TestTicketInputLock(TicketTabBase):
         self._extra_tabs.append(tabs)
         tab = TabTicket(tabs, self.db)
         tab.setup(0)
+        self._tabs_made.append(tab)
         return tab
 
     def _make_multi_tab(self):
@@ -515,6 +529,7 @@ class TestTicketInputLock(TicketTabBase):
         self._extra_tabs.append(tabs)
         tab = TabTicket(tabs, self.db)
         tab.setup(1)
+        self._tabs_made.append(tab)
         return tabs, tab
 
     def _set_lock(self, on):
@@ -531,21 +546,21 @@ class TestTicketInputLock(TicketTabBase):
         if emit:
             am.role_changed.emit(role)
 
-    def test_locked_blocks_regular_submit_but_allows_admin_and_archive(self):
+    def test_locked_blocks_every_role_from_submitting(self):
+        """⚠️ 2026-08-07 起唯讀對**三種身分**都擋新增（原本管理身分可繞過）。
+
+        唯讀＝這個功能停用，不分身分；全專案六支硬 gate 同步改。
+        """
         self._set_lock(True)
-        self._set_role("user")
-        regular = self._make_tab()
-        self._fill(regular)
-        with patch("tabs.tab_ticket.msgWarning"):
-            regular._submit()
-        self.assertEqual(len(self._rows()), 0)
-        for role in ("admin", "archive"):
+        for role in ("user", "archive", "admin"):
             with self.subTest(role=role):
                 self._set_role(role)
-                manager = self._make_tab()
-                self._fill(manager, ticket_no=f"MG{role[:2].upper()}01")
-                manager._submit()
-        self.assertEqual(len(self._rows()), 2)
+                tab = self._make_tab()
+                self._fill(tab, ticket_no=f"LK{role[:2].upper()}01")
+                with patch("tabs.tab_ticket.msgWarning") as warn:
+                    tab._submit()
+                warn.assert_called_once()
+        self.assertEqual(len(self._rows()), 0)
 
     def test_locked_regular_user_disables_inputs_and_shows_banner(self):
         self._set_role("user")
@@ -559,13 +574,16 @@ class TestTicketInputLock(TicketTabBase):
         # offscreen 無 show()：以 isHidden 判斷本身可見旗標（isVisible 受祖鏈影響）
         self.assertFalse(tab._readonly_banner.isHidden())
 
-    def test_manager_never_locked_and_banner_hidden(self):
+    def test_manager_is_locked_too_and_sees_banner(self):
+        """⚠️ 管理身分不再豁免：反灰與紅色橫幅一視同仁。"""
         self._set_lock(True)
-        self._set_role("admin")
-        tab = self._make_tab()
-        self.assertTrue(tab.ticket_add.isEnabled())
-        self.assertTrue(tab.ticket_candidates_list.isEnabled())
-        self.assertTrue(tab._readonly_banner.isHidden())
+        for role in ("archive", "admin"):
+            with self.subTest(role=role):
+                self._set_role(role)
+                tab = self._make_tab()
+                self.assertFalse(tab.ticket_add.isEnabled())
+                self.assertFalse(tab.ticket_candidates_list.isEnabled())
+                self.assertFalse(tab._readonly_banner.isHidden())
 
     def test_submit_hard_guard_blocks_even_when_inputs_bypassed(self):
         # 反灰可被替代路徑繞過；hard guard 是保底。移除 guard 此測試須轉紅。
@@ -580,25 +598,27 @@ class TestTicketInputLock(TicketTabBase):
             create.assert_not_called()
         self.assertEqual(len(self._rows()), 0)
 
-    def test_manager_downgrade_clears_preview(self):
-        # 管理身分登錄後降權：清除本次登錄預覽，避免保留管理身分建立的入口。
+    def test_manager_downgrade_keeps_preview(self):
+        """⚠️ 2026-08-07 起降權**不再清空清單**（計畫 §2.3）。
+
+        原本清空的理由是「避免保留管理身分建立的入口」，維護者 2026-08-04
+        裁示那是把資料庫瀏覽頁「僅 admin 可改」的規則錯套到登錄頁上——
+        登錄頁本來就對三種身分開放刪改。
+        """
         self._set_role("admin")
         tab = self._make_tab()
         self._fill(tab)
         tab._submit()
         self.assertEqual(tab.ticket_table.rowCount(), 1)
         self._set_role("user", emit=True)
-        self.assertEqual(tab.ticket_table.rowCount(), 0)
+        self.assertEqual(tab.ticket_table.rowCount(), 1)
 
-    def test_manager_downgrade_clears_preview_persistently_across_tab_switch(self):
-        """降權清空必須具持續性：切頁往返後仍是 0 列。
+    def test_manager_downgrade_keeps_preview_persistently_across_tab_switch(self):
+        """降權後列仍在，且切頁往返狀態一致（防「只是當下對、切頁就走樣」）。
 
-        ⚠️ 只斷言降權當下 `rowCount()==0` 是假保證：`_onRoleClearList` 若只清
-        表格 widget、不清 `self._session_doc_ids`，`_onShown`（無條件
-        `on_activated()→reload()`）會把整份清單從 DB 重建回來，降權後的一般
-        使用者就取得「編輯／刪除管理身分建立之罰單」的入口（同一筆在瀏覽頁
-        是僅 admin 可改）。必須真的 emit `currentChanged`，直接呼叫
-        `reload()`／`on_activated()` 也測得到，但不代表實際掛鉤點有生效。
+        本頁 `_onShown` 是無條件 `reload()`，而 `reload()` 重建每一列時的可點
+        與可刪一律由 `row_perm` 計算，故重建結果與降權當下一致——規則只有一份。
+        必須真的 emit `currentChanged`，直接呼叫 `reload()` 測不到掛鉤點有生效。
         """
         self._set_role("admin")
         tabs, tab = self._make_multi_tab()
@@ -608,36 +628,43 @@ class TestTicketInputLock(TicketTabBase):
         self.assertEqual(tab.ticket_table.rowCount(), 1)
 
         self._set_role("user", emit=True)
-        self.assertEqual(tab.ticket_table.rowCount(), 0)
+        self.assertEqual(tab.ticket_table.rowCount(), 1)
 
         # 真的切走再切回（emit currentChanged→_onShown→on_activated→reload）
         tabs.setCurrentIndex(0)
         tabs.setCurrentIndex(1)
 
-        self.assertEqual(tab.ticket_table.rowCount(), 0)
-        self.assertEqual(tab._session_doc_ids, [])
-        # 表格 0 列＝編輯／刪除進入點取不到 doc_id（清的是入口，不是資料）
+        self.assertEqual(tab.ticket_table.rowCount(), 1)
+        self.assertEqual(tab._session_doc_ids, [doc_id])
         rows = self._rows()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][0], doc_id)
-        self.assertEqual(rows[0][5], "D4RD15263")   # 資料仍在，未被清空
+        self.assertEqual(rows[0][5], "D4RD15263")
 
-    def test_lock_does_not_block_delete_of_existing(self):
-        # 先以未鎖狀態建一筆，再上鎖，一般使用者仍可刪除既有資料。
-        self._set_role("user")
-        tab = self._make_tab()
-        self._fill(tab)
-        tab._submit()
-        doc_id = tab._session_doc_ids[0]
-        self.assertEqual(len(self._rows()), 1)
-        self._set_lock(True)
-        tab._onShown(0)
-        with patch("tabs.tab_ticket.confirmBox", return_value=True):
-            tab._deleteByDocId(doc_id)
-        rows = self._rows()
-        self.assertEqual(len(rows), 1)          # 軟刪除保留空殼
-        self.assertIsNone(rows[0][5])           # ticket_no 已清空
-        self.assertEqual(tab.ticket_table.rowCount(), 0)
+    def test_lock_freezes_delete_for_every_role(self):
+        """⚠️ 唯讀鎖是「預覽列一律可改可刪」原則的**唯一例外**：
+        三種身分一律不准動（2026-08-07 維護者裁示）。
+
+        ⚠️ 兩件事都要驗——只斷言「資料庫沒變」分不出「被正確擋下」與
+        「根本沒跑到那一步」（PITFALLS TST-7）。
+        """
+        for role in ("user", "archive", "admin"):
+            with self.subTest(role=role):
+                self._set_lock(False)
+                self._set_role(role)
+                tab = self._make_tab()
+                self._fill(tab, ticket_no=f"FZ{role[:2].upper()}01")
+                tab._submit()
+                doc_id = tab._session_doc_ids[-1]
+                self._set_lock(True)
+                tab._onShown(0)
+                with patch("tabs.tab_ticket.msgWarning") as warn,                      patch("tabs.tab_ticket.confirmBox", return_value=True) as confirm:
+                    tab._deleteByDocId(doc_id)
+                row = [r for r in self._rows() if r[0] == doc_id][0]
+                self.assertIsNotNone(row[5])    # ticket_no 沒被清掉＝沒刪成
+                warn.assert_called_once()
+                self.assertEqual(warn.call_args[0][0], "權限不足")
+                confirm.assert_not_called()
 
 
 class TestTicketCrossPageRefresh(TicketTabBase):
@@ -658,6 +685,7 @@ class TestTicketCrossPageRefresh(TicketTabBase):
         self._extra_tabs.append(tabs)
         tab = TabTicket(tabs, self.db)
         tab.setup(1)
+        self._tabs_made.append(tab)
         return tabs, tab
 
     def tearDown(self):
@@ -697,15 +725,14 @@ class TestTicketCrossPageRefresh(TicketTabBase):
 
         from lib.ticket_utils import updateTicketFromBrowse
         conn = sqlite3.connect(self.db)
-        original_values = conn.execute(
-            "SELECT create_date,register_date,sender_id,issuer_id,ticket_no "
-            "FROM Document_Ticket WHERE doc_id=?", (doc_id,)
-        ).fetchone()
+        last_modified = conn.execute(
+            "SELECT last_modified FROM Document_Ticket WHERE doc_id=?",
+            (doc_id,)).fetchone()[0]
         updateTicketFromBrowse(
             conn, doc_id=doc_id, create_date="2026-07-01",
             register_date="2026-07-01", sender_id="P002",
             issuer_id="P003", ticket_no="ZZ9999", role="admin",
-            original_values=original_values)
+            last_modified=last_modified)
         conn.commit()
         conn.close()
 

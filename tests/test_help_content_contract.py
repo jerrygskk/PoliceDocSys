@@ -56,6 +56,12 @@ class HelpContentContractTests(unittest.TestCase):
         ticket_quickstart = "\n".join(QUICKSTART[4][1] + QUICKSTART[4][2])
         self.assertIn("文號（doc_id）作廢不可再用，原罰單編號仍可重新登錄", ticket_quickstart)
         self.assertIn("本頁不設身分限制", ticket_help)
+        # ⚠️ 預覽列一律可改可刪是凌駕權限矩陣的原則（見 PITFALLS PRM-1），
+        # HELP 必須講出來——那是承辦人每天最常用到的自我更正路徑。
+        self.assertIn("打錯字可當場自行更正", ticket_help)
+        # ⚠️ 唯讀是該原則的唯一例外，且 2026-08-07 起不分身分，必須寫明白，
+        # 否則管理者會以為自己不受影響、找不到為什麼按鈕是灰的。
+        self.assertIn("三種身分都不能新增", ticket_help)
         self.assertIn("登錄日期＝取得文號日", report_help)
         self.assertIn("陳報日期＝實際發文日", report_help)
         self.assertIn("未發文的刑案／一般／敘獎／罰單案件", print_help)

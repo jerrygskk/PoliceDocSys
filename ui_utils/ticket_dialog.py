@@ -24,29 +24,34 @@ from PySide6.QtWidgets import (
 )
 
 from lib.auth_manager import AuthManager
-from lib.db_utils import getConn, loadActivePersonnel
+from lib.db_utils import (
+    ROW_CHANGED_MSG as _CONFLICT_MSG,
+    ROW_CHANGED_TITLE as _CONFLICT_TITLE,
+    ROW_GONE_MSG as _ROW_GONE_MSG,
+    ROW_GONE_TITLE as _ROW_GONE_TITLE,
+    getConn, loadActivePersonnel,
+)
 from lib.ticket_utils import (
     TICKET_ACTIVE_SQL, TICKET_NO_MAX_LEN, TicketConflictError, TicketDuplicateError,
     TicketNotFoundError, TicketValidationError, updateTicket,
     updateTicketFromBrowse,
 )
-from .edit_dialog import _BaseEditDialog, _CRIMGEN_QSS
+from .edit_dialog import _BaseEditDialog
 from .ui_common import BTN_CANCEL, BTN_CONFIRM, msgWarning, reportError
 from .widgets import NullableDateEdit
 
 
-# 併發刪除白話提示（開啟時列已不存在／儲存時查無列共用）
-_ROW_GONE_TITLE = "資料已刪除"
-_ROW_GONE_MSG = "本筆罰單資料已被刪除，畫面將更新。"
-_CONFLICT_TITLE = "資料已更新"
-_CONFLICT_MSG = "本筆罰單資料已被其他電腦修改，本次未儲存。"
+# 併發刪除／併發修改的白話提示改由 `lib.db_utils` 統一提供（見上方 import
+# 的別名）：五個編輯彈窗措辭一致，勿在此再寫一份 罰單專屬 的字串。
 
 
 class TicketEditDialog(_BaseEditDialog):
     """罰單修改；`source` 決定欄位集、儲存 API 與權限。
 
-    沿用 `_BaseEditDialog` 的版面常數與白底樣式（QSS-3：新彈窗必設背景＋文字
-    色），與交辦／刑案／一般／敘獎四個彈窗一致，不另抄 stylesheet。
+    沿用 `_BaseEditDialog` 的版面常數，與交辦／刑案／一般／敘獎四個彈窗一致。
+    ⚠️ **外觀完全交給全域公版 `lib/theme.py`，本彈窗不設任何 stylesheet**
+    （2026-08-07 起；舊註解說的「QSS-3 必設背景＋文字色」已作廢，那正是造成
+    「停用欄位看不出反灰」的病根，見 PITFALLS QSS-8）。
     """
 
     def __init__(self, db_path, doc_id, parent=None, *, source="entry"):
@@ -61,7 +66,6 @@ class TicketEditDialog(_BaseEditDialog):
         self.setWindowTitle("罰單登錄修改" if source == "entry"
                             else "罰單資料修改")
         self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)
-        self.setStyleSheet(_CRIMGEN_QSS)
         self._build_ui()
         self._load_data()
         if not self._row_missing:
@@ -150,7 +154,7 @@ class TicketEditDialog(_BaseEditDialog):
         try:
             row = conn.execute(
                 "SELECT create_date, register_date, sender_id, sender_name, "
-                "issuer_id, ticket_no FROM Document_Ticket_Full "
+                "issuer_id, ticket_no, last_modified FROM Document_Ticket_Full "
                 f"WHERE doc_id=? AND {TICKET_ACTIVE_SQL}",
                 (self.doc_id,)).fetchone()
         finally:
@@ -159,9 +163,11 @@ class TicketEditDialog(_BaseEditDialog):
             # 併發刪除：不 raise，改標記後由 exec() 彈提示並視同取消。
             self._row_missing = True
             return
-        create_date, register_date, sender_id, sender_name, issuer_id, ticket_no = row
-        self._orig_values = (
-            create_date, register_date, sender_id, issuer_id, ticket_no)
+        (create_date, register_date, sender_id, sender_name, issuer_id,
+         ticket_no, last_modified) = row
+        # 樂觀鎖快照：儲存時比對，不一致代表這筆在開窗期間被動過（見
+        # db_utils.LAST_MODIFIED_CAS_SQL）。⚠️ 不可在儲存時重查，重查等於沒有鎖。
+        self._orig_last_modified = last_modified
         self._orig_register_date = register_date
         if self.source == "browse":
             if create_date:
@@ -231,7 +237,7 @@ class TicketEditDialog(_BaseEditDialog):
                     issuer_id=self.w_issuer.currentData(),
                     ticket_no=self.w_ticket_no.text(),
                     role=AuthManager.instance().current_role,
-                    original_values=self._orig_values,
+                    last_modified=self._orig_last_modified,
                 )
             else:
                 updateTicket(
@@ -240,7 +246,7 @@ class TicketEditDialog(_BaseEditDialog):
                     issuer_id=self.w_issuer.currentData(),
                     ticket_no=self.w_ticket_no.text(),
                     role=AuthManager.instance().current_role,
-                    original_values=self._orig_values,
+                    last_modified=self._orig_last_modified,
                 )
             conn.commit()
         except TicketDuplicateError as exc:

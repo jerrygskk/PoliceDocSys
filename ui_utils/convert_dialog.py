@@ -26,7 +26,7 @@ from lib import doc_convert
 
 from .ui_common import msgCritical, msgInfo, reportError, BTN_CONFIRM, BTN_CANCEL
 from .widgets import setupFilterCombo, NullableDateEdit
-from .edit_dialog import _CRIMGEN_QSS, CriminalEditDialog, GeneralEditDialog
+from .edit_dialog import CriminalEditDialog, GeneralEditDialog
 
 
 # 鎖定（唯讀）欄樣式：灰底灰字，同 :disabled 慣例
@@ -60,7 +60,6 @@ class ConvertDialog(QDialog):
         self.new_doc_id = None              # 成功後填入
         self.setWindowTitle(f"轉換為{self.dst_cat}案類")
         self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)
-        self.setStyleSheet(_CRIMGEN_QSS)
 
         self._src_row = {}
         self._load_src()
@@ -218,7 +217,6 @@ class ConvertDialog(QDialog):
         group = QButtonGroup(self)
         for i, (val, label) in enumerate(options):
             rb = QRadioButton(label)
-            rb.setStyleSheet(CriminalEditDialog.RADIO_STYLE)
             rb.setMinimumWidth(65)   # 比照 Layout3.ui：125% 下 sizeHint 算不準會切字，鎖最小寬
             group.addButton(rb, i)
             radios.append((val, rb))

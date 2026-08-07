@@ -124,17 +124,27 @@ class TestAttachComboHint(unittest.TestCase):
     def test_repeated_attach_does_not_duplicate_connections(self):
         """attachComboHint 對同一 combo 重複呼叫三次（比照 tab_report）
         不應累積 signal 連線或 eventFilter，行為仍正確。"""
+        def _type_into(c):
+            _send_focus(c, QEvent.FocusIn)
+            c.lineEdit().setText("竊盜")
+            c.lineEdit().textEdited.emit("竊盜")
+
         combo = _make_combo()
         for _ in range(2):  # _make_combo 內已呼叫一次，這裡再呼叫兩次 = 共三次
             attachComboHint(combo, _HINT)
 
         # 打字一次只應觸發一次 repaint（無法直接量 repaint 次數，改以
         # 行為正確性＋stylesheet 沒有異常疊加內容間接驗證）。
-        _send_focus(combo, QEvent.FocusIn)
-        combo.lineEdit().setText("竊盜")
-        combo.lineEdit().textEdited.emit("竊盜")
+        _type_into(combo)
         self.assertEqual(_color(combo), TEXT_COLOR)
-        self.assertEqual(combo.styleSheet().count("color:"), 1)
+
+        # ⚠️ 以「只掛一次的 combo」當對照，**不要寫死 `count("color:") == 1`**：
+        # `attachComboHint` 除了基底色，還必須寫 `QComboBox:disabled` 的灰字
+        # （否則會蓋掉公版反灰，唯讀時案類欄文字不變灰，見 PITFALLS QSS-8），
+        # 色碼本來就不只一個。要驗的是「重複掛不會累積」，比對相等才是判準。
+        once = _make_combo()
+        _type_into(once)
+        self.assertEqual(combo.styleSheet(), once.styleSheet())
 
         _send_focus(combo, QEvent.FocusIn)
         combo.lineEdit().setText("")
@@ -142,7 +152,13 @@ class TestAttachComboHint(unittest.TestCase):
         _send_focus(combo, QEvent.FocusOut)
         self.assertEqual(combo.currentText(), _HINT)
         self.assertEqual(_color(combo), HINT_COLOR)
-        self.assertEqual(combo.styleSheet().count("color:"), 1)
+        # 同上：與只掛一次的 combo 走完同一段流程後比對，不寫死色碼數量。
+        once2 = _make_combo()
+        _send_focus(once2, QEvent.FocusIn)
+        once2.lineEdit().setText("")
+        once2.lineEdit().textEdited.emit("")
+        _send_focus(once2, QEvent.FocusOut)
+        self.assertEqual(combo.styleSheet(), once2.styleSheet())
 
 
 class TestFocusInClearDoesNotWipeSelection(unittest.TestCase):

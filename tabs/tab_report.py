@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from lib.base_tab import BaseTab, InputLockMixin
+from lib.row_perm import canDeleteRow, canEditRow
 from lib.db_utils import (getResourcePath, nextDocId, DEBUG_MODE,
                           softDeleteDoc, isInputLocked, isSelfServiceMode)
 from ui_utils import loadUi, msgWarning, msgCritical, confirmBox, reportError
@@ -46,29 +47,13 @@ def _fmtDateShort(value):
         return f"{text[5:7]}/{text[8:10]}"
     return text
 
-# Radio 圓點縮小，選中用較細 border 呈現
-RADIO_STYLE = """
-QRadioButton {
-    spacing: 6px;
-    color: #1c1c1e;
-    font-size: 14pt;
-}
-QRadioButton::indicator {
-    width: 14px;
-    height: 14px;
-    border: 2px solid #c6c6c8;
-    border-radius: 7px;
-    background-color: #ffffff;
-}
-QRadioButton::indicator:checked {
-    background-color: #8fa8c8;
-    border: 4px solid #ffffff;
-    outline: 2px solid #8fa8c8;
-}
-QRadioButton:checked {
-    color: #8fa8c8;
-}
-"""
+# ⚠️ 這裡曾經有一份 `RADIO_STYLE`，2026-08-07 移除。
+# 它與公版 `lib/theme.py` 的 QRadioButton 區塊**逐項相同**（spacing、色碼、
+# indicator 尺寸與選中樣式都一樣），唯一多的 `font-size: 14pt` 公版的 `*`
+# 規則本來就有。但它漏了公版的 `QRadioButton:disabled`，而它是設在元件上、
+# 優先度高於 app 層，於是唯讀模式下 radio 的文字**不會變灰**——畫面變成
+# 「輸入框灰了、按鈕灰了，選項文字還是黑的」，比全部不灰更容易誤判成還能選。
+# ⚠️ 不要再加回來；radio 外觀要調就改公版（見 PITFALLS QSS-8）。
 
 
 class TabReport(BaseTab, InputLockMixin):
@@ -153,9 +138,6 @@ class TabReport(BaseTab, InputLockMixin):
         self.radio_status_a = inner.findChild(QRadioButton, 'radio_status_a')  # CS01 現行犯
         self.radio_status_b = inner.findChild(QRadioButton, 'radio_status_b')  # CS02 到案
         self.radio_status_c = inner.findChild(QRadioButton, 'radio_status_c')  # CS03 未到案
-        for rb in [self.radio_status_a, self.radio_status_b, self.radio_status_c]:
-            if rb:
-                rb.setStyleSheet(RADIO_STYLE)
         self.crim_status_group = inner.findChild(QWidget, 'crim_status_group')
         self.crim_casetype  = inner.findChild(QComboBox, 'crim_casetype')
         self.crim_processor = inner.findChild(QComboBox, 'crim_processor')
@@ -168,9 +150,6 @@ class TabReport(BaseTab, InputLockMixin):
         self.radio_gen_cat_a = inner.findChild(QRadioButton, 'radio_gen_cat_a')  # GC01 業務陳報
         self.radio_gen_cat_b = inner.findChild(QRadioButton, 'radio_gen_cat_b')  # GC03 其他
         self.radio_gen_cat_c = inner.findChild(QRadioButton, 'radio_gen_cat_c')  # GC02 司法相驗
-        for rb in [self.radio_gen_cat_a, self.radio_gen_cat_b, self.radio_gen_cat_c]:
-            if rb:
-                rb.setStyleSheet(RADIO_STYLE)
         self.gen_cat_group  = inner.findChild(QWidget, 'gen_cat_group')
         self.gen_dept       = inner.findChild(QComboBox, 'gen_dept')
         self.gen_processor  = inner.findChild(QComboBox, 'gen_processor')
@@ -342,11 +321,47 @@ class TabReport(BaseTab, InputLockMixin):
                     self.radio_gen_cat_a, self.radio_gen_cat_b, self.radio_gen_cat_c,
                     btn_submit, btn_clear]) if w],
             },
-            clear_tables=[self.crim_table, self.gen_table],
+            refresh_tables=[self.crim_table, self.gen_table],
         )
 
         # ── 初始狀態：顯示刑案、隱藏一般 ─────────────────
         self._switchFormType(0)
+
+    def _refreshRowPermissions(self, tables):
+        """降權時就地重算（`InputLockMixin` 的 hook），不清空清單。
+
+        ⚠️ 本頁**逐列刷**而非整表重建：陳報頁沒有現成的整表重建路徑
+        （`_refreshCrimPreviewNames` 只掃表更新名稱欄），補一套重建的工比逐列
+        刷大。刑案與一般兩張表都要處理。
+        """
+        self._onRolePerm()
+
+    def _onRolePerm(self, _role=None):
+        """依 `row_perm` 重算兩張預覽表每一列的刪除鈕與編號欄可點狀態。
+
+        ⚠️ 兩張表的欄位索引不同，一律用 `_rowDocIds` 取編號欄、不寫死其他欄位。
+        ⚠️ 發文狀態一律回查 DB：陳報的未發文哨兵是 **NULL**（與敘獎／罰單的
+        空字串不同），而軟刪除是看主旨欄被清空，兩者在畫面上都是空白，
+        從表格文字在原理上分不出來（規則見 `lib/row_perm.py` 的對照表）。
+        """
+        for page, table, on_edit in (
+                ("crim", getattr(self, "crim_table", None), self._onEditCrimRow),
+                ("gen", getattr(self, "gen_table", None), self._onEditGenRow)):
+            if not table:
+                continue
+            rows = self._rowDocIds(table)
+            states, perm = self._rowPermContext(page, rows.values())
+            for r, doc_id in rows.items():
+                # 查不到＝該列已被刪除，一律不給入口（dispatched 取 True 最保守）
+                dispatched = states.get(doc_id, True)
+                setDocIdLinkCell(
+                    table, r, 1, doc_id, on_edit,
+                    clickable=canEditRow(page, dispatched=dispatched, **perm))
+                container = table.cellWidget(r, 0)
+                btn = container.findChild(QPushButton, "deleteBtn") if container else None
+                if btn is not None:
+                    btn.setEnabled(
+                        canDeleteRow(page, dispatched=dispatched, **perm))
 
     # ── 陳報類型切換 ──────────────────────────────────────
     def _switchFormType(self, idx):
@@ -595,7 +610,7 @@ class TabReport(BaseTab, InputLockMixin):
             self._submitGeneral(report_date, sender_id)
 
     def _submitCriminal(self, report_date, sender_id):
-        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "crim"):
+        if isInputLocked(self.db_path, "crim"):
             msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
             return
         # status_name 為預覽顯示用，與 Ref_Case_Status.status_name 一致（皆兩字）
@@ -671,7 +686,7 @@ class TabReport(BaseTab, InputLockMixin):
                 conn.close()
 
     def _submitGeneral(self, report_date, sender_id):
-        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "gen"):
+        if isInputLocked(self.db_path, "gen"):
             msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
             return
         # cat_name 為預覽顯示用，與 Ref_General_Category.gen_cat_name 一致（皆兩字）
@@ -736,12 +751,17 @@ class TabReport(BaseTab, InputLockMixin):
         pos = self.crim_table.rowCount()
         self.crim_table.insertRow(pos)
 
-        # 刪除按鈕（col 0）：以 doc_id 為準
-        container, _ = makeDeleteBtn(lambda _, d=doc_id: self._deleteCrimByDocId(d))
+        # 刪除按鈕（col 0）：以 doc_id 為準。可點／可刪由 row_perm 計算
+        # （未發文全開、已發文對一般使用者鎖住；唯讀凍結另只鎖一般使用者）。
+        # 剛登錄的列必為未發文；已發文與否之後由 _onRolePerm 回查 DB 重算。
+        _, perm = self._rowPermContext("crim", [])
+        container, del_btn = makeDeleteBtn(lambda _, d=doc_id: self._deleteCrimByDocId(d))
+        del_btn.setEnabled(canDeleteRow("crim", dispatched=False, **perm))
         self.crim_table.setCellWidget(pos, 0, container)
 
         # 編號欄（col 1）：超連結
-        setDocIdLinkCell(self.crim_table, pos, 1, doc_id, self._onEditCrimRow, clickable=True)
+        setDocIdLinkCell(self.crim_table, pos, 1, doc_id, self._onEditCrimRow,
+                         clickable=canEditRow("crim", dispatched=False, **perm))
 
         for col, val in enumerate([
             _fmtDateShort(create_date), status, casetype, subject,
@@ -769,12 +789,16 @@ class TabReport(BaseTab, InputLockMixin):
         pos = self.gen_table.rowCount()
         self.gen_table.insertRow(pos)
 
-        # 刪除按鈕（col 0）：以 doc_id 為準
-        container, _ = makeDeleteBtn(lambda _, d=doc_id: self._deleteGenByDocId(d))
+        # 刪除按鈕（col 0）：以 doc_id 為準。可點／可刪由 row_perm 計算，
+        # 理由同 _insertCrimRow。
+        _, perm = self._rowPermContext("gen", [])
+        container, del_btn = makeDeleteBtn(lambda _, d=doc_id: self._deleteGenByDocId(d))
+        del_btn.setEnabled(canDeleteRow("gen", dispatched=False, **perm))
         self.gen_table.setCellWidget(pos, 0, container)
 
         # 編號欄（col 1）：超連結
-        setDocIdLinkCell(self.gen_table, pos, 1, doc_id, self._onEditGenRow, clickable=True)
+        setDocIdLinkCell(self.gen_table, pos, 1, doc_id, self._onEditGenRow,
+                         clickable=canEditRow("gen", dispatched=False, **perm))
 
         for col, val in enumerate([
             _fmtDateShort(create_date), dept, subject,
@@ -788,6 +812,12 @@ class TabReport(BaseTab, InputLockMixin):
 
     # ── 修改回呼 ────────────────────────────────────────────
     def _onEditCrimRow(self, row, doc_id):
+        # 入口複核：反灰／純文字化只是提示，這一層才是防線（見計畫 S0 ①）。
+        blocked = self._rowActionBlockReason("crim", doc_id, delete=False)
+        if blocked:
+            msgWarning(*blocked)
+            self._onRolePerm()
+            return
         dlg = CriminalEditDialog(self.db_path, doc_id, self.crim_table, disable_convert=True)
         if dlg.exec():
             if getattr(dlg, "converted", False):
@@ -811,6 +841,12 @@ class TabReport(BaseTab, InputLockMixin):
                 autoResizeTable(self.crim_table)
 
     def _onEditGenRow(self, row, doc_id):
+        # 入口複核：反灰／純文字化只是提示，這一層才是防線（見計畫 S0 ①）。
+        blocked = self._rowActionBlockReason("gen", doc_id, delete=False)
+        if blocked:
+            msgWarning(*blocked)
+            self._onRolePerm()
+            return
         dlg = GeneralEditDialog(self.db_path, doc_id, self.gen_table, disable_convert=True)
         if dlg.exec():
             if getattr(dlg, "converted", False):
@@ -848,6 +884,12 @@ class TabReport(BaseTab, InputLockMixin):
         if not self.crim_table:
             return
         # 陳報頁開放一般使用者刪除（更正剛輸入的錯列）；稽核記實際刪除者。
+        # 入口複核先於確認框，避免使用者按完「刪除」才被擋（見計畫 S0 ①）。
+        blocked = self._rowActionBlockReason("crim", doc_id, delete=True)
+        if blocked:
+            msgWarning(*blocked)
+            self._onRolePerm()
+            return
         if not confirmBox("確認刪除",
                           f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
                           confirm_text="刪除", confirm_danger=True, default_confirm=False):
@@ -875,6 +917,12 @@ class TabReport(BaseTab, InputLockMixin):
         if not self.gen_table:
             return
         # 陳報頁開放一般使用者刪除（更正剛輸入的錯列）；稽核記實際刪除者。
+        # 入口複核先於確認框，避免使用者按完「刪除」才被擋（見計畫 S0 ①）。
+        blocked = self._rowActionBlockReason("gen", doc_id, delete=True)
+        if blocked:
+            msgWarning(*blocked)
+            self._onRolePerm()
+            return
         if not confirmBox("確認刪除",
                           f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
                           confirm_text="刪除", confirm_danger=True, default_confirm=False):

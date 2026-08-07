@@ -461,11 +461,18 @@ class TabSettings(BaseTab):
         self._lbl_login_ttl.setStyleSheet(
             "font-size: 16pt; font-weight: 700; color: #1c1c1e; background: transparent;"
         )
+        # ⚠️ 這裡刻意與公版不同（登入卡片是白底，密碼欄用淺灰做出區隔），屬於
+        # 正當的區域覆寫。但只要覆寫了 background／color，就**必須連 `:disabled`
+        # 一起寫**——區域樣式優先度高於 app 層，少了它公版的反灰會被蓋掉
+        # （PITFALLS QSS-8）。目前這欄沒有停用路徑，補上是為了日後有人加時不會
+        # 靜默中招。
         self.w_password.setStyleSheet(
             "QLineEdit { background:#f2f2f7; border:1px solid #c6c6c8; "
             "border-radius:8px; padding:8px 12px; color:#1c1c1e; "
             "qproperty-alignment: AlignCenter; }"
             "QLineEdit:focus { border:2px solid #8fa8c8; }"
+            "QLineEdit:disabled { background:#e5e5ea; color:#aeaeb2; "
+            "border-color:#d1d1d6; }"
         )
         self.lbl_login_err.setStyleSheet(
             "color: #e74c3c; background: transparent; font-size: 12pt;"

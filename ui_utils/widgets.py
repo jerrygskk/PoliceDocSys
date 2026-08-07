@@ -706,9 +706,14 @@ def attachComboHint(combo, hint):
     def _repaint():
         showing_hint = (combo.currentData() is None
                         and combo.currentText() == hint)
+        # ⚠️ 必須連 `:disabled` 一起寫。這份樣式設在 combo 元件本身，優先度高於
+        # app 層公版，只寫基底的話會把公版的 `QComboBox:disabled { color:#aeaeb2 }`
+        # 蓋掉——唯讀模式下陳報頁的案類欄文字就不會變灰，畫面變成「輸入框灰了、
+        # 按鈕灰了，案類的字還是黑的」（2026-08-07 實測確認，見 PITFALLS QSS-8）。
         combo.setStyleSheet(
             "QComboBox { color: %s; }"
-            % (HINT_COLOR if showing_hint else TEXT_COLOR)
+            "QComboBox:disabled { color: %s; }"
+            % (HINT_COLOR if showing_hint else TEXT_COLOR, HINT_COLOR)
         )
 
     if getattr(combo, "_hint_filter", None) is not None:

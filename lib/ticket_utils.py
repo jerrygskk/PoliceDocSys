@@ -17,7 +17,9 @@
 import re
 import sqlite3
 
-from lib.db_utils import auditStaffName, buildDetail, nextDocId, writeAudit
+from lib.db_utils import (
+    LAST_MODIFIED_CAS_SQL, auditStaffName, buildDetail, nextDocId, writeAudit,
+)
 
 
 TICKET_TABLE = "Document_Ticket"
@@ -161,13 +163,6 @@ def _raiseDuplicateIfUnique(exc, ticket_no):
     raise exc
 
 
-def _resolveOriginalValues(original_values):
-    values = tuple(original_values)
-    if len(values) != 5:
-        raise ValueError("original_values 必須包含五個罰單原始欄位。")
-    return values
-
-
 def _raiseTicketUpdateMiss(conn, doc_id):
     active = conn.execute(
         "SELECT 1 FROM Document_Ticket WHERE doc_id=? AND " + TICKET_ACTIVE_SQL,
@@ -247,16 +242,20 @@ def createTicket(conn, *, issuer_id, ticket_no, self_service, sender_id,
 
 
 def updateTicket(conn, *, doc_id, issuer_id, ticket_no, role,
-                 original_values):
+                 last_modified):
     """罰單登錄頁的編輯：只改舉發人員與罰單編號。
 
     `create_date`／`register_date`／`sender_id` 一律保留原值（不因編輯而把
-    未發文改成已發文，或竄改登錄日期）。呼叫端必須傳入對話框載入時的
-    五欄 `original_values`；漏傳直接 `TypeError`，不可在儲存時重查快照。
-    `last_modified` 由 trigger 維護。
+    未發文改成已發文，或竄改登錄日期）——這靠**不寫進 SET 子句**保證，
+    與樂觀鎖無關。
+
+    呼叫端必須傳入對話框載入時讀走的 `last_modified` 快照；漏傳直接
+    `TypeError`，不可在儲存時重查（重查等於沒有鎖）。
+    ⚠️ 2026-08-07 起改用 `last_modified` 樂觀鎖，取代原本比對五欄原值的
+    做法——全專案五個編輯彈窗統一成同一套，理由與已知限制見
+    `db_utils.LAST_MODIFIED_CAS_SQL` 上方註解。
     """
     doc_id = str(doc_id)
-    original_values = _resolveOriginalValues(original_values)
 
     normalized = normalizeTicketNo(ticket_no)
     issuer_id = _requirePerson(conn, issuer_id, "開立人員")
@@ -266,9 +265,8 @@ def updateTicket(conn, *, doc_id, issuer_id, ticket_no, role,
         cur = conn.execute(
             "UPDATE Document_Ticket SET issuer_id = ?, ticket_no = ? "
             "WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL + " "
-            "AND create_date IS ? AND register_date IS ? AND sender_id IS ? "
-            "AND issuer_id IS ? AND ticket_no IS ?",
-            (issuer_id, normalized, doc_id, *original_values))
+            "AND " + LAST_MODIFIED_CAS_SQL,
+            (issuer_id, normalized, doc_id, last_modified))
     except sqlite3.IntegrityError as exc:
         _raiseDuplicateIfUnique(exc, normalized)
     if cur.rowcount != 1:
@@ -277,7 +275,7 @@ def updateTicket(conn, *, doc_id, issuer_id, ticket_no, role,
 
 def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
                            sender_id, issuer_id, ticket_no, role,
-                           original_values):
+                           last_modified):
     """資料庫瀏覽頁的 admin 編輯：可改全部業務欄位。
 
     `register_date` 必須明確區分 `''`（未發文）與有效日期，**不接受 `None`**
@@ -285,10 +283,9 @@ def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
     另在 helper 層把關「已發文必有發文人員」（有發文日期就必然有發文者：
     發文者登錄模式當場指定、發文結算整批寫入），資料表 CHECK 不改動——既有
     資料庫的 CHECK 不會因改 schema 而重建，只有這裡擋得住。呼叫端必須傳入
-    對話框載入時的五欄 `original_values`，不得於儲存時重查快照。
+    對話框載入時讀走的 `last_modified` 快照，不得於儲存時重查（見 `updateTicket`）。
     """
     doc_id = str(doc_id)
-    original_values = _resolveOriginalValues(original_values)
     if register_date is None:
         raise TicketValidationError(
             "發文日期資料無效；尚未發文請留空白，如需刪除請使用刪除功能。")
@@ -310,10 +307,9 @@ def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
             "UPDATE Document_Ticket SET create_date = ?, register_date = ?, "
             "sender_id = ?, issuer_id = ?, ticket_no = ? "
             "WHERE doc_id = ? AND " + TICKET_ACTIVE_SQL + " "
-            "AND create_date IS ? AND register_date IS ? AND sender_id IS ? "
-            "AND issuer_id IS ? AND ticket_no IS ?",
+            "AND " + LAST_MODIFIED_CAS_SQL,
             (create_date, register_date, sender_id, issuer_id, normalized,
-             doc_id, *original_values))
+             doc_id, last_modified))
     except sqlite3.IntegrityError as exc:
         _raiseDuplicateIfUnique(exc, normalized)
     if cur.rowcount != 1:

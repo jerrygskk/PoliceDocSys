@@ -5,7 +5,12 @@ from PySide6.QtGui  import QColor
 from PySide6.QtWidgets import QTableWidgetItem
 
 from lib.base_tab import BaseTab, InputLockMixin
-from lib.db_utils import DEBUG_MODE, isInputLocked
+from lib.db_utils import isInputLocked
+# ⚠️ 本頁刻意不再 import `DEBUG_MODE`：它原本掛在四個權限判斷上（含那道
+# 「一般使用者不可改已發文的單」的硬 gate），等於一個能讓權限鎖整組失效的
+# 開關。2026-08-07 移除，權限一律走 row_perm。收文頁與陳報頁的 `DEBUG_MODE`
+# 是「送出後不清表單」的開發便利、與權限無關，保留不動。
+from lib.row_perm import canEditRow, dispatchEditIsRestricted, isDispatched
 from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, reportError
 from ui_utils.date_guard import confirmDateGap
 from lib.auth_manager import AuthManager
@@ -101,44 +106,40 @@ class TabDispatch(BaseTab, InputLockMixin):
             lock_widgets=[w for w in (
                 self.lineEdit, btn_input, self.dispatch_date,
                 self.dispatch_sender, btn_send, btn_clear) if w],
-            clear_tables=[self.table],
+            refresh_tables=[self.table],
         )
 
-    def _onRoleClearList(self, *args):
-        """降權清空後必須順手重畫「尚未發文」提醒條。
+    def _refreshRowPermissions(self, tables):
+        """降權時就地重算（`InputLockMixin` 的 hook）。
 
-        基底 `InputLockMixin._onRoleClearList` 只把預覽表清成 0 列，不動本頁的
-        `_pending`（待發文 doc_id 集合）。`_updatePendingBanner` 本身會先與表格
-        現況對齊，但降權當下沒有任何人呼叫它——使用者登出時人就停在本頁，
-        `on_activated` 不會觸發，於是表格空了、橫幅還掛著「尚有 N 筆已輸入
-        未發文」，切到別頁再切回來才會消失。實際回報過。
+        ⚠️ 本頁**不清空清單、也不清 `_pending`**：列留著，只重算每一列的
+        編號欄可點狀態。提醒條因此維持正確（`_updatePendingBanner` 會與表格
+        現況對齊），不再有「表格空了、橫幅還掛著」的殘留（`3f1d14b` 修過的
+        症狀，成因正是清空）。
         """
-        super()._onRoleClearList(*args)
-        from lib.auth_manager import AuthManager
-        if AuthManager.instance().is_manager():
-            return
-        self._pending.clear()
+        self._onRolePerm()
         self._updatePendingBanner()
 
     def _onRolePerm(self, _role=None):
-        """身分變更即時生效：逐列切換刪除鈕停用/啟用，並重算編號欄可點狀態
-        （admin 永遠可點，含已發文；一般使用者已發文鎖住）。"""
+        """身分變更即時生效：逐列重算編號欄可點狀態。
+
+        規則單一來源在 `lib/row_perm.py`（未發文全開、已發文只有 admin）。
+        ⚠️ 發文狀態一律回查 DB，**不讀 `item(r, 6).text()`**：畫面上「未發文」
+        與「已刪除」都是空白，從 cell 文字在原理上分不出三態。
+        """
         if not self.table:
             return
-        is_admin = AuthManager.instance().is_admin()
-        # X 為「刪除佇列」（removeRow，不碰 DB），一般使用者亦可用 → 恆啟用
+        # X 為「刪除佇列」（removeRow，不碰 DB），一般使用者亦可用 → 恆啟用。
+        # ⚠️ 這是本頁的既有特性，刻意不納入權限矩陣（`canDeleteRow("dispatch")`
+        # 傳進去會拋錯，就是為了讓誤接當場失敗）。
         refreshDeleteBtns(self.table, True)
-        for r in range(self.table.rowCount()):
-            # 編號欄（col 1）：依目前身分與發文狀態重算可點，即時切換連結/純文字
-            lbl = self.table.cellWidget(r, 1)
-            id_item = self.table.item(r, 1)
-            doc_id = self._docIdFromLabel(lbl) if lbl else (id_item.text() if id_item else "")
-            if not doc_id:
-                continue
-            disp_item = self.table.item(r, 6)
-            dispatch_str = disp_item.text() if disp_item else ""
-            clickable = is_admin or not dispatch_str or DEBUG_MODE
-            setDocIdLinkCell(self.table, r, 1, doc_id, self._onEditRow, clickable=clickable)
+        rows = self._rowDocIds(self.table)
+        states, perm = self._rowPermContext("dispatch", rows.values())
+        for r, doc_id in rows.items():
+            clickable = canEditRow(
+                "dispatch", dispatched=states.get(doc_id, True), **perm)
+            setDocIdLinkCell(self.table, r, 1, doc_id, self._onEditRow,
+                             clickable=clickable)
 
     # ── BaseTab 介面 ──────────────────────────────────────
     def get_tables(self):
@@ -248,7 +249,7 @@ class TabDispatch(BaseTab, InputLockMixin):
             lbl = self.table.cellWidget(r, 1)
             if lbl and self._docIdFromLabel(lbl) == doc_id:
                 return True
-        # fallback：純文字 item（已發文且非 DEBUG_MODE）
+        # fallback：純文字 item（已發文、對當前身分不可點）
         for r in range(self.table.rowCount()):
             item = self.table.item(r, 1)
             if item and item.text() == doc_id:
@@ -265,15 +266,16 @@ class TabDispatch(BaseTab, InputLockMixin):
         deadline_str = str(data[4]) if data[4] else ""
         dispatch_str = str(data[5]) if data[5] else ""
 
-        is_admin = AuthManager.instance().is_admin()
-
         # 刪除按鈕（col 0）：以 doc_id 為準，不用 row index
         # X 為「刪除佇列」（removeRow，不寫 DB），一般使用者亦可移除誤掃入的列 → 恆啟用
         container, del_btn = makeDeleteBtn(lambda _, d=doc_id: self._deleteByDocId(d))
         self.table.setCellWidget(pos, 0, container)
 
-        # 編號欄（col 1）：admin 永遠可點（含已發文）；一般使用者僅未發文可點，已發文鎖住。DEBUG_MODE 一律可點
-        clickable = is_admin or not dispatch_str or DEBUG_MODE
+        # 編號欄（col 1）：規則單一來源在 row_perm（未發文全開、已發文只有 admin）。
+        # 這裡的 dispatch_str 來自剛查出的 DB 資料列（不是表格顯示字串），可直接用。
+        _, _perm = self._rowPermContext("dispatch", [])
+        clickable = canEditRow(
+            "dispatch", dispatched=isDispatched(dispatch_str), **_perm)
         setDocIdLinkCell(self.table, pos, 1, doc_id, self._onEditRow, clickable=clickable)
 
         # 其他欄位（col 2~4）
@@ -304,21 +306,16 @@ class TabDispatch(BaseTab, InputLockMixin):
 
     def _onEditRow(self, row, doc_id):
         """點擊超連結 → 開啟 EditDialog（一般使用者只可改承辦人）"""
-        restricted = not AuthManager.instance().is_admin()
-        # 硬 gate：一般使用者不可改已發文的單（以 DB 為準，不信任連結殘留
-        # 的可點狀態——顯示層漏重算時這裡仍擋得住）
-        if restricted and not DEBUG_MODE:
-            try:
-                conn = self._getConn()
-                row_db = conn.execute(
-                    "SELECT dispatch_date FROM Document_Task WHERE doc_id=?",
-                    (doc_id,)).fetchone()
-                conn.close()
-            except Exception:
-                row_db = None
-            if row_db and row_db[0]:
-                msgInfo("已發文", f"「{doc_id}」已發文，一般使用者不可再修改。")
-                return
+        # ⚠️ 一般使用者只能改承辦人，判斷是 `not is_manager()` 而**不是**
+        # `not is_admin()`：歸檔管理者在未發文的單上可以全改（權限矩陣 §2.1）。
+        restricted = dispatchEditIsRestricted(
+            is_manager=AuthManager.instance().is_manager())
+        # 入口複核：不信任連結殘留的可點狀態——降權與使用者操作之間存在時間差，
+        # 反灰／純文字化只是提示，這一層才是防線。發文狀態以 DB 為準。
+        blocked = self._rowActionBlockReason("dispatch", doc_id, delete=False)
+        if blocked:
+            msgWarning(*blocked)
+            return
         dlg = TaskEditDialog(self.db_path, doc_id, self.table,
                              restricted=restricted, source='dispatch')
         if dlg.exec():
@@ -375,7 +372,7 @@ class TabDispatch(BaseTab, InputLockMixin):
     # ── 批次發文 ──────────────────────────────────────────
     def handleDispatch(self):
         # 唯讀 gate：交辦表被鎖時一般使用者不可發文（真正防線，涵蓋按鈕與所有觸發）
-        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "dispatch"):
+        if isInputLocked(self.db_path, "dispatch"):
             msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
             return
         if not self.table or self.table.rowCount() == 0:
@@ -464,8 +461,9 @@ class TabDispatch(BaseTab, InputLockMixin):
                 self.table.setItem(row_idx, 7, status_item)
 
                 # 列已從未發文轉為已發文：重算編號欄可點狀態，
-                # 一般使用者的連結須即時鎖住（admin／DEBUG 仍可點）
-                clickable = AuthManager.instance().is_admin() or DEBUG_MODE
+                # 一般使用者的連結須即時鎖住（規則見 row_perm）
+                _, _perm = self._rowPermContext("dispatch", [])
+                clickable = canEditRow("dispatch", dispatched=True, **_perm)
                 setDocIdLinkCell(self.table, row_idx, 1, doc_id,
                                  self._onEditRow, clickable=clickable)
 
