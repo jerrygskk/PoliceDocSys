@@ -221,7 +221,7 @@ graph LR
   **TST-5**。新增會在行程內建立 `DocumentManager` 的測試檔時，必須把檔名補進
   `ISOLATED_MODULES`；仍不得改用 xdist 硬繞
 
-- **GUI pilot（六支，2026-08-03～04 建立）**：以真實版面與真實資料庫走完一條使用者流程，
+- **GUI pilot（八支，2026-08-03～04 建立）**：以真實版面與真實資料庫走完一條使用者流程，
   補的是「兩端各自有測試、中間那段沒人看」的接縫。
   `test_reward_gui_pilot`（敘獎登錄→編輯→發文）／`test_logout_gui_pilot`（登出即關窗，
   **唯一在 shell 層、需隔離**）／`test_archive_gui_pilot`（歸檔正名與 DB 同步）／
@@ -236,6 +236,9 @@ graph LR
      毫不相干的檔案上，見 PITFALLS **TST-6**。
   3. **一律不得呼叫 `exec()`**（PITFALLS TST-4）；慣用解是把 `exec` 換成「就地驅動」
      的函式，仍走真實驗證邏輯，只是不進 modal 事件迴圈。
+  4. **設計階段先盤點該流程會彈哪些框**（`msgInfo`／`msgWarning`／`msgCritical`／
+     `confirmBox`／日期防呆／各 Dialog），逐一決定攔掉或斷言它被叫到，見 PITFALLS
+     **TST-7**。這類問題的症狀是「跑到一半停住」而非紅燈，事後查的成本遠高於事前列一張表。
   ⚠️ pilot 的價值來自**能抓到回歸**，不是綠燈本身：每支交付前都以「故意破壞被測機制、
   確認對應那支會紅」反證過。新增時照做。
 - **無 pytest 環境備援**：只能執行 `python -m unittest discover -s tests -t .`（⚠️ `-t .` 不可省，否則 `tests/__init__.py` 不會載入、日期防呆遮蔽裝不上而整包卡死，見 PITFALLS TST-4）；pytest-only、packaging 與 GUI pilot 可能被跳過，因此不得拿這個結果取代正式 gate。
