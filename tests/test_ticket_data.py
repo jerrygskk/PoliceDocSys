@@ -10,10 +10,12 @@ from lib import ticket_utils
 
 from lib import db_schema, db_seed
 from lib.ticket_utils import (
+    TICKET_NO_MIN_LEN_DEFAULT, TICKET_NO_MIN_LEN_KEY,
     TicketConflictError, TicketDuplicateError, TicketNotFoundError,
     TicketValidationError,
-    createTicket, deleteTicket, normalizeTicketNo, ticketExists,
-    ticketSortKey, updateTicket, updateTicketFromBrowse,
+    createTicket, deleteTicket, normalizeTicketNo, parseTicketNoMinLen,
+    ticketExists, ticketNoMinLen, ticketSortKey, updateTicket,
+    updateTicketFromBrowse,
 )
 from ui_utils.settle_dialog import load_unissued
 
@@ -940,6 +942,93 @@ class TestTicketAfterYearEndReset(TicketDbTestCase):
             self.assertEqual(doc_id, "1")   # Seq_DocId 已歸零，重新從 1 配號
         finally:
             conn.close()
+
+
+class TestTicketNoMinLen(TicketDbTestCase):
+    """罰單編號最少字數（設定頁「罰單編號長度」；預設 0＝不限制）。"""
+
+    def setUp(self):
+        super().setUp()
+        self._insert_person("P001", "王小明")
+
+    def _set_min_len(self, value):
+        self.conn.execute(
+            "INSERT OR REPLACE INTO App_Settings(key,value) VALUES(?,?)",
+            (TICKET_NO_MIN_LEN_KEY, str(value)))
+        self.conn.commit()
+
+    def _create(self, ticket_no):
+        return createTicket(
+            self.conn, issuer_id="P001", ticket_no=ticket_no,
+            self_service=True, sender_id=None,
+            create_date="2026-08-08", role="user")
+
+    # ── 解析（純邏輯）────────────────────────────────────────
+    def test_default_is_unlimited(self):
+        self.assertEqual(TICKET_NO_MIN_LEN_DEFAULT, 0)
+        self.assertEqual(ticketNoMinLen(self.conn), 0, "未設定時應為不限制")
+
+    def test_parse_bad_values_fall_back_to_default(self):
+        """DB 值被手動改壞時的保底：不拋例外、不擋住程式。"""
+        for raw in (None, "", "   ", "abc", "-1", "999", "3.5"):
+            with self.subTest(raw=raw):
+                self.assertEqual(parseTicketNoMinLen(raw),
+                                 TICKET_NO_MIN_LEN_DEFAULT)
+
+    def test_parse_accepts_valid_range(self):
+        for raw, expect in (("0", 0), ("5", 5), (" 9 ", 9), ("20", 20)):
+            with self.subTest(raw=raw):
+                self.assertEqual(parseTicketNoMinLen(raw), expect)
+
+    # ── 實際擋下（三個寫入入口都要）──────────────────────────
+    def test_unlimited_allows_short_number(self):
+        """預設不限制：短編號照樣存得進去（不影響既有作業）。"""
+        self._create("D4")
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT ticket_no FROM Document_Ticket WHERE doc_id='1'"
+            ).fetchone()[0], "D4")
+
+    def test_create_blocks_short_number(self):
+        self._set_min_len(6)
+        with self.assertRaises(TicketValidationError) as ctx:
+            self._create("D4RD")
+        self.assertIn("至少需 6 個字元", str(ctx.exception))
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM Document_Ticket").fetchone()[0], 0,
+            "被擋下時不得配發文號")
+
+    def test_create_allows_exactly_min_len(self):
+        """邊界：剛好等於下限要放行（不是「大於」）。"""
+        self._set_min_len(6)
+        self._create("D4RD15")
+
+    def test_update_blocks_short_number(self):
+        """⚠️ 登錄頁修改彈窗也要擋——不能只加在新增那條路徑。"""
+        self._create("D4RD15263")
+        self._set_min_len(6)
+        with self.assertRaises(TicketValidationError):
+            updateTicket(self.conn, doc_id="1", issuer_id="P001",
+                         ticket_no="D4RD", role="user",
+                         last_modified=self._lastModified())
+
+    def test_browse_update_blocks_short_number(self):
+        """⚠️ 資料庫瀏覽頁的 admin 編輯同樣要擋。"""
+        self._create("D4RD15263")
+        self._set_min_len(6)
+        with self.assertRaises(TicketValidationError):
+            updateTicketFromBrowse(
+                self.conn, doc_id="1", create_date="2026-08-08",
+                register_date="", sender_id=None, issuer_id="P001",
+                ticket_no="D4RD", role="admin",
+                last_modified=self._lastModified())
+
+    def test_max_len_still_enforced(self):
+        """上限是既有規則，不因新增下限而失效。"""
+        with self.assertRaises(TicketValidationError) as ctx:
+            self._create("D" * 21)
+        self.assertIn("不可超過", str(ctx.exception))
 
 
 if __name__ == "__main__":

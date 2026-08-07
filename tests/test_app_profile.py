@@ -29,7 +29,10 @@ def test_entry_profile_is_strict_allowlist():
     assert ENTRY_PROFILE.preload_keys == ()
     assert ENTRY_PROFILE.menu_labels["settings"] == "系統設定"
     assert ENTRY_PROFILE.settings_pages == ("personnel", "system")
-    assert ENTRY_PROFILE.system_panels == ("idle", "input_lock", "input_mode")
+    # ⚠️ `ticket_len`（罰單編號長度）兩支 exe 都要有——獨立版同樣有罰單登錄，
+    # 少了它現場就沒有地方調這個限制。
+    assert ENTRY_PROFILE.system_panels == (
+        "idle", "input_lock", "input_mode", "ticket_len")
     assert ENTRY_PROFILE.input_lock_flows == ("reward", "ticket")
     assert ENTRY_PROFILE.input_mode_flows == ("reward", "ticket")
 

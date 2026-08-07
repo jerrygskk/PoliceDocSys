@@ -76,6 +76,68 @@ class TicketConflictError(LookupError):
 _TICKET_RE = re.compile(r"^[A-Z0-9]+$")
 TICKET_NO_MAX_LEN = 20
 
+# ══════════════════════════════════════════════════════════════════
+# 罰單編號最少字數（設定頁「系統設定 → 罰單編號長度」可調）
+# ──────────────────────────────────────────────────────────────────
+# 用途：現場輸入罰單編號時可能少打幾碼（例如只打到 `D4`），格式與唯一性都
+# 檢查得過、就這樣存進去了。給一個下限讓它在送出時被擋下。
+#
+# **預設 0＝不限制**（維護者裁示）：既有資料裡可能已經有短編號，一上線就強制
+# 會擋住現場作業；要啟用由管理者自己到設定頁填。
+# ⚠️ 跨年度重置**不清**此 key（單位的長期設定，比照唯讀鎖／閒置逾時；
+# `performYearEndReset` 只清 `archive_*`，故不必另外處理）。
+#
+# ⚠️ key 與讀取放在本檔而不是 `db_utils`：它是罰單專屬的驗證規則，而本模組是
+# 「所有罰單編號寫入入口」的唯一來源（見檔頭界線）。放這裡才能跟
+# `normalizeTicketNo` 的其他規則擺在一起，也避免 db_utils 反向依賴罰單常數。
+TICKET_NO_MIN_LEN_KEY = "ticket_no_min_len"
+TICKET_NO_MIN_LEN_DEFAULT = 0
+TICKET_NO_MIN_LEN_RANGE = (0, TICKET_NO_MAX_LEN)
+
+
+def parseTicketNoMinLen(raw):
+    """App_Settings 的字串 → 最少字數（int）。
+
+    0＝不限制。非數字／負數／超過上限一律回預設（DB 值被手動改壞時的保底），
+    比照 `db_utils.parseIdleMinutes` 的作風：不拋例外、不擋住程式。
+    """
+    try:
+        val = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return TICKET_NO_MIN_LEN_DEFAULT
+    lo, hi = TICKET_NO_MIN_LEN_RANGE
+    if not (lo <= val <= hi):
+        return TICKET_NO_MIN_LEN_DEFAULT
+    return val
+
+
+def ticketNoMinLen(conn):
+    """讀取目前設定的最少字數；讀不到一律回預設（0＝不限制）。
+
+    ⚠️ 用呼叫端傳進來的同一個 `conn`（比照本模組其他函式），不另開連線——
+    寫入流程本來就在一個 transaction 裡，另開連線在 SMB 多機下會多一次鎖競爭。
+    """
+    try:
+        row = conn.execute(
+            "SELECT value FROM App_Settings WHERE key=?",
+            (TICKET_NO_MIN_LEN_KEY,)).fetchone()
+    except Exception:
+        return TICKET_NO_MIN_LEN_DEFAULT
+    return parseTicketNoMinLen(row[0] if row else None)
+
+
+def _requireMinLen(conn, ticket_no):
+    """字數不足即擋下。⚠️ 三個寫入入口都要呼叫，不要只加在登錄頁那條。
+
+    刻意**不放進 `normalizeTicketNo`**：那支是純函式、不碰資料庫，測試與
+    `tools/` 都直接呼叫它；把設定讀取塞進去會讓它每次正規化都查一次 DB，
+    也讓它不再能離線單測。
+    """
+    min_len = ticketNoMinLen(conn)
+    if min_len and len(ticket_no) < min_len:
+        raise TicketValidationError(
+            f"罰單編號至少需 {min_len} 個字元，目前只有 {len(ticket_no)} 個。")
+
 
 def normalizeTicketNo(value):
     """罰單編號正規化：去頭尾空白→轉大寫→驗證僅含 ASCII 英數→驗證長度上限。
@@ -217,6 +279,7 @@ def createTicket(conn, *, issuer_id, ticket_no, self_service, sender_id,
     寫入指定發文者。`doc_id` 由 `Seq_DocId` 配發，**與罰單編號完全無關**。
     """
     normalized = normalizeTicketNo(ticket_no)
+    _requireMinLen(conn, normalized)
     create_date = _requireCreateDate(create_date)
     issuer_id = _requirePerson(conn, issuer_id, "開立人員")
     if self_service:
@@ -258,6 +321,7 @@ def updateTicket(conn, *, doc_id, issuer_id, ticket_no, role,
     doc_id = str(doc_id)
 
     normalized = normalizeTicketNo(ticket_no)
+    _requireMinLen(conn, normalized)
     issuer_id = _requirePerson(conn, issuer_id, "開立人員")
     _requireUnique(conn, normalized, exclude_doc_id=doc_id)
 
@@ -291,6 +355,7 @@ def updateTicketFromBrowse(conn, *, doc_id, create_date, register_date,
             "發文日期資料無效；尚未發文請留空白，如需刪除請使用刪除功能。")
 
     normalized = normalizeTicketNo(ticket_no)
+    _requireMinLen(conn, normalized)
     create_date = _requireCreateDate(create_date)
     issuer_id = _requirePerson(conn, issuer_id, "開立人員")
     register_date = (register_date or "").strip()

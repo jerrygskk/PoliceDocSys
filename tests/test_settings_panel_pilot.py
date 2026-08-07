@@ -40,9 +40,10 @@ from lib.db_utils import (
     PRINT_TITLE_KEYS, archiveDefaultDir, getBackupSecondDir, getIdleTimeoutsMs,
     isInputLocked, isSelfServiceMode, printTitle)
 import ui_utils.settings_panels as panels_module
+from lib.ticket_utils import ticketNoMinLen
 from ui_utils.settings_panels import (
     ArchiveRootPanel, BackupPanel, IdleTimeoutPanel, InputLockPanel,
-    InputModePanel, PrintTitlePanel)
+    InputModePanel, PrintTitlePanel, TicketNoLengthPanel)
 
 
 ARCHIVE_ROOT = r"Z:\案件掃描檔\115年"
@@ -105,6 +106,10 @@ def _set_idle(panel):
     panel.sp_close.setValue(20)
 
 
+def _set_ticket_len(panel):
+    panel.sp_min_len.setValue(6)
+
+
 def _set_input_lock(panel):
     panel._checks["reward"].setChecked(True)
 
@@ -157,7 +162,25 @@ PANELS = {
         "expect": lambda db: isSelfServiceMode(db, "ticket") is True,
         "roles_allowed": ("admin",),
     },
+    "罰單編號長度": {
+        "make": TicketNoLengthPanel,
+        "change": _set_ticket_len,
+        # ⚠️ 以**消費端自己的讀取函式**斷言，不直接查 App_Settings：只查 key 的話，
+        # 寫錯 key 名或正規化方式與讀取端不一致仍會漏，那正是「設定了但沒作用」
+        # 的成因（見 DEVELOPER §8 v1.2.9-v6）。
+        "expect": lambda db: _ticket_min_len(db) == 6,
+        "roles_allowed": ("admin",),
+    },
 }
+
+
+def _ticket_min_len(db_path):
+    """走真正的消費端：`ticket_utils.ticketNoMinLen`（三個寫入入口都用它）。"""
+    conn = sqlite3.connect(db_path)
+    try:
+        return ticketNoMinLen(conn)
+    finally:
+        conn.close()
 
 
 def _make(qtbot, db_path, name):

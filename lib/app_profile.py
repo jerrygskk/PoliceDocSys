@@ -90,6 +90,7 @@ FULL_PROFILE = AppProfile(
     settings_pages=("personnel", "dept", "casetype", "system", "trash", "backup"),
     system_panels=(
         "archive_root", "print_title", "idle", "input_lock", "backup", "input_mode",
+        "ticket_len",
     ),
     input_lock_flows=(
         "dispatch", "task", "crim", "gen", "ticket", "reward",
@@ -116,7 +117,7 @@ ENTRY_PROFILE = AppProfile(
     browse_keys=("reward", "ticket"),
     preload_keys=(),
     settings_pages=("personnel", "system"),
-    system_panels=("idle", "input_lock", "input_mode"),
+    system_panels=("idle", "input_lock", "input_mode", "ticket_len"),
     input_lock_flows=("reward", "ticket"),
     input_mode_flows=("reward", "ticket"),
     preheat_keys=("reward", "ticket"),

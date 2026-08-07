@@ -865,6 +865,93 @@ class BackupPanel(_SettingsPanel):
 # ══════════════════════════════════════════════════════════════════
 # 輸入模式（發文結算／送文者輸入；僅 admin 可改；即時生效）
 # ══════════════════════════════════════════════════════════════════
+class TicketNoLengthPanel(_SettingsPanel):
+    """罰單編號最少字數（僅 admin；archive 整塊反灰，比照其他系統設定面板）。
+
+    現場輸入罰單編號時可能少打幾碼，格式與唯一性都檢查得過就存進去了。
+    這裡給一個下限，送出時擋下。**預設 0＝不限制**（維護者裁示：既有資料可能
+    已有短編號，一上線就強制會擋住現場作業）。
+
+    ⚠️ 檢查點不在本面板，而在 `lib/ticket_utils` 的三個寫入入口
+    （`createTicket`／`updateTicket`／`updateTicketFromBrowse`）——登錄頁送出、
+    登錄頁修改彈窗、瀏覽頁 admin 編輯全都走那裡，一次涵蓋，不必逐頁補判斷。
+    """
+
+    def __init__(self, db_path, parent=None):
+        super().__init__("罰單編號長度", db_path, parent)
+
+    def _build(self):
+        from lib.ticket_utils import TICKET_NO_MAX_LEN, TICKET_NO_MIN_LEN_RANGE
+
+        v = QVBoxLayout(self)
+        v.setSpacing(10)
+        v.setContentsMargins(16, 14, 16, 12)
+
+        hint = QLabel(
+            f"限制罰單編號的最少字數，字數不足時送出會被擋下。"
+            f"（設為 0 時不作用；上限固定 {TICKET_NO_MAX_LEN} 字元）\n"
+            "本設定同時適用於罰單登錄、登錄修改與資料庫瀏覽的編輯。")
+        hint.setStyleSheet(_HINT_SS)
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+
+        lo, hi = TICKET_NO_MIN_LEN_RANGE
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.addWidget(QLabel("罰單編號最少字數"))
+        # 比照 IdleTimeoutPanel：拿掉上下箭頭（以鍵盤輸入為主，Windows 樣式的
+        # 箭頭在固定寬度下渲染擁擠）
+        self.sp_min_len = QSpinBox()
+        self.sp_min_len.setRange(lo, hi)
+        self.sp_min_len.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self.sp_min_len.setFixedWidth(90)
+        self.sp_min_len.setAlignment(Qt.AlignCenter)
+        row.addWidget(self.sp_min_len)
+        row.addStretch()
+        v.addLayout(row)
+
+        self._btn_save = _save_row(v)
+        self._btn_save.clicked.connect(self._save)
+        self.sp_min_len.valueChanged.connect(self._updateSaveBtn)
+
+    def _values(self):
+        return (self.sp_min_len.value(),)
+
+    def reload(self):
+        """重讀 DB 值；未設定／不合法顯示預設（0＝不限制）。"""
+        from lib.db_utils import getSetting
+        from lib.ticket_utils import (
+            TICKET_NO_MIN_LEN_KEY, parseTicketNoMinLen)
+        self.sp_min_len.setValue(parseTicketNoMinLen(
+            getSetting(self.db_path, TICKET_NO_MIN_LEN_KEY, "")))
+        self._markLoaded()
+
+    def _save(self):
+        """存檔成功回 True、被擋回 False（比照其他面板的切頁流程約定）。"""
+        from lib.auth_manager import AuthManager
+        from lib.db_utils import (buildDetail, getSetting, setSetting,
+                                  writeAuditSafe)
+        from lib.ticket_utils import (
+            TICKET_NO_MIN_LEN_KEY, parseTicketNoMinLen)
+        # 權限 gate：僅 admin（比照閒置逾時／唯讀鎖／輸入模式）
+        if not AuthManager.instance().is_admin():
+            return False
+        old = parseTicketNoMinLen(
+            getSetting(self.db_path, TICKET_NO_MIN_LEN_KEY, ""))
+        new = self.sp_min_len.value()
+        setSetting(self.db_path, TICKET_NO_MIN_LEN_KEY, str(new))
+        if new != old:
+            am = AuthManager.instance()
+            writeAuditSafe(
+                self.db_path, role=am.current_role, action="CONFIG",
+                operator=am.actor_name(),
+                detail=buildDetail(
+                    "系統", "修改",
+                    f"罰單編號最少字數：{old or '不限制'} → {new or '不限制'}"))
+        self.reload()
+        return True
+
+
 class InputModePanel(_SettingsPanel):
     """陳報模式：刑案陳報／一般陳報／敘獎登錄／罰單登錄各自二選一。
 

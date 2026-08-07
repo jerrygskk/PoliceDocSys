@@ -40,7 +40,7 @@ from ui_utils import (
     RefItemDialog, REF_PERSONNEL, REF_DEPT, REF_CASETYPE,
     ChangePasswordDialog, ResetDialog,
     ArchiveRootPanel, PrintTitlePanel, IdleTimeoutPanel, InputLockPanel, BackupPanel,
-    InputModePanel,
+    InputModePanel, TicketNoLengthPanel,
     preserveScroll,
 )
 from ui_utils.settings_dialogs import _parseSeqMoveTarget
@@ -409,11 +409,15 @@ class TabSettings(BaseTab):
         self._panel_input_mode = (
             InputModePanel(self.db_path, sys_content, flow_keys=mode_flow_keys)
             if "input_mode" in enabled_panels else None)
+        self._panel_ticket_len = (
+            TicketNoLengthPanel(self.db_path, sys_content)
+            if "ticket_len" in enabled_panels else None)
         if sys_content and sys_content.layout():
             sys_lay = sys_content.layout()
             for p in (self._panel_archive_root, self._panel_print_title,
                       self._panel_idle, self._panel_input_lock,
-                      self._panel_backup, self._panel_input_mode):
+                      self._panel_backup, self._panel_input_mode,
+                      self._panel_ticket_len):
                 if p:
                     sys_lay.addWidget(p)
             sys_lay.addStretch()
@@ -745,6 +749,8 @@ class TabSettings(BaseTab):
             self._panel_backup.setEnabled(is_admin)
         if getattr(self, "_panel_input_mode", None):
             self._panel_input_mode.setEnabled(is_admin)
+        if getattr(self, "_panel_ticket_len", None):
+            self._panel_ticket_len.setEnabled(is_admin)
 
     # ── 身份切換監聽：登出時回到密碼驗證畫面 ─────────────────────
     def _onRoleChanged(self, role):
@@ -803,7 +809,8 @@ class TabSettings(BaseTab):
                   getattr(self, "_panel_idle", None),
                   getattr(self, "_panel_input_lock", None),
                   getattr(self, "_panel_backup", None),
-                  getattr(self, "_panel_input_mode", None)):
+                  getattr(self, "_panel_input_mode", None),
+                  getattr(self, "_panel_ticket_len", None)):
             if p:
                 p.reload()
 
@@ -1106,7 +1113,8 @@ class TabSettings(BaseTab):
                             getattr(self, "_panel_idle", None),
                             getattr(self, "_panel_input_lock", None),
                             getattr(self, "_panel_backup", None),
-                            getattr(self, "_panel_input_mode", None))
+                            getattr(self, "_panel_input_mode", None),
+                            getattr(self, "_panel_ticket_len", None))
                 if p and p.isDirty()]
 
     def _promptUnsaved(self, context="edit"):
