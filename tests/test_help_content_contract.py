@@ -51,24 +51,34 @@ class HelpContentContractTests(unittest.TestCase):
         self.assertIn("取代", ticket_help)
         self.assertIn("清空", ticket_help)
         self.assertIn("罰單編號僅接受半形英文字母與數字", ticket_help)
-        self.assertIn("不可還原", ticket_help)
-        self.assertIn("文號（doc_id）直接作廢、不會再被使用；原罰單編號仍可重新登錄", ticket_help)
+        # 2026-08-08 罰單頁 HELP 精簡：用語與速查卡統一，仍須講明「文號作廢、
+        # 罰單編號可重新取號」——現場最常問的就是刪掉之後編號還能不能用。
+        self.assertIn("該文號作廢不再用，原罰單編號仍可重新取號登錄", ticket_help)
         ticket_quickstart = "\n".join(QUICKSTART[4][1] + QUICKSTART[4][2])
-        self.assertIn("文號（doc_id）作廢不可再用，原罰單編號仍可重新登錄", ticket_quickstart)
-        self.assertIn("本頁不設身分限制", ticket_help)
-        # ⚠️ 預覽列一律可改可刪是凌駕權限矩陣的原則（見 PITFALLS PRM-1），
-        # HELP 必須講出來——那是承辦人每天最常用到的自我更正路徑。
-        self.assertIn("打錯字可當場自行更正", ticket_help)
-        # ⚠️ 唯讀是該原則的唯一例外，且 2026-08-07 起不分身分，必須寫明白，
-        # 否則管理者會以為自己不受影響、找不到為什麼按鈕是灰的。
-        self.assertIn("三種身分都不能新增", ticket_help)
+        # 速查卡用語較口語（2026-08-08 維護者定稿），但「文號作廢、罰單編號可
+        # 重新取號」這件事必須留著——現場最常問的就是刪掉之後編號還能不能用。
+        self.assertIn("該文號作廢不再用，原罰單編號仍可重新取號登錄",
+                      ticket_quickstart)
+        # ⚠️ 「本頁不設身分限制／預覽列一律可改可刪」的說明 2026-08-08 依維護者
+        # 裁示自罰單頁 HELP 移除（速查卡仍保留「本頁不設身分限制」那條）。
+        # ⚠️ 只是不再寫進 HELP，程式面的原則不變——預覽列一律可改可刪仍是凌駕
+        # 權限矩陣的規則，由 PITFALLS PRM-1 與 tests/test_row_perm.py 守著。
+        # ⚠️ 唯讀鎖的說明 2026-08-08 依維護者裁示自各分頁 HELP 移除：紅色橫幅
+        # 本身已寫「本功能目前無法使用，僅供瀏覽」，看得懂；要解鎖去找管理者也
+        # 是常識，不必每頁重述一遍。開關與影響範圍仍在第 8 頁「系統設定」交代。
+        # ⚠️ 這是文案定位的決定，不是規則放寬——程式面「三種身分一律擋」不變
+        # （PITFALLS PRM-6、tests/test_row_perm.py）。
         self.assertIn("登錄日期＝取得文號日", report_help)
         self.assertIn("陳報日期＝實際發文日", report_help)
         self.assertIn("未發文的刑案／一般／敘獎／罰單案件", print_help)
-        self.assertIn("結算發文只補上發文日期，不會變更登錄日期", print_help)
+        self.assertIn("結算發文只補上發文日期與發文人員，不會變更登錄日期",
+                      print_help)
         self.assertIn("四項皆為送文者輸入模式但仍有未發文殘留資料時", print_help)
-        self.assertIn("四項皆為送文者輸入模式但仍有未發文殘留資料時",
-                      QUICKSTART[5][2])
+        # ⚠️ 速查卡 2026-08-08 精簡：殘留資料入口那段細節只留在 HELP（上一行
+        # 仍釘著），速查卡改為「發文結算模式下要先按結算發文」這個主流程。
+        # 精簡的是細節、不是功能存在本身，故此處仍釘住關鍵字。
+        self.assertIn("結算發文", QUICKSTART[5][2])
+        self.assertIn("一次性發文", QUICKSTART[5][2])
         self.assertEqual(set(HELP_TIPS[3]), {
             "btn_reward_submit", "btn_reward_clear", "reward_personnel_list",
         })
@@ -116,7 +126,11 @@ class HelpContentContractTests(unittest.TestCase):
             self.assertIn("一般使用者", text)
             self.assertIn("歸檔管理員", text)
             self.assertIn("操作紀錄", text)
-            self.assertIn("資料庫設定", text)
+        # ⚠️ 「登入入口固定在資料庫設定頁」只釘 HELP，不釘速查卡：
+        # 2026-08-08 全面精簡速查卡時，維護者裁示速查卡不交代登入入口
+        # （速查卡定位是「用途一句＋關鍵步驟」，登入流程屬細節，回 HELP 看）。
+        # ⚠️ 這是刻意縮小範圍，不是因為紅了才放寬——HELP 這一側維持原樣。
+        self.assertIn("資料庫設定", help_text)
 
 
 if __name__ == "__main__":
