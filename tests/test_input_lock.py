@@ -222,8 +222,10 @@ class TestRoleRefresh(unittest.TestCase):
         self.assertEqual(t2.rows, 5)
 
     def test_manager_skips_refresh(self):
-        """管理身分 early return：升權由 on_activated 整份重刷，
-        唯讀凍結又只鎖一般使用者，故不會漏鎖任何情境。"""
+        """管理身分 early return：升權必經設定頁、回本頁必觸發 on_activated
+        整份重刷，故這裡不做也不會漏。⚠️ 理由不是「唯讀只鎖一般使用者」
+        （那條 2026-08-07 已作廢），唯讀狀態的變化另由
+        `_syncRowPermsOnLockChange` 處理，與身分無關。"""
         t1 = _Table()
         p = _Panel("task", [], refresh=[t1])
         self._refresh(p, is_manager=True)
@@ -234,6 +236,59 @@ class TestRoleRefresh(unittest.TestCase):
         """沒實作 hook 的頁不會壞（預設 no-op）。"""
         panel = InputLockMixin()
         self.assertIsNone(panel._refreshRowPermissions([]))
+
+
+class TestLockChangeRefresh(unittest.TestCase):
+    """唯讀鎖被開／關之後，預覽列的可改可刪外觀要跟著重算。
+
+    管理者在設定頁開唯讀後切回登錄頁，`_onShown` 只重套表單反灰與橫幅；
+    預覽列若不重算，畫面上 ✕ 與編號欄連結看起來仍可點（真按下去會被
+    `_rowActionBlockReason` 擋，但與橫幅寫的「本功能目前無法使用」矛盾）。
+    """
+
+    def test_first_apply_only_records_state(self):
+        """`_setupInputLock` 期間那次不得刷新——各頁 setup() 還沒跑完，
+        預覽表可能尚未建好，重建會炸。"""
+        t1 = _Table()
+        p = _Panel("task", [_W()], _Banner(), refresh=[t1])
+        _apply(p, is_manager=True, locked_kinds={"task"})
+        self.assertIsNone(p.refreshed_with)
+
+    def test_lock_turned_on_refreshes_rows(self):
+        t1 = _Table()
+        p = _Panel("task", [_W()], _Banner(), refresh=[t1])
+        _apply(p, is_manager=True, locked_kinds=set())      # 首次：未鎖
+        _apply(p, is_manager=True, locked_kinds={"task"})   # 改成鎖住
+        self.assertEqual(p.refreshed_with, [t1])
+
+    def test_lock_turned_off_refreshes_rows(self):
+        t1 = _Table()
+        p = _Panel("task", [_W()], _Banner(), refresh=[t1])
+        _apply(p, is_manager=True, locked_kinds={"task"})   # 首次：鎖住
+        _apply(p, is_manager=True, locked_kinds=set())      # 改成解鎖
+        self.assertEqual(p.refreshed_with, [t1])
+
+    def test_unchanged_state_does_not_refresh(self):
+        """⚠️ 這條是效能防線，不是可有可無的斷言：`_applyInputLock` 每次切頁
+        都會跑，而 reward／ticket 的 hook 是整表重建，無條件刷等於每次切頁
+        多重建一次預覽表。"""
+        t1 = _Table()
+        p = _Panel("task", [_W()], _Banner(), refresh=[t1])
+        _apply(p, is_manager=False, locked_kinds={"task"})
+        _apply(p, is_manager=False, locked_kinds={"task"})   # 狀態沒變
+        _apply(p, is_manager=False, locked_kinds={"task"})
+        self.assertIsNone(p.refreshed_with)
+
+    def test_report_page_mode_switch_between_differently_locked_kinds(self):
+        """陳報頁切模式（crim 鎖住、gen 沒鎖）等同唯讀狀態變化，要重算。"""
+        t1 = _Table()
+        mode = {"cur": "crim"}
+        p = _Panel(lambda: mode["cur"], {"crim": [_W()], "gen": [_W()]},
+                   _Banner(), refresh=[t1])
+        _apply(p, is_manager=False, locked_kinds={"crim"})   # 首次：crim 鎖住
+        mode["cur"] = "gen"
+        _apply(p, is_manager=False, locked_kinds={"crim"})   # 切到沒鎖的 gen
+        self.assertEqual(p.refreshed_with, [t1])
 
 
 if __name__ == "__main__":

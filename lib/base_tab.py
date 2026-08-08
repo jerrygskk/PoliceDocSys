@@ -273,6 +273,30 @@ class InputLockMixin:
             w.setEnabled(not locked)
         if getattr(self, "_readonly_banner", None):
             self._readonly_banner.setVisible(locked)
+        self._syncRowPermsOnLockChange(locked)
+
+    def _syncRowPermsOnLockChange(self, locked):
+        """唯讀狀態真的變了才重算預覽列（由 `_applyInputLock` 末尾呼叫）。
+
+        管理者在設定頁開／關唯讀後切回本頁，`_onShown` 只重套表單反灰與橫幅，
+        預覽列的 ✕ 與編號欄連結外觀不會跟著變——按下去仍會被
+        `_rowActionBlockReason` 擋下（防線在那裡，不在外觀），但畫面上看起來
+        還能點，與橫幅寫的「本功能目前無法使用」互相矛盾。故在此補一次重算。
+
+        ⚠️ **刻意只在狀態變化時做，不是每次 `_applyInputLock` 都做**：
+        `_applyInputLock` 每次切頁都會跑，而 `reward`／`ticket` 的
+        `_refreshRowPermissions` 是整表重建（`_refresh_session_rows`／
+        `reload`），無條件刷等於每次切頁多重建一次預覽表。
+
+        首次呼叫（`_setupInputLock` 期間）只記錄不刷新：此時各頁 `setup()`
+        尚未跑完，預覽表可能還沒建好，重建會炸。
+        """
+        prev = getattr(self, "_lock_last_locked", None)
+        self._lock_last_locked = locked
+        if prev is None or prev == locked:
+            return
+        self._refreshRowPermissions(
+            getattr(self, "_lock_refresh_tables", None) or [])
 
     def _onShown(self, idx):
         """切回本頁時重套唯讀狀態。"""
@@ -284,9 +308,12 @@ class InputLockMixin:
 
         ⚠️ **只處理降權方向**：升權一定發生在資料庫設定頁（登入在那裡），回到
         本頁必然觸發 `on_activated` 而整份重刷；降權則可能在原地發生（手動登出、
-        閒置自動登出），所以降權這一側必須自己重刷。又因唯讀凍結只鎖一般使用者
-        （見 `_applyInputLock` 與 `row_perm`），對管理身分 early return 不會漏鎖
-        任何情境。
+        閒置自動登出），所以降權這一側必須自己重刷。
+
+        ⚠️ 對管理身分 early return **不是因為唯讀鎖只鎖一般使用者**——唯讀鎖
+        自 2026-08-07 起三種身分一律擋（PITFALLS PRM-6），別再拿舊規則推理。
+        真正的理由是上一段：升權必經設定頁、回本頁必重刷，這裡不做也不會漏。
+        唯讀狀態本身的變化由 `_syncRowPermsOnLockChange` 負責，與身分無關。
         """
         from lib.auth_manager import AuthManager
         if AuthManager.instance().is_manager():
