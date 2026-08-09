@@ -562,6 +562,7 @@ def test_run_application_activates_selected_startup_tab_exactly_once(
 
     monkeypatch.setattr(main_module, "QApplication", _App)
     monkeypatch.setattr(main_module, "installDateEditInputGuard", lambda app: None)
+    monkeypatch.setattr(main_module, "_installChineseTranslator", lambda app: None)
     monkeypatch.setattr(main_module, "MainMenu", _Menu)
     monkeypatch.setattr(main_module, "_buildDocumentManagerOrExit",
                         lambda *args: manager)

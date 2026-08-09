@@ -89,6 +89,35 @@ QToolTip {
     padding: 4px 8px;
 }
 
+/* ── 右鍵選單（QMenu）── */
+QMenu {
+    background-color: #ffffff;
+    border: 1px solid #c6c6c8;
+    border-radius: 8px;
+    padding: 4px;
+}
+QMenu::item {
+    color: #1c1c1e;
+    padding: 6px 56px 6px 32px;
+    border-radius: 6px;
+}
+QMenu::item:selected {
+    background-color: #6e8fac;
+    color: #ffffff;
+}
+QMenu::item:disabled {
+    color: #aeaeb2;
+}
+QMenu::separator {
+    height: 1px;
+    background-color: #e5e5ea;
+    margin: 4px 8px;
+}
+QMenu::icon {
+    width: 16px;
+    height: 16px;
+}
+
 /* ── 輸入框 ── */
 QLineEdit {
     background-color: #ffffff;

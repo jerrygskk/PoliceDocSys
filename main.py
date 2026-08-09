@@ -726,10 +726,55 @@ def _buildDocumentManagerOrExit(loading, results, profile, cleanup_lock):
     return mgr
 
 
+def _installChineseTranslator(app) -> bool:
+    """找到 Qt 官方或打包內的繁中翻譯時安裝；缺檔不影響程式啟動。"""
+    from PySide6.QtCore import QLibraryInfo, QTranslator
+
+    translation_dirs = []
+    try:
+        qt_dir = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+        if qt_dir:
+            translation_dirs.append(qt_dir)
+    except Exception:
+        pass
+
+    try:
+        bundled_dir = getResourcePath("PySide6/translations")
+        if bundled_dir and bundled_dir not in translation_dirs:
+            translation_dirs.append(bundled_dir)
+    except Exception:
+        pass
+
+    for directory in translation_dirs:
+        qm_path = os.path.join(directory, "qtbase_zh_TW.qm")
+        if not os.path.isfile(qm_path):
+            continue
+        try:
+            translator = QTranslator(app)
+        except Exception:
+            continue
+        try:
+            loaded = translator.load(qm_path)
+        except Exception:
+            continue
+        if not loaded:
+            continue
+        try:
+            installed = app.installTranslator(translator)
+        except Exception:
+            continue
+        if not installed:
+            continue
+        app._qtbase_zh_tw_translator = translator
+        return True
+    return False
+
+
 def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
     # 共用入口依 profile 重設未捕捉例外來源，避免獨立版記成完整版產品。
     _setup_error_handler(profile.product_name)
     app = QApplication(sys.argv)
+    _installChineseTranslator(app)
     installDateEditInputGuard(app)
     app.setFont(QFont("Microsoft JhengHei", 14))
     app.setStyleSheet(APPLE_STYLE)
