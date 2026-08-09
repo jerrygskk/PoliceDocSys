@@ -205,41 +205,25 @@ graph LR
   C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe -m unittest tests.test_no_pii
   ```
   其他環境不可假設此絕對路徑存在，應改用已安裝 `requirements-dev.txt` 相同依賴的 Python 執行相同命令。完整 pytest 會一併驗證 packaging／bundle／startup 與 GUI pilot。
-- ⚠️ **不要再用 Codex runtime 那支直譯器跑 gate**（`C:\Users\user\.cache\codex-runtimes\...\python.exe`）：2026-08-03 查核，該環境**沒有 pytest／PySide6／matplotlib**，`-m pytest` 直接 `No module named pytest`，一段 gate 都跑不了。它只有 pypdf／reportlab，而 2026-08-03 之前 `requirements-dev.txt` 那兩行釘的正是**它的**版本——等於清單混了兩個環境，哪一支都對不上。兩支直譯器的差異肉眼看不出來，故改由 `tests/test_environment_contract.py`（`pure` 層）比對「實際安裝版本 vs 釘住版本」，不符即紅、套件沒裝也紅（**不 skip**）。動 `requirements-dev.txt` 或換機器後第一件事就是跑它。
-⚠️ **pytest 必須分非 shell／shell 兩段跑**：`shell` 層包含會建立應用程式行程或完整 shell 的測試；其中 `tests/test_standalone_shell.py` 會在同一行程內反覆建立整個 `DocumentManager`，與其餘模組合跑時累積到一定量必定 native 崩潰（access violation）。兩段各自全綠、合併必崩，詳細證據與已試過無效的兩條修法見 PITFALLS **TST-5**。正式程式不受影響——重啟一律另起新行程（`tab_settings._restartApp`），一個行程一輩子只建一個 `DocumentManager`。五個主層 marker 為 `pure`／`db`／`qt`／`shell`／`packaging`，每個 node 恰屬一層；分類由根 `conftest.py` 的明確模組表與契約測試共同把關。pytest 的 basetemp、cache 與各 xdist worker 的 matplotlib 設定皆放在專案 `.tmp`。
+- ⚠️ **不要用 Codex runtime 那支直譯器跑 gate**（`C:\Users\user\.cache\codex-runtimes\...\python.exe`）：沒有 pytest／PySide6／matplotlib，一段都跑不了。版本對齊由 `tests/test_environment_contract.py`（`pure` 層）比對「實際安裝版本 vs 釘住版本」，不符或沒裝即紅（**不 skip**）。動 `requirements-dev.txt` 或換機器後第一件事就是跑它。
+⚠️ **pytest 必須分非 shell／shell 兩段跑**：`tests/test_standalone_shell.py` 會在同一行程內反覆建立 `DocumentManager`，與其餘模組合跑累積到一定量必定 native 崩潰。兩段各自全綠、合併必崩，證據與已試過無效的修法見 PITFALLS **TST-5**。正式程式不受影響（重啟一律另起新行程，一個行程只建一個 `DocumentManager`）。五個主層 marker `pure`／`db`／`qt`／`shell`／`packaging`，每個 node 恰屬一層，分類由根 `conftest.py` 模組表與契約測試把關。basetemp、cache 與 matplotlib 設定皆放專案 `.tmp`。
 
-- **xdist 裁決**：`pytest-xdist` 只供分層量測。`pure+db` 與 `qt` 已通過 `-n 2
-  --dist loadscope` 重複實驗；`shell` 第 7 輪發生 native worker crash，裁決退回 serial，
-  `packaging` 也維持 serial。正式發布 gate 不加 `-n`，仍使用上方非 shell／shell
-  兩段 serial 指令，不因前兩層實驗通過而改回合併或平行全跑。⚠️ serial 仍非絕對
-  穩定：2026-08-02 依發布順序連跑兩段三次，shell 段 1 次 native crash、2 次通過。
-  ⚠️ **2026-08-03 起 shell 層改為行程隔離**（根 `conftest.py` 的
-  `pytest_runtest_protocol`，`ISOLATED_MODULES` 內每支測試各跑一個子行程，
-  序列不平行），連跑 10 輪零 crash；關閉隔離的對照組 4 輪即崩 1 次。
-  **判讀規則同步改為「crash 一次就算回歸」**，不再有重跑寬限，詳見 PITFALLS
-  **TST-5**。新增會在行程內建立 `DocumentManager` 的測試檔時，必須把檔名補進
-  `ISOLATED_MODULES`；仍不得改用 xdist 硬繞
+- **xdist 裁決**：只供分層量測，正式 gate 不加 `-n`，維持上方兩段 serial。
+  ⚠️ **shell 層為行程隔離**：根 `conftest.py` 的 `pytest_runtest_protocol` 讓
+  `ISOLATED_MODULES` 內每支測試各跑一個子行程。判讀規則為 **native crash 一次即視為回歸**，
+  詳見 PITFALLS **TST-5**。新增會在行程內建立 `DocumentManager` 的測試檔時，
+  檔名必須補進 `ISOLATED_MODULES`；不得改用 xdist 硬繞
 
-- **GUI pilot（八支，2026-08-03～04 建立）**：以真實版面與真實資料庫走完一條使用者流程，
-  補的是「兩端各自有測試、中間那段沒人看」的接縫。
+- **GUI pilot（八支）**：以真實版面與真實資料庫走完一條使用者流程。
   `test_reward_gui_pilot`（敘獎登錄→編輯→發文）／`test_logout_gui_pilot`（登出即關窗，
-  **唯一在 shell 層、需隔離**）／`test_archive_gui_pilot`（歸檔正名與 DB 同步）／
-  `test_settle_gui_pilot`（四種流程發文結算→結算發文，含罰單 strict 併發衝突）／
-  `test_reset_gui_pilot`（跨年度重置的確認→稽核→備份→重置）／
-  `test_restore_gui_pilot`（備份還原）／`test_trash_gui_pilot`（回收筒還原）／
-  `test_settings_panel_pilot`（七個設定面板的 key 接線與髒值判斷）。
-  寫新 pilot 前務必知道三件事（都踩過）：
-  1. **只建單一分頁就留在 `qt` 層**，隔離每支要多付約 0.6 秒子行程成本；只有會建
-     完整 `DocumentManager` 的才進 shell 層並列入 `ISOLATED_MODULES`。
-  2. **收尾必須拆掉掛在 `AuthManager` 單例上的 `role_changed` 連線**，否則會紅在
-     毫不相干的檔案上，見 PITFALLS **TST-6**。
-  3. **一律不得呼叫 `exec()`**（PITFALLS TST-4）；慣用解是把 `exec` 換成「就地驅動」
-     的函式，仍走真實驗證邏輯，只是不進 modal 事件迴圈。
-  4. **設計階段先盤點該流程會彈哪些框**（`msgInfo`／`msgWarning`／`msgCritical`／
-     `confirmBox`／日期防呆／各 Dialog），逐一決定攔掉或斷言它被叫到，見 PITFALLS
-     **TST-7**。這類問題的症狀是「跑到一半停住」而非紅燈，事後查的成本遠高於事前列一張表。
-  ⚠️ pilot 的價值來自**能抓到回歸**，不是綠燈本身：每支交付前都以「故意破壞被測機制、
-  確認對應那支會紅」反證過。新增時照做。
+  **唯一在 shell 層、需隔離**）／`test_archive_gui_pilot`／`test_settle_gui_pilot`／
+  `test_reset_gui_pilot`／`test_restore_gui_pilot`／`test_trash_gui_pilot`／
+  `test_settings_panel_pilot`。寫新 pilot 的四條規則（都踩過）：
+  1. 只建單一分頁就留在 `qt` 層；會建完整 `DocumentManager` 的才進 shell 層並列入 `ISOLATED_MODULES`
+  2. 收尾必須拆掉掛在 `AuthManager` 單例上的 `role_changed` 連線，見 PITFALLS **TST-6**
+  3. 一律不得呼叫 `exec()`（PITFALLS TST-4），改以「就地驅動」的函式走真實驗證邏輯
+  4. 設計階段先盤點該流程會彈哪些框，逐一決定攔掉或斷言，見 PITFALLS **TST-7**
+  ⚠️ 每支交付前都以「故意破壞被測機制、確認對應那支會紅」反證過，新增時照做
 - **無 pytest 環境備援**：只能執行 `python -m unittest discover -s tests -t .`（⚠️ `-t .` 不可省，否則 `tests/__init__.py` 不會載入、日期防呆遮蔽裝不上而整包卡死，見 PITFALLS TST-4）；pytest-only、packaging 與 GUI pilot 可能被跳過，因此不得拿這個結果取代正式 gate。
 - **趨勢紀錄**：根 `conftest.py` 在指定 `PYTEST_RUN_RECORD` 時輸出實際執行 node IDs 與最慢 20 筆；`python -m tools.pytest_trend --collection <collection.json> --layer pure_db=<run.json> --previous <history.jsonl> --output <history.jsonl>` 可追加完整 collection、各層數量／耗時、durations 與相對前次變化。長期結論寫入經審閱的實驗報告，`.tmp` 單次輸出只作原始證據。
 - **PII gate**：`tests/test_no_pii.py` 的文字檔清單只取自 `git ls-files`，因此不掃
@@ -315,9 +299,7 @@ graph LR
 
 ### 可空白日期框（NullableDateEdit）
 
-「查獲日期」這類**可留空、又要能鍵盤手打**的欄位，**不**用 QDateEdit。QDateEdit 是分段遮罩 spinbox，硬以 `minimumDate`＋`specialValueText` 假裝空白會反覆出包——史上踩過：①空白時鍵盤打不動；②滑鼠亂點冒 `1752/1753` 殘值（minimumDate 被步進）；③整格清空後手打半成品被 fixup 還原成舊值。每補一個哨兵的洞就冒下一個，**根因是拿 QDateEdit 當可空白欄**。
-
-治本＝改用 **`ui_utils.widgets.NullableDateEdit(QLineEdit)`**：底層純文字框，天生支援「整格清空 → 自由手打 `2025-01-30`」，無哨兵、無殘值、無 fixup 還原。
+「查獲日期」這類**可留空、又要能鍵盤手打**的欄位，**不**用 QDateEdit（分段遮罩 spinbox，以 `minimumDate`＋`specialValueText` 假裝空白會反覆出包：打不動、冒 `1752` 殘值、手打半成品被 fixup 還原）。改用 **`ui_utils.widgets.NullableDateEdit(QLineEdit)`**。
 
 - **輸入正規化** `normalizeDateText`：離開欄位時把 `20250130`／`2026-0125`／`2026/01/25`／`2026-1-5` 等寫法補成 `yyyy-MM-dd`（先試「年-月-日」三段補零，否則抽出全部數字、剛好 8 碼才拆）。
 - **三態判定** `classifyNullableDate` → `empty`／`valid`／`invalid`（純函式，測試 `tests/test_nullable_date.py`）。空字串＝合法未填。
@@ -496,7 +478,7 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
 
 罰單簽收歸屬日則**唯一依 `Document_Ticket.register_date`**（實際發文／結算日期），與目前採送文者輸入模式或發文結算模式無關；切換模式不得改變歷史罰單的列印歸屬。
 
-**核心設計：發文結算的未發文＝`report_date IS NULL`**（不加新欄位／新表），只適用刑案與一般陳報。敘獎與罰單改以**空字串 `register_date=''`** 為未發文哨兵（`NULL` 是軟刪除哨兵，不可混用，見 §3 三態）。敘獎登錄頁（Tab3）依 `isSelfServiceMode(db, 'reward')` 決定：送文者模式提交即發文（帶所填 `register_date`＋必填 `sender_id`），發文結算模式帶 `''`／`NULL` 待列印頁「結算發文」補值；`create_date=今天` 兩模式皆帶、與模式無關。牽動四處，動這功能逐一檢查：
+**核心設計：發文結算的未發文＝`report_date IS NULL`**（不加新欄位／新表），只適用刑案與一般陳報。敘獎與罰單改以**空字串 `register_date=''`** 為未發文哨兵（`NULL` 是軟刪除哨兵，不可混用，見 §3 三態）。敘獎登錄頁依 `isSelfServiceMode(db, 'reward')` 決定：送文者模式提交即發文，發文結算模式帶 `''`／`NULL` 待結算補值；`create_date=今天` 兩模式皆帶。牽動四處，動這功能逐一檢查：
 
 1. **陳報頁（`tab_report`）**：覆寫 `_applyInputLock` → 先 `super()`（唯讀鎖）再 `_applySelfServiceMode`（發文結算模式下 `rpt_date`／`rpt_sender` 反灰，並顯示黃底提示條 `rpt_sender_hint`）。`_submit` 發文結算模式帶 `report_date=None`／`sender_id=None`；`_submitCriminal`／`_submitGeneral` 驗證在發文結算模式**放行「發文人員」空值**（其餘必填不變）。反灰的陳報日期框以 `specialValueText(" ")` 哨兵**顯示空白**（v1.1.11；僅不可互動狀態使用，無鍵盤路徑、不踩可編輯空白欄的雷；切回送文者模式清哨兵並還原今天；`widgets` 的「日期空值補今天」邏輯對哨兵狀態放行）。
    - ⚠️ **編輯彈窗也要擋（曾漏）**：刑案／一般編輯彈窗（`CriminalEditDialog`／`GeneralEditDialog`）進入點不只陳報頁，還有瀏覽頁／歸檔頁。發文結算模式下**一般使用者**不可手動編輯陳報日期／發文人員（避免繞過結算），故 `_BaseEditDialog._lockReportFieldsIfSelfService()`（載入資料後於兩彈窗 `__init__` 呼叫）在「發文結算模式 **且** `not is_manager()`」時把 `w_report_date`／`w_sender` `setEnabled(False)`。**管理者／歸檔管理者不擋**（仍可手動補正）。停用欄位仍保留載入值，`_on_save` 讀回原值寫回為 no-op，未發文哨兵不變式維持，儲存邏輯不需改。測試 `tests/test_dialog_smoke.py`（一般使用者反灰／管理者不擋／非發文結算模式可編輯／反灰儲存保留原值四情境）。
@@ -514,40 +496,27 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
 
 ### 日期欄防呆（v1.2.10）
 
-**起因是實際事故**：某日刑案陳報登錄 12 筆，簽收表只印得出 4 筆——其中 8 筆的
-`report_date` 年份是隔年（`create_date` 正常），而簽收表只撈「陳報日期＝所選日期」，
-故那 8 筆永遠印不出來。程式寫入的欄位與值都正確，是**日期欄的值在登錄當下被誤改**；
-送文者模式下日期欄是連續登錄共用的（送出後不重設，因為同一天通常要連續登錄好幾筆），
-錯一次就一路錯到底，錯成連續的一整段。
-
-三層處置，缺一不可：
+起因是現場事故：日期欄的值在登錄當下被誤改，而送文者模式下日期欄連續登錄共用（送出後不重設），錯一次就錯成連續的一整段。三層處置，缺一不可：
 
 1. **擋掉誤改途徑**（`ui_utils/widgets.py` 的 `installDateEditInputGuard`）：所有
    `QDateEdit` 停用滾輪、上下／左右／PageUp／PageDown，並強制 `NoButtons`。
-   **保留的改期路徑只剩「打數字」與「月曆挑」兩條。** 左右鍵一併擋是刻意的：
-   切段落本身不改值，但切完接著誤觸上下鍵就會改到別的段落。詳見 PITFALLS
-   **QTW-13**；點擊那條的根因（`calendarPopup` 與 spin 箭頭座標對不起來）見 **QTW-14**。
+   **保留的改期路徑只剩「打數字」與「月曆挑」兩條。** 左右鍵一併擋是刻意的（切完
+   段落接著誤觸上下鍵就會改到別的段落）。詳見 PITFALLS **QTW-13**；點擊那條的根因
+   （`calendarPopup` 與 spin 箭頭座標對不起來）見 **QTW-14**。
 2. **送出前確認**（`ui_utils/date_guard.py`）：發文／收文日期早於今天 1 天、或晚於
-   今天 10 天以上即跳一次提示；查獲／受理日期只看往後、同樣 10 天（往前是常態，
-   案件受理常在數週前）。**只提示不擋**——補登舊案與跨年度作業都正常。
-   **同一頁＋同一欄位＋同一日期本次執行只問一次**：連續登錄十幾筆時每筆都問會被
-   無視，反而失去提醒效果。
-   ⚠️ **記錄鍵帶頁面代號（`scope`）、各頁互不共用**：公文陳報、敘獎登錄、交辦單收文
-   三頁按下送出就直接寫、**沒有內容確認視窗**（交辦單發文有「確認發文」列出發文
-   日期與筆數、結算發文有結算視窗），日期誤改沒有第二道關卡；若共用同一組記錄，
-   在 A 頁確認過某日期後，B 頁的日期欄剛好被誤改成同一天就會靜默放行。`scope`
-   只進記錄鍵、不影響彈窗顯示文字，現行值為 `report`／`reward`／`receive`／
-   `dispatch`／`settle`。**新增呼叫點一律要指定**（省略時退回以欄位名稱當代號，
-   會和同名欄位的別頁共用）。回歸測試 `tests/test_date_guard.py::TestConfirmScope`。
-3. **接在六個送出點**：刑案／一般陳報、敘獎登錄、交辦單發文、交辦單收文、
-   結算發文視窗。結算一次寫多筆，誤改代價最大。
+   今天 10 天以上即跳一次提示；查獲／受理日期只看往後、同樣 10 天。**只提示不擋**
+   （補登舊案與跨年度作業都正常）。**同一頁＋同一欄位＋同一日期本次執行只問一次。**
+   ⚠️ **記錄鍵帶頁面代號（`scope`）、各頁互不共用**——陳報／敘獎／收文三頁沒有內容
+   確認視窗，共用記錄會讓 B 頁被誤改成 A 頁確認過的同一天時靜默放行。現行值
+   `report`／`reward`／`receive`／`dispatch`／`settle`，**新增呼叫點一律要指定**
+   （省略時退回以欄位名稱當代號）。測試 `tests/test_date_guard.py::TestConfirmScope`。
+3. **接在六個送出點**：刑案／一般陳報、敘獎登錄、交辦單發文、交辦單收文、結算發文視窗。
    ⚠️ 交辦單的**限辦日期**與各**編輯彈窗**刻意不套：前者本來就在未來，後者往往正是
    為了補正日期而開。
 
-⚠️ **新增這類「送出前 modal 提示」的通用陷阱**：離線測試只要以非今日日期送出就會叫出
-真的確認框而無限等待（PITFALLS **TST-4**），症狀是整條 gate 掛住不結束。根
-`conftest.py` 已統一自動回「確認無誤」並清掉「本次已確認」的模組層狀態；防呆自己的
-測試則自行覆寫該替身。
+⚠️ **新增這類「送出前 modal 提示」的通用陷阱**：離線測試會叫出真的確認框而無限等待，
+症狀是整條 gate 掛住不結束（PITFALLS **TST-4**）。根 `conftest.py` 已統一自動確認並
+清掉模組層狀態；防呆自己的測試則自行覆寫該替身。
 
 ### 發文頁「已輸入未發文」提醒條（v1.1.11）
 
@@ -674,7 +643,7 @@ python -m PyInstaller --clean --noconfirm Police-Entry-Manager.spec
 
 `force_qt_binaries()` 則相反：把「Python 綁定層已被 excludes 排除、但仍是連結期硬相依」的 Qt DLL 強制收回來（目前是 `Qt6OpenGL.dll`／`Qt6OpenGLWidgets.dll`）。
 
-> **怎麼判斷一支 DLL 能不能砍**：不是看原始碼有沒有 import 那個名字，而是解析包內每個 PE 的 import table、反查「誰在連結它」，沒有任何使用者才是真的能砍（`tools/check_bundle_deps.py` 的 `pe_imports()` 可直接拿來做這件事）。本次 PDF／網路那串就是這樣定案的。剩下的大宗是 `Qt6OpenGL.dll`（1.98MB，被 `Qt6UiTools` 連結期綁住，除非廢掉 `QUiLoader`）。完整版 numpy 的 OpenBLAS（20.4MB）已於 v1.2.9 隨列印頁脫離 matplotlib 一併消失。
+> **怎麼判斷一支 DLL 能不能砍**：不是看原始碼有沒有 import 那個名字，而是解析包內每個 PE 的 import table、反查「誰在連結它」，沒有任何使用者才是真的能砍（`tools/check_bundle_deps.py` 的 `pe_imports()`）。
 
 ⚠️ **改動排除清單後必跑這兩支**（不跑就是拿打包版當測試場）：
 
@@ -684,7 +653,7 @@ python tools/check_bundle_deps.py
 ```
 
 - `check_excludes.py`：讀 spec 自己的 `excludes`／`hiddenimports`，把排除的模組擋掉後逐一 import，抓 **Python 層**的間接相依。**不需要 build**，改完 spec 立刻能跑
-- `check_bundle_deps.py`：解析包內每個 DLL／pyd／exe 的 import table，確認連結期相依都在包裡，抓 **DLL 層**的間接相依。合法例外與程式一致：bundle 內已有、Windows system dirs 內存在、`api-ms-win-*`／`ext-ms-win-*` API-set，以及 `_APISET_TAIL` 所接受的 `l<數字>-<數字>-<數字>.dll`（少數 PE 將 api-set 名稱切成尾段的已知例外）；其餘候選 PE 只要來源缺失或無法解析即 **fail-closed**。目前沒有正常 PE 的通用白名單機制。若未來 fresh build 發現合法誤報，先分辨是哪一種：①**解析器把合法格式判成非法**＝checker 的 bug，要修解析器本身（踩過：import 名稱正規式只認 `.dll`，Qt6PrintSupport 匯入的 `WINSPOOL.DRV` 被判非法，整支產品誤報；PE 模組名合法副檔名還有 `.drv`／`.sys`／`.exe`／`.ocx`／`.cpl`）。**這種情況塞例外清單是把同類錯誤藏起來，下次換個 `.drv`／`.sys` 又炸一次**。②**格式確實無法解析的個案**，才新增針對該檔的精準例外。無論哪一種都不得為了讓檢查通過而放寬「缺件即失敗」的判定。兩支 fresh build 完成後須立即在同次執行 `python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager`，不得沿用舊 `build/`／`PKG-00.toc`
+- `check_bundle_deps.py`：解析包內每個 DLL／pyd／exe 的 import table，確認連結期相依都在包裡，抓 **DLL 層**的間接相依。合法例外與程式一致：bundle 內已有、Windows system dirs 內存在、`api-ms-win-*`／`ext-ms-win-*` API-set，以及 `_APISET_TAIL` 所接受的 `l<數字>-<數字>-<數字>.dll`（少數 PE 將 api-set 名稱切成尾段的已知例外）；其餘候選 PE 只要來源缺失或無法解析即 **fail-closed**，沒有正常 PE 的通用白名單機制。⚠️ 遇到合法誤報先分辨：①解析器把合法格式判成非法＝checker 的 bug，修解析器本身（踩過：正規式只認 `.dll`，`WINSPOOL.DRV` 被判非法；合法副檔名還有 `.drv`／`.sys`／`.exe`／`.ocx`／`.cpl`）——**塞例外清單只是把同類錯誤藏起來**；②真的無法解析的個案才加精準例外。都不得放寬「缺件即失敗」。兩支 fresh build 完成後須立即在同次執行 `python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager`，不得沿用舊 `build/`／`PKG-00.toc`
 
 ### 新增分頁時要改的地方
 
@@ -717,11 +686,7 @@ python tools/check_bundle_deps.py
 | 完整版 | 81.0 MB | 57.2 MB | 55.5 MB | **30.1 MB** |
 | 獨立版 | 52.3 MB | 32.7 MB | **26.6 MB** | 26.6 MB（不變） |
 
-第二輪砍的是 PDF／網路整串與備用外掛（兩支共用），獨立版另砍 OpenSSL 並重壓開機橫幅，故降幅較大。
-
-第三輪（v1.2.9）只動完整版：列印頁改 Qt 原生繪圖後，matplotlib／numpy／PIL 整組移出打包，一次少 25.3 MB（−45.7%）。獨立版本來就不含這三者，故不變。
-
-第三輪（v1.2.9）讓列印頁脫離 matplotlib，連帶把 numpy 的 OpenBLAS（未壓縮 20.4MB）整包移出完整版，是歷來單次降幅最大的一次。剩餘最大單項為 `Qt6OpenGL.dll`（1.98MB，被 `Qt6UiTools` 連結期綁住，除非廢掉 `QUiLoader`）。
+第二輪砍 PDF／網路整串與備用外掛（兩支共用），獨立版另砍 OpenSSL 並重壓開機橫幅。第三輪（v1.2.9）只動完整版：列印頁改 Qt 原生繪圖後 matplotlib／numpy／PIL 整組移出（含 OpenBLAS 未壓縮 20.4MB）。剩餘最大單項為 `Qt6OpenGL.dll`（1.98MB，被 `Qt6UiTools` 連結期綁住，除非廢掉 `QUiLoader`）。
 
 ### 注意事項
 
@@ -787,10 +752,10 @@ CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入�
 
 | 版本 | 摘要 |
 |------|------|
-| v1.2.12 | **個資防呆補破口、停用反灰補齊、舊庫與舊備份的陳報 View 自動補正**。本版來自兩輪獨立 code review（Codex 初審＋Claude 複審），四批改動都以「重現缺陷 → 修 → 反證測試會紅」的順序交付。①**PII gate 會假綠**（最嚴重）：`_tracked_blob` 原本工作樹、index、HEAD **擇一**讀取，工作樹讀得到就回傳。於是「`git add` 帶真名的檔 → 發現後把工作樹改乾淨 → 忘了重新 add」這條常見流程下，gate 全綠而 commit 送出的是 index 那份；已隔離 repo 重現。改為三份**分別掃描取聯集**並穩定去重，另新增 `upstream..HEAD` 逐 commit 掃描——中間 commit 放入真名、後一筆又刪掉時，目前 tree 已乾淨但 push 仍會把那筆推上去，這是聯集也補不到的第二個洞；**沒有 upstream 時明確失敗**，不退回掃全歷史（那會撞上已裁示接受的歷史真名而變成永久紅燈）。②**副檔名白名單改為二進位黑名單**：原本只掃七種副檔名，`.spec`／`.bat`／`.svg`／`.ini`／`.gitattributes` 全在追蹤中卻從未被掃過；改為只排除已知二進位（`.png`／`.ico`／`.db`），其餘一律嘗試 UTF-8 解碼、解不開才略過。③**九顆主要動作鈕停用後外觀零變化**：`lib/theme.py` 的 objectName 群組只寫了 base／hover／pressed，特異度高於 v1.2.11 補的通用 `QPushButton:disabled`，於是唯讀鎖一開，`btn_send`／`btn_recv_submit`／`btn_rpt_submit`／`btn_reward_submit`／`ticket_add` 五顆有實際停用路徑的送出鈕仍是藍的（算繪像素實測停用色與啟用色完全相同），使用者只會一直去點沒有反應的鈕。補上群組 `:disabled` 並改寫該處註解——原註解寫「特化按鈕不受影響、各自負責」，正是讓這個洞留下來的說法。④**舊資料庫／舊備份的陳報 View 自動補正**：v1.2.10 為刑案／一般加 `create_date` 時，主表靠 `ensureSchema` 加欄、View 卻是 `CREATE VIEW IF NOT EXISTS`（不會更新既有 View），舊庫因此停在缺「登錄日期」的舊定義。瀏覽頁只會整欄空白（取值走 `.get`），但編輯彈窗 `get_updated()` 直接 `SELECT 登錄日期`，症狀是**資料已存檔成功、彈窗關閉後才跳未預期錯誤**。原本的補救是不入庫的一次性現場腳本，兩支升級測試因為找不到它而**靜默 skip**，等於唯一的破壞式升級路徑零覆蓋卻顯示為綠。本版改由產品啟動時自行收斂：比對 `sqlite_master` 的 View DDL 與 `_VIEWS` 的 canonical DDL（正規化分詞比對，新庫判為相同、不會每次開機重建），不符才在**單一 transaction** 內 DROP＋CREATE。⚠️ **必須明確 `BEGIN`**——Python `sqlite3` 預設連線的 DDL 走 autocommit，照既有 `_run()` 那樣寫，`rollback()` 救不回已被 DROP 的 View（實測 `in_transaction` 為 False）；已加故障注入測試釘住「CREATE 失敗時舊 View 仍在」。⚠️ **舊資料的 `create_date` 一律不回填**（維護者裁示）：舊列沒有真實登錄日期，拿 `report_date` 當登錄日期是憑空製造一個從不存在的日期，而登錄日期與陳報日期分離正是 v1.2.10 那批資料事故的核心語意；已被舊腳本回填過的資料保留原值。⑤**彈窗公版契約擴充**：原測試宣稱「六個彈窗不得自帶 stylesheet」，實際只斷言 `TaskEditDialog`。改為七個彈窗（六個編輯／設定彈窗＋`SettleDialog`）逐一**實際建構、停用一個真實控制項、驗算繪像素**，建構失敗即紅、不得退化成 skip；`RescueDialog` 是刻意例外（保留元件專屬 QSS 且自帶 `:disabled`），已在清單上方註明理由與它自己的守門測試。連帶移除 `SettleDialog` 的 `QDialog, QWidget` 整窗 QSS——它是 2026-08-07 QSS-8 全面稽核唯一的漏網戶，會蓋掉公版對輸入框／下拉／日期框／按鈕的反灰（算繪實測），雖然該視窗目前沒有停用路徑、尚未形成使用者可見症狀，但留著就是下一次重演 QSS-8 的地雷；文字色一併回到 `TEXT_COLOR`，不再寫死 `#000000`。⑥**文件**：§5 把 View 結構補正從「破壞式」切出（View 不含資料，DROP＋CREATE 在完整 transaction 下可自動處理；改型別／改既有資料仍屬人工核可的破壞式 migration）；刪掉「新彈窗自帶背景與文字 QSS」的作廢樣板（PITFALLS QSS-3 已作廢，照做會製造 QSS-8）；修正唯讀鎖仍豁免 admin／archive、降權清空預覽列（`_onRoleClearList`／`clear_tables`）等已移除行為，§2 對照表與權限上機檢查表第 9／12 列同步；PITFALLS QSS-4 補記「`#danger` 的紅調灰實際在 `ui_utils/rescue_dialog.py`，不在 theme.py」。⚠️ **本版不合併非 shell／shell 兩段 pytest**（維護者裁示，理由見 PITFALLS TST-5）。完整套件 pytest 1147（非 shell）＋49（shell）＋17（PII gate，零 skip）。 |
-| v1.2.11 | **預覽列權限重做、唯讀鎖與停用反灰修正，新增罰單編號長度限制**。①**降權不再清空預覽清單**：原本只要降回一般使用者就把登錄／收發文五頁的預覽整張清掉，敘獎與罰單還連本次登錄清單一起清。那是把資料庫瀏覽頁「僅管理者可改」的規則錯套到登錄頁上——那些列就是承辦人自己剛打進去的東西，打錯字當場自己改掉、按 ✕ 重來是最高頻的操作。維護者指出這是開發初期原本就有的行為，中途被改掉、事後還花時間調回來。改為**逐列重算權限**，規則收斂成 `lib/row_perm.py` 單一來源（純邏輯、不 import Qt）。**凌駕矩陣的原則：不允許擋住還在預覽列裡、剛登錄完的資料的修改與刪除**，例外只有兩個——交辦單發文（它的預覽列是掃入文號從資料庫拉出來的**既有**公文，不是剛登錄的，故維持「未發文三身分可改、已發文只有 admin」）與唯讀鎖。②⚠️ **三態的表示法各頁本來就不同**：敘獎與罰單的未發文是 `register_date=''`、軟刪除是 NULL；刑案與一般陳報的未發文是 `report_date IS NULL`，軟刪除則看主旨欄被清空。畫面上兩者都是空白，故一律回查資料庫、不得讀表格顯示字串（計畫書原先把「NULL＝軟刪除」當全頁通則，照做會把陳報所有未發文列誤判成已刪除）。③**唯讀鎖改為三種身分一律不准動**，連新增一起擋：原本六支硬 gate 與 `_applyInputLock` 都寫 `not is_manager() and isInputLocked(...)`，唯讀開著時管理者照樣新增得了，與「這個功能停用」的語意對不起來；解鎖入口在系統設定、不受本鎖影響。④移除交辦單發文頁四處 `DEBUG_MODE` 權限旁路，其中一處會讓「一般使用者不可改已發文的單」整段硬 gate 被跳過。⑤**編輯彈窗併發防護三套併一套**：原本罰單比對五欄、敘獎比對四欄，而交辦收發文、刑案、一般陳報**完全沒有保護**（誰後存誰蓋掉）；統一改為開窗讀走 `last_modified`、儲存時比對。⚠️ 已知窄縫：只有秒精度，他機修改與開窗落在同一秒時擋不到，已議定接受並以測試釘住。⑥**停用欄位看不出反灰**（現場回報「發文結算模式下開陳報修改視窗，陳報日期與發文人員鎖住了卻長得跟可編輯的一樣」）：根因是三層互相抵銷的錯誤——公版把 `QWidget { transparent }` 寫在視窗底色**之後**（同特異度後者勝，視窗底色被中和成透明、Windows 上渲染成整塊黑），於是補了一條`QDialog > QWidget` 替視窗畫底色，而輸入元件都是 QWidget 又因兩個型別選擇器特異度較高被它匹配到，彈窗再自帶 `_CRIMGEN_QSS` 蓋回白的、順帶把 `:disabled` 一起蓋掉。正解是**把公版兩條規則的順序對調、補丁整條移除**，六個彈窗的區域樣式全部刪掉（彈窗底色因此與其他視窗一致）。另全面稽核區域 QSS 與公版偽狀態的**屬性重疊**，修掉四處同病：`RADIO_STYLE`（與公版逐項相同的複製品，唯讀時選項文字不變灰）、`attachComboHint`（案類欄文字不變灰）、`settings_dialogs`、`rescue_dialog`（**唯一使用者真的會遇到的**：資料庫損毀的救援視窗在沒有可用備份時會停用密碼欄，卻看起來仍可輸入）；公版另補通用 `QPushButton:disabled`（在此之前只有 hover／pressed，每支自訂按鈕都得自己記得補）。⚠️ 樣式驗收一律用**算繪像素**，讀 styleSheet 字串只看得到「有沒有寫這條規則」、看不到「最後誰贏」。⑦**新增罰單編號最少字數**（`App_Settings.ticket_no_min_len`，設定頁「罰單編號長度」面板，僅 admin；**預設 0＝不限制**，字數不足時送出擋下）。檢查點在 `lib/ticket_utils` 的三個寫入入口，登錄頁送出、登錄頁修改彈窗、瀏覽頁編輯一次涵蓋；`AppProfile.system_panels` 兩份都加（獨立版同樣有罰單登錄）。⑧文件：DEVELOPER §10 新增「預覽列權限」分界表與「編輯彈窗的 `last_modified` 樂觀鎖」，PITFALLS 新增 **PRM 組六條**與 **QSS-8**、改寫 QSS-3（原建議已作廢，照做會再製造同一個 bug）與 QSS-4；HELP 罰單頁同步。⚠️ 另修正既有文件錯置：v1.2.10 與 v1.2.9-v6 兩列原本躺在 §2 的跨功能影響對照表裡，本次歸位到 §8。⑨**彈窗外觀回到 v1.2.10 的樣子**：⑥拆掉各彈窗自帶樣式後，底色與輸入框外框跟著消失（維護者上機看到整片灰）。依維護者提議在 `lib/theme.py` 補一段**彈窗公版**（`QDialog` 白底、`QDialog` 內的輸入框統一外框與內距），放在 `QMessageBox` 規則之前以免訊息框跟著變白。⑩**刑案／一般陳報的修改視窗不再出現類別轉換鈕與歸檔狀態區**：那兩處只能在歸檔頁或資料瀏覽頁操作，擺在這裡會誤導；改為**不建立**（不是反灰）。⑪**系統設定面板順序改為單一來源**：`TabSettings._SYSTEM_PANEL_ORDER` 原本只管過濾，畫面排列另有一份寫死的 tuple，兩份各改各的。連帶修掉一個已隨 v1.2.11 出貨的 bug——⑦的罰單編號長度面板漏列進該清單，被靜默過濾掉、畫面上完全不出現且無任何錯誤（單元測試直接建立面板，驗不到組裝路徑，已補組裝路徑測試與讀取版面實際擺放順序的測試）。面板順序依維護者指定：歸檔資料夾／自動備份／簽收表標題／陳報模式／罰單編號長度／唯讀設定／閒置逾時。⑫**閒置逾時改為存檔即時生效**（原為重啟才生效，現場把自動登出 1 分改成 10 分存檔後仍照舊值把人登出，見 PITFALLS **CFG-1**）。完整套件 pytest 1138（非 shell）＋49（shell）＋9（PII gate，零 skip）。<br>**⟪同版號重新發布（tag `v1.2.11` 移至本次 commit，`lib/version.py` 仍為 1.2.11）：唯讀鎖切換的視覺同步與說明文件精簡，無 schema 變動⟫**⑬**唯讀鎖切換後預覽列即時反映**：管理者在設定頁開啟唯讀後切回登錄頁，只有表單反灰與紅色橫幅跟著變，預覽列的 ✕ 與編號欄連結外觀不動——按下去雖會被入口複核擋下（防線在 `_rowActionBlockReason`，不在外觀），但畫面上看起來仍可點，與橫幅寫的「本功能目前無法使用」互相矛盾。改為在 `InputLockMixin._applyInputLock` 末尾記住鎖定狀態，**值真的變了才**重算整份預覽列。⚠️ 刻意不做成每次都刷：該函式每次切頁都會跑，而敘獎與罰單的重算 hook 是整表重建，無條件刷等於每次切頁多重建一次預覽表。⑭**HELP 與速查卡文案精簡定稿**：現場回報說明太長看不到重點，維護者逐頁定稿一輪，原則是「用途一句＋關鍵步驟」，背景理由與少見情境不寫。日期防呆說明由三段縮為一句；唯讀模式橫幅的說明五處全刪（橫幅本身已寫明，解鎖找管理者是常識）；兩種陳報模式改為單一來源的兩句話、一律放灰字補充區而不寫進操作步驟；「俗稱」統一為「通俗用語」。⚠️ **對照程式時修掉三個實際錯誤**：系統設定寫「六個區塊」但實際七個、**缺整個「罰單編號長度」區塊**（⑦新增的設定從未補進 HELP）、唯讀設定寫「一般使用者僅供瀏覽、管理者不受限制」而與③的「三種身分一律擋」相反。⑮**HELP 第 8 頁排列改為與程式一致**（分頁層級照設定頁左側 nav、系統設定內部照 `TabSettings._SYSTEM_PANEL_ORDER`）——使用者是照著畫面找說明的；並以灰字標出「公文快速登錄系統亦有」的九個項目，標的一律以 `ENTRY_PROFILE` 為準。⚠️ 契約測試共動七條斷言，每條都在原處註明原因；其中「本頁不設身分限制」「打錯字可當場自行更正」移除的**只是 HELP 文案**，程式面「預覽列一律可改可刪」的原則未變，仍由 `lib/row_perm.py` 與 `tests/test_row_perm.py` 守著。完整套件 pytest 1134（非 shell）＋49（shell）＋9（PII gate，零 skip）。 |
-| v1.2.10 | **日期欄防呆：擋掉誤改途徑並在送出前確認，無 schema 變動**。起因是現場事故——某日刑案陳報登錄 12 筆，簽收表只印得出 4 筆；查出其中 8 筆的 `report_date` 年份被寫成隔年（`create_date` 正常），而簽收表只撈「陳報日期＝所選日期」，那 8 筆永遠印不出來。程式寫入的欄位與值都正確，是**日期欄的值在登錄當下被誤改**；送文者模式下日期欄連續登錄共用（送出後不重設），錯一次就一路錯到底，錯成連續的一整段。①**擋掉誤改途徑**：所有 `QDateEdit` 停用滾輪、上下／左右／PageUp／PageDown，**保留的改期路徑只剩「打數字」與「月曆挑」**；左右鍵一併擋是因為切完段落接著誤觸上下鍵就會改到別的段落。②**點擊那條的根因**（現場另回報「有些點擊會莫名讓年份 +1」）：`calendarPopup=True` 時 Qt 用下拉式月曆的幾何判斷點擊落在哪個子控制項，但 spin 箭頭仍存在，兩套座標對不起來，**點輸入區等同按到 spin 箭頭而步進目前選取的段落**；格式為 `yyyy-MM-dd`、預設選取年，症狀就是年份 ±1。300×36 實測：`calendarPopup=False` 只有 x=288～294 會改值，`True` 則 x=0～276 幾乎整條都會改。⚠️ 與全域樣式無關（拿掉 `APPLE_STYLE` 結果相同），是 Qt 本身行為。處置為全域強制 `NoButtons`，已驗證月曆照常開啟且**渲染前後逐像素 0 差異**，未動任何 `.ui`／`theme.py`／按鈕樣式。③**送出前確認**（`ui_utils/date_guard.py`）：發文／收文日期早於今天 1 天、或晚於今天 10 天以上即跳一次提示；查獲／受理日期只看往後、同樣 10 天。只提示不擋（補登舊案與跨年度作業都正常），**同一欄位＋同一日期本次執行只問一次**（連續登錄十幾筆時每筆都問會被無視）。接在六個送出點：刑案／一般陳報、敘獎登錄、交辦單發文、交辦單收文、結算發文視窗（一次寫多筆，誤改代價最大）；交辦單限辦日期與各編輯彈窗刻意不套。④⚠️ **加完提示後整條 gate 掛住不結束**——既有測試只要以非今日日期送出就會叫出真的確認框而無限等待（PITFALLS TST-4）；已在根 `conftest.py` 統一自動回「確認無誤」並清掉「本次已確認」的模組層狀態，防呆自己的測試則自行覆寫。⑤文件：DEVELOPER §10 新增「日期欄防呆」，PITFALLS **QTW-13** 改寫、新增 **QTW-14**；HELP 四頁與結算頁、速查卡、README FAQ 同步。<br>**⟪同版號重新發布（tag `v1.2.10` 移至本次 commit，`lib/version.py` 仍為 1.2.10）：用語與提示的收斂，無 schema 變動⟫**⑥**「自助取號模式」全面改名為「發文結算模式」**：舊名容易被誤解成承辦人自己就把文發掉了，實際流程是先取文號、日後由送文者統一結算補齊。改名涵蓋程式、版面、HELP 全文、系統設定的模式選項與 README；⚠️ 程式識別字 `isSelfServiceMode`／`SELF_SERVICE_*` 與 `App_Settings` 的 `report_mode_*` key **刻意維持原名**（同步 70 餘處無實質好處，且會讓 HISTORY 與 git log 的舊名對不上），命名落差寫在 `lib/db_utils.py` 該區塊註解；HISTORY.md 與舊 release note 保留當時用語。資料庫完全未動。⑦**提示條只留模式名**：原本黃底寫「自助取號模式：發文日期與發文人員免填」，冒號後的說明佔滿整條而欄位早已反灰，說明反成噪音；一併**補上公文陳報頁的提示條**（原本只有滑鼠移上去才看得到的 tooltip，深色模式還整塊黑，QSS-7）。⚠️ 提示條放 `Layout3.ui` row0 的 col7／col8，避開 LAY-2b 的模式切換位移，細節見 §5「tab_report.py 特殊架構」。⑧**日期確認框改白話**：「晚於本日 16 天」→「發文日期是 2026-08-20，為 16 天之後」，第二行改為「請檢查日期是否正確，若輸入有誤請返回修正」。⑨**日期防呆的「本次已確認」改為各頁分開記**（`confirmDateGap` 新增 `scope`，只進記錄鍵、不影響顯示文字）：公文陳報、敘獎登錄、交辦單收文三頁按下送出就直接寫、**沒有內容確認視窗**，日期誤改沒有第二道關卡；原本共用同一組記錄時，在 A 頁確認過某日期後，B 頁的日期欄剛好被誤改成同一天就會靜默放行。同頁內連續登錄仍只問一次，作業節奏不變。⚠️ 新增呼叫點一律要指定 `scope`。⑩**陳報兩張預覽表的日期改 `MM/DD`**（原 `MM-DD`），與 DB 的 `YYYY-MM-DD` 一眼區隔；欄寬不受影響（字數相同）。完整套件 pytest 1026（非 shell）＋49（shell）＋9（PII gate，零 skip）。<br>**v1.2.10-v2（同版號重發，`lib/version.py` 仍為 1.2.10）**：敘獎登錄頁的修改視窗補上唯讀的「發文日期／發文人員」兩列，與罰單登錄頁一致。原本罰單登錄修改看得到（唯讀）、敘獎登錄修改完全不建這兩欄，同樣是登錄頁改自家資料卻兩種畫面，也與瀏覽頁對不起來。未發文顯示「未發文」／「－」；用純文字 QLabel 而非反灰輸入框（反灰看起來像「等一下會開放」）。儲存路徑未動，entry 仍不觸碰 `register_date`／`sender_id`，未發文哨兵不變式維持；瀏覽頁（admin 可編輯）不受影響。⚠️ 因版號未進位，exe 版本資訊仍顯示 1.2.10。 |
-| v1.2.9-v6 | **同版號重新發布（tag `v1.2.9-v6`，`lib/version.py` 仍為 1.2.9）：自動化驗收擴充，無功能／schema／UI 變動**。①**新增六支 GUI pilot**（連同既有敘獎 pilot 共八支），以真實版面與真實資料庫走完整條使用者流程，補的都是「兩端各自有測試、中間那段沒人看」的接縫：登出即關窗、檔案歸檔正名與 DB 同步、發文結算到結算發文（四種流程，含罰單 strict 併發衝突整批 rollback）、跨年度重置（確認→稽核→備份→重置）、備份還原、回收筒還原、系統設定六面板的 key 接線與髒值判斷。②**最有價值的兩條不變式**：其一，登錄端寫下的「未發文」哨兵各流程並不一致（陳報寫 NULL、敘獎與罰單寫空字串），而結算端另以 SQL 撈——兩邊分開維護，改壞了兩邊測試都綠、公文卻會從待結算清單無聲消失，故 pilot 一律用真實登錄分頁送出、不以 SQL 塞資料；其二，跨年度重置的稽核**必須寫在備份之前**，因為重置會清空當前庫的操作紀錄，順序顛倒該筆紀錄就永遠消失且無任何錯誤訊息。③**設定面板改以消費端自己的讀取函式斷言**，而非直接查 `App_Settings`：只查 key 的話，寫錯 key 名或正規化方式與讀取端不一致仍會漏，那正是「設定了但沒作用」的成因。④**每支交付前都做反證**——故意破壞被測機制、確認對應那支會紅；替身蓋得掉的機制（如「備份失敗要中止」的 `return`）則直接改原始碼那一行驗紅後還原。**pilot 的價值來自能抓到回歸，不是綠燈本身**。⑤文件：DEVELOPER §4 新增「GUI pilot」條目（八支清單＋三條規則），PITFALLS 新增 **TST-6**（測試建立的分頁沒拆掉 `AuthManager` 單例連線，會讓別的測試檔莫名紅燈；只有特定執行順序才炸，已踩過兩次、兩次都害到同一支罰單測試）。⚠️ 因版號未進位，exe 版本資訊仍顯示 1.2.9，只能靠 Release 頁與檔名區分。完整套件 pytest 995（非 shell）＋49（shell）＋9（PII gate，零 skip）。 |
+| v1.2.12 | **個資防呆補破口、停用反灰補齊、舊庫與舊備份的陳報 View 自動補正**。①PII gate 原本工作樹／index／HEAD 擇一讀取，改乾淨但忘了重新 add 時會假綠；改為三份取聯集，另掃 `upstream..HEAD`，沒有 upstream 即失敗。掃描範圍由副檔名白名單改為二進位黑名單。②`lib/theme.py` 的 objectName 群組缺 `:disabled`，特異度壓過通用規則，五顆送出鈕停用後仍是藍的；補上群組 `:disabled`。③舊庫的 `View_Criminal_Full`／`View_General_Full` 停在缺登錄日期的舊定義（`CREATE VIEW IF NOT EXISTS` 不更新既有 View），編輯彈窗存檔後跳未預期錯誤；改由 `ensureSchema` 比對 canonical DDL、不符才在單一 transaction 內 DROP＋CREATE（須明確 `BEGIN`，否則 DDL 走 autocommit、rollback 救不回）。舊列 `create_date` 不回填。④彈窗公版契約擴充為七個彈窗實際建構＋算繪像素驗證，`SettleDialog` 的整窗 QSS 一併移除。pytest 1147＋49＋17（PII gate，零 skip）。 |
+| v1.2.11 | **預覽列權限重做、唯讀鎖與停用反灰修正，新增罰單編號長度限制**。①降權不再清空預覽清單，改為逐列重算權限，規則收斂於 `lib/row_perm.py`；原則是「還在預覽列裡、剛登錄完的資料一律可改可刪」，例外只有交辦單發文與唯讀鎖（見 §10「預覽列權限」）。②唯讀鎖改為三身分一律受限，移除 `is_manager()` 豁免與交辦發文頁四處 `DEBUG_MODE` 旁路。③五個編輯彈窗的併發防護統一為 `last_modified` 樂觀鎖（原本三套並存、其中三頁完全沒有保護），秒精度窄縫議定接受。④停用欄位看不出反灰：公版兩條規則順序寫反、六個彈窗又各自帶區域 QSS 蓋掉 `:disabled`；改為順序對調＋彈窗一律不設 stylesheet，另補公版 `QPushButton:disabled`（PITFALLS QSS-8）。⑤新增罰單編號最少字數（`ticket_no_min_len`，預設 0＝不限制，檢查點在 `lib/ticket_utils` 三個寫入入口）。⑥系統設定面板順序改為 `_SYSTEM_PANEL_ORDER` 單一來源，連帶修掉罰單編號長度面板被靜默過濾掉的 bug。⑦閒置逾時改為存檔即時生效（PITFALLS CFG-1）。pytest 1138＋49＋9。<br>**⟪同版號重新發布（tag 移至該 commit，`lib/version.py` 仍為 1.2.11）⟫**⑧唯讀鎖切換後預覽列即時反映（鎖定狀態真的變了才重算，不做成每次切頁都刷）。⑨HELP 與速查卡文案精簡定稿，原則「用途一句＋關鍵步驟」；對照程式修掉三處錯誤（區塊數、缺罰單編號長度、唯讀設定的身分描述與程式相反）。⑩HELP 第 8 頁排列改為與程式一致。 |
+| v1.2.10 | **日期欄防呆：擋掉誤改途徑並在送出前確認，無 schema 變動**。起因是現場事故：某日刑案陳報 12 筆只印得出 4 筆，8 筆的 `report_date` 年份被誤寫成隔年，而簽收表只撈「陳報日期＝所選日期」。送文者模式下日期欄連續登錄共用，錯一次就一路錯到底。①所有 `QDateEdit` 停用滾輪與方向鍵並強制 `NoButtons`，改期路徑只剩打數字與月曆挑；點擊改到年份的根因是 `calendarPopup=True` 與 spin 箭頭座標對不起來（PITFALLS QTW-13／QTW-14）。②送出前確認 `ui_utils/date_guard.py`，只提示不擋，同頁同欄同日期本次執行只問一次，接在六個送出點。③離線測試會被這個 modal 卡住，根 `conftest.py` 統一自動確認（PITFALLS TST-4）。pytest 1026＋49＋9。<br>**⟪同版號重新發布⟫**④「自助取號模式」更名「發文結算模式」，程式識別字與 `report_mode_*` key 刻意不改名。⑤陳報頁補上模式提示條（放 `Layout3.ui` row0 col7／col8，避開 LAY-2b）。⑥日期防呆的「本次已確認」改為各頁分開記（`scope`）。⑦陳報預覽日期改 `MM/DD`。<br>**v1.2.10-v2**：敘獎登錄的修改視窗補上唯讀的發文日期／發文人員兩列，與罰單一致；儲存路徑未動。 |
+| v1.2.9-v6 | **同版號重新發布：自動化驗收擴充，無功能／schema／UI 變動**。①新增六支 GUI pilot（連同敘獎共八支），走完整條使用者流程：登出即關窗、歸檔正名、發文結算到結算發文、跨年度重置、備份還原、回收筒還原、設定面板接線。②釘住兩條不變式——未發文哨兵各流程不一致（陳報 NULL、敘獎與罰單空字串），故 pilot 一律用真實分頁送出不以 SQL 塞資料；跨年度重置的稽核必須寫在備份之前。③設定面板改以消費端讀取函式斷言，而非直接查 `App_Settings`。④每支交付前都以「故意破壞、確認會紅」反證。⑤PITFALLS 新增 TST-6。pytest 995＋49＋9。 |
 
 本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.11／v1.2.10／v1.2.9-v6）；**v1.2.5 以前的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
 
@@ -873,13 +838,9 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 > **不管權限與設定怎麼調整，都不允許擋住「還在預覽列裡、剛登錄完」的資料的
 > 修改與刪除。例外只有兩個：交辦單發文，以及唯讀鎖。**
 
-理由是維護者定義的作業節奏：那些預覽列就是承辦人自己這一次打進去的東西，
-打錯字當場自己改掉、按 ✕ 重來，是最高頻的日常操作。任何把它擋下來的規則，
-都會逼使用者為了一個錯字去找管理身分。
-
-⚠️ **這是「改回開發初期的行為」，不是新規則。** 中途曾被改成「降權就把預覽清單
-整張清空」「已發文列鎖住一般使用者」，維護者當時即覺得不合理、事後還得花時間
-調回來。**看到相關程式不要再「修正」一次**——要動先問維護者。
+那些預覽列就是承辦人這一次打進去的東西，打錯字當場改掉、按 ✕ 重來是最高頻操作。
+⚠️ **這是「改回開發初期的行為」，不是新規則**（中途曾被改成「降權即清空預覽清單」
+「已發文列鎖住一般使用者」）。**看到相關程式不要再「修正」一次**——要動先問維護者。
 
 | 頁 | 預覽列的可改／可刪 |
 |---|---|
@@ -926,11 +887,9 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 
 #### 權限上機檢查清單（發版前照表點一遍，約 10～15 分鐘）
 
-離線測試看不到真實 modal 時序、角色切換的畫面連動與替代觸發路徑（雙擊／Enter／右鍵／拖拉），
-**受限身分的權限缺口歷來都是上機才抓到的**（序號欄雙擊繞過排序 gate、modal 期間降權兩例）。
-故發版前依本表逐列點過；新增「受限身分不可做」的功能時**同步補一列**，否則本表腐爛即失效。
-
-「身分」欄是**該用哪個身分去試著做**（預期全部做不到；admin 那列反過來確認做得到）。
+離線測試看不到真實 modal 時序與替代觸發路徑（雙擊／Enter／右鍵／拖拉），**受限身分的權限缺口
+歷來都是上機才抓到的**。發版前依本表逐列點過；新增「受限身分不可做」的功能時**同步補一列**。
+「身分」欄是**該用哪個身分去試著做**（預期全部做不到）。
 
 | # | 受限操作 | 身分 | 要逐條試的觸發路徑 | 預期 |
 |---|----------|------|--------------------|------|
@@ -972,7 +931,7 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 
 - **閒置自動登出** `_idle_timer`，預設 **10 分鐘**，僅 admin／archive 計時，到點 `logout()` 降回一般使用者（程式不關）
 - **閒置自動關閉** `_close_timer`，預設 **14 分半**，不分身分一律計時，到點 `_onIdleClose` 以 **`os._exit(0)` 硬關**（靜默，僅 error.log 留一行）。**關閉前 `_CLOSE_WARN_MS`＝90 秒亮紅色倒數橫幅（v1.1.7）**：計時分兩段，前段 `_close_timer` 計到「開始警示」（`_onIdleWarn`）、後段 `_countdown_timer` 每秒更新橫幅並於歸零呼叫 `_onIdleClose`；**關閉總時限不變**（前段＋警示段＝原值），不影響搶在鎖螢幕前關閉的鐵則。橫幅是 `DocumentManager._buildIdleBanner` 插在 `centralwidget` 的 `mainVerticalLayout` 頂端（**QTabWidget 之外＝應用程式層級**，任何 Tab 都看得見，非各 Tab 各掛）；`_IdleFilter` 任何操作→`_resetCloseTimer()`（停倒數＋藏橫幅＋重計）。`_CLOSE_WARN_MS` 為技術參數不放 UI（強制關閉分鐘數本身已可設）。⚠️ **預設刻意設在 Windows（AD 部署）15 分鐘鎖螢幕之前**：DB／鎖檔在 SMB 網路碟，程式須趕在系統把畫面切回登入前先關並清 `dbfile.lock`；否則鎖螢幕後 A 的程式仍在背景續跑、續更新心跳，會一直卡住別台電腦的 B 登入（鎖螢幕≠暫停行程）。**現場調整（或設 0 停用）時務必維持低於該單位鎖螢幕時間——此約束是維護者層級默契，刻意不放 UI**；UI 只驗證「兩者皆非 0 時關閉 > 登出」
-  - ⚠️ **為何用 `os._exit` 而非 `app.quit()`**：到點當下若有 modal `exec()` 開著（HELP／`confirmBox`／編輯彈窗／`QFileDialog`），`quit()` 只退最內層那個事件迴圈、關不掉主程式（且 `_close_timer` single-shot 已觸發＝自動關閉從此失效）。`os._exit` 不受巢狀事件迴圈影響、一定結束。代價是不走 Qt teardown（印無害收尾警告，`--windowed` 無 console 看不到），故**結束前先手動清鎖檔**
+  - ⚠️ **為何用 `os._exit` 而非 `app.quit()`**：到點當下若有 modal `exec()` 開著，`quit()` 只退最內層事件迴圈、關不掉主程式（且 single-shot 的 `_close_timer` 已觸發＝自動關閉從此失效）。代價是不走 Qt teardown，故**結束前先手動清鎖檔**
 
 **APP 層軟性互斥（`lib/app_lock.py`）**：DB 放網路碟給多機同跑時 SQLite 檔案鎖不保證跨機生效、真同時寫入可能毀損。故在 `dbfile.db` 旁維護鎖檔 `dbfile.lock`（JSON：機器名/使用者/開啟時間/心跳/PID）：
 
@@ -981,52 +940,25 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 - ⚠️ **是勸導不是保證**：可按「仍要開啟」硬上，corruption 風險仍在。不做唯讀模式、不擋 DB 寫入（併發由 SQLite 忙線鎖處理，對應「資料庫忙線中」訊息）。讀寫鎖檔失敗一律靜默退讓
 - 純邏輯（parse/format/is_stale/is_mine/lock_file_path）有測試 `tests/test_app_lock.py`
 
-### 多機無聲覆蓋防護（敘獎 v1.2.6-v2／罰單 2026-08-02）
+### 多機無聲覆蓋防護
 
-APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。敘獎與罰單都是「同一筆會被兩個角色先後編輯」的表（登錄承辦改內容、發文承辦補發文日期），故加上**原值比對（CAS）**，讓後手不會靜默蓋掉先手：
+APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開，故編輯路徑另有並行防護。**現行做法是下一節的 `last_modified` 樂觀鎖**（2026-08-07 起五個彈窗統一），本節只留仍然有效的兩條共通規則：
 
-- **編輯視窗（`ui_utils/reward_dialog.py`）**：載入當下記住 `register_date`／`sender_id`／`reason`／`recipients` 四個原值，儲存時併入 UPDATE 的 WHERE；⚠️ **可為 NULL 的欄位要用 `IS` 比對**，`= NULL` 恆為 false 會讓每次儲存都判成衝突
-- **改不到列時先 `rollback` 再查**：rowcount=0 就地續查會**在同一 transaction 內握著寫入鎖**、拖住其他機器；正確順序是先 rollback 釋放鎖，再以新連線分辨「已被刪除」（`rewardState()` 判 `NULL` 哨兵）與「被他人修改」，兩者訊息不同，衝突一律提示後直接重新載入最新值，不讓使用者在舊值上二次送出
-- **結算發文（`ui_utils/settle_dialog.py` 的 reward entry）**：UPDATE 帶 `WHERE register_date=''` 本身即並行防護——他機已刪（`NULL`）或已發文（有值）時 rowcount=0 自然跳過，不必另做 CAS
-- SQL round-trip 測試在 `tests/test_reward_lost_update_sql.py`
-
-**罰單（2026-08-02 補上，`lib/ticket_utils.py`）**：與敘獎同一套語意，不另創第二種並行控制寫法。
-
-- `updateTicket()`（登錄頁編輯）與 `updateTicketFromBrowse()`（瀏覽頁 admin 編輯）原為
-  **五欄原值 CAS**（`create_date`／`register_date`／`sender_id`／`issuer_id`／`ticket_no`）
-- rowcount≠1 時走 `_raiseTicketUpdateMiss()` 分流：查得到有效列＝`TicketConflictError`（被他機改），
-  查不到＝`TicketNotFoundError`（被刪除），兩者訊息不同；對話框收到衝突會提示後**重新載入該筆最新值**，
-  不讓使用者在舊值上二次送出
-- 測試在 `tests/test_ticket_runtime_cas.py`（domain 層分流）與 `tests/test_ticket_data.py`
+- **改不到列時先 `rollback` 再查**：rowcount=0 就地續查會在同一 transaction 內握著寫入鎖、拖住其他機器；正確順序是先 rollback 釋放鎖，再以新連線分辨「已被刪除」與「被他人修改」，兩者訊息不同；衝突一律提示後重新載入最新值，不讓使用者在舊值上二次送出
+- **罰單 domain 層分流**（`lib/ticket_utils.py`）：rowcount≠1 走 `_raiseTicketUpdateMiss()`，查得到有效列＝`TicketConflictError`、查不到＝`TicketNotFoundError`
+- 測試：`tests/test_reward_lost_update_sql.py`／`tests/test_ticket_runtime_cas.py`／`tests/test_ticket_data.py`
 
 ### 編輯彈窗的 `last_modified` 樂觀鎖（2026-08-07，五個彈窗統一）
 
-⚠️ **本節取代上一節的欄位比對做法**，上面兩段保留只為說明歷史（`git log` 對得上）。
-
-2026-08-07 之前，「你正在存的是一份過期的資料」這件事有**三種做法並存**：罰單比對五個欄位、
-敘獎比對四個欄位（`ui_utils/reward_dialog.py`），而**交辦收發文、刑案陳報、一般陳報完全沒有
-保護**——直接 `UPDATE ... WHERE doc_id=?`，誰後存誰蓋掉。既然要補上缺的三處，三套一併收斂成
-一套：開窗時讀走該筆的 `last_modified` 存成快照，儲存時放進 UPDATE 的 `WHERE`，rowcount=0
-就整筆擋下。
+開窗時讀走該筆的 `last_modified` 存成快照，儲存時放進 UPDATE 的 `WHERE`，rowcount=0 就整筆擋下。取代先前三套並存的欄位比對（罰單五欄、敘獎四欄，交辦收發文與刑案／一般陳報則完全沒有保護）。
 
 - **單一來源**：`lib/db_utils.py` 的 `LAST_MODIFIED_CAS_SQL`、`readLastModified()`，
   與四個共用提示常數（`ROW_GONE_TITLE`／`ROW_GONE_MSG`／`ROW_CHANGED_TITLE`／`ROW_CHANGED_MSG`）。
   各彈窗經 `_BaseEditDialog._snapshotLastModified()` 取快照、`_rejectIfStale()` 判讀
-- **為什麼是 `last_modified` 而不是逐欄位比對**：①欄位比對抓不到「改成 B 又改回 A」，
-  也抓不到不在比對清單裡的欄位被動過；`last_modified` 由 trigger 對**任何**異動更新，涵蓋整列
-  ②不必在每個彈窗維護一份「要比對哪些欄位」的清單——那種清單漏一欄就靜默失效
-- ⚠️ **呼叫端必須傳開窗當下的快照，漏傳直接 `TypeError`**。不可在儲存時重查：那等於拿自己剛
-  讀到的最新值跟自己比，是假保護
-- ⚠️ **已知限制（勿當新 bug 修）**：`last_modified` 只有**秒精度**（trigger 用
-  `datetime('now','localtime')`，見 PITFALLS SQL-7），故「他機的修改與開窗時讀到的異動時間
-  落在同一秒」這個極窄窗擋不到。要撞到必須：這筆在我開窗的同一秒才剛被改過、且他機又在那一秒
-  內再改一次。2026-08-07 與維護者議定**接受**（改毫秒＝動五張主表 trigger 與所有指紋比較點，
-  須另立經核可的全域計畫）。⚠️ **不要為了補這個縫把欄位比對加回去並存**——兩套機制並存正是
-  這次要消滅的東西。此限制由 `tests/test_ticket_runtime_cas.py::TestKnownBlindSpot` 明確釘住
-- ⚠️ **登錄頁彈窗不提供發文日期／發文人員欄位，是權限設計的一部分**
-  （`ui_utils/reward_dialog.py`、`ui_utils/ticket_dialog.py` 的 `source='entry'` 分支只放唯讀
-  `QLabel`，儲存路徑也不觸碰 `register_date`／`sender_id`）。**日後若把這兩個 `QLabel` 換成任何
-  可輸入的元件，必須同步補欄位級複核**，否則這道防線會無聲失效且不會有測試變紅
+- **為什麼是 `last_modified` 而不是逐欄位比對**：欄位比對抓不到「改成 B 又改回 A」與清單外的欄位被動過，且每個彈窗各維護一份清單漏一欄就靜默失效；`last_modified` 由 trigger 對**任何**異動更新，涵蓋整列
+- ⚠️ **呼叫端必須傳開窗當下的快照，漏傳直接 `TypeError`**。不可在儲存時重查（等於拿自己剛讀到的最新值跟自己比，是假保護）
+- ⚠️ **已知限制（勿當新 bug 修）**：`last_modified` 只有**秒精度**（PITFALLS SQL-7），他機修改與開窗落在同一秒時擋不到。2026-08-07 議定**接受**（改毫秒須動五張主表 trigger 與所有指紋比較點，另立計畫）。⚠️ **不要為了補這個縫把欄位比對加回去並存。** 由 `tests/test_ticket_runtime_cas.py::TestKnownBlindSpot` 釘住
+- ⚠️ **登錄頁彈窗不提供發文日期／發文人員欄位，是權限設計的一部分**（`reward_dialog.py`／`ticket_dialog.py` 的 `source='entry'` 分支只放唯讀 `QLabel`，儲存路徑不觸碰 `register_date`／`sender_id`）。**日後換成可輸入元件必須同步補欄位級複核**，否則這道防線會無聲失效且不會有測試變紅
 - **結算發文**（`ui_utils/settle_dialog.py`）不走樂觀鎖：UPDATE 帶 `WHERE register_date=''`
   本身即並行防護——他機已刪（`NULL`）或已發文（有值）時 rowcount=0 自然跳過
 - 測試：`tests/test_reward_lost_update_sql.py`（SQL round-trip）、`tests/test_ticket_data.py`
@@ -1037,10 +969,9 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開。�
 ⚠️ **按鈕反灰、頁籤隱藏、stack 遮罩都攔不住「已經開啟的視窗」**：Qt modal 有自己的巢狀事件迴圈，
 管理身分開著確認框時若閒置自動登出，回到 handler 後仍會用舊權限往下做。
 
-2026-08-02 的處置是逐條流程補「確認後再檢查一次」（見下一節），但那是補丁：每條流程各補一次、
-新增流程要記得補，漏一條就是一個洞。**2026-08-03 起改為在降權當下直接關掉所有開啟中的對話框**
-（`DocumentManager._closeOpenDialogs`，由 `_onRoleChanged` 在處理分頁顯隱**之前**呼叫）——
-確認鈕根本按不到，就不會有「按下去才發現沒權限」的情形，日後新增的視窗自動涵蓋。
+正解是**降權當下直接關掉所有開啟中的對話框**（`DocumentManager._closeOpenDialogs`，由
+`_onRoleChanged` 在處理分頁顯隱**之前**呼叫），日後新增的視窗自動涵蓋；下一節的逐條複核
+退為第二道。
 
 - **維護者裁示的原則**：**確認鍵按下前一律視同未改變**。故未完成的輸入直接丟棄、不保留、
   **不寫任何中繼紀錄**（稽核只記真正成交的那一筆）
