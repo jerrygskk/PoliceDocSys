@@ -8,6 +8,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from collections import Counter
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -18,7 +19,18 @@ from PySide6.QtWidgets import QApplication, QDateEdit, QLabel, QTableWidget
 import res.resources_rc
 _app = QApplication.instance() or QApplication([])
 
-from lib.db_schema import applySchema
+from lib.db_schema import applySchema, ensureSchema
+
+
+def _dominant_rgb(widget):
+    """回傳元件實際算繪面積最大的 RGB；避開文字、邊框與下拉箭頭。"""
+    image = widget.grab().toImage()
+    colors = Counter()
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            colors[(color.red(), color.green(), color.blue())] += 1
+    return colors.most_common(1)[0][0]
 
 
 def _make_db_file():
@@ -110,6 +122,33 @@ class TestEditDialogs(_DialogBase):
         dlg = CriminalEditDialog(self.db, "2")
         self.assertEqual(dlg.w_subject.text(), "刑案主旨")
         dlg.deleteLater()
+
+    def test_upgraded_report_views_support_get_updated(self):
+        from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute("DROP VIEW View_Criminal_Full")
+            conn.execute("DROP VIEW View_General_Full")
+            conn.execute(
+                "CREATE VIEW View_Criminal_Full AS "
+                "SELECT doc_id AS '送文編號' FROM Document_Criminal")
+            conn.execute(
+                "CREATE VIEW View_General_Full AS "
+                "SELECT doc_id AS '送文編號' FROM Document_General")
+            conn.commit()
+        finally:
+            conn.close()
+
+        ensureSchema(self.db)
+
+        for cls, doc in ((CriminalEditDialog, "2"),
+                         (GeneralEditDialog, "3")):
+            with self.subTest(dialog=cls.__name__):
+                dlg = cls(self.db, doc)
+                try:
+                    self.assertEqual(dlg.get_updated()[1], "2026-07-16")
+                finally:
+                    dlg.deleteLater()
 
     def test_report_page_hides_convert_button_and_archive_group(self):
         """⚠️ 陳報頁的修改視窗**不建立**類別轉換鈕與歸檔狀態區塊。
@@ -945,6 +984,66 @@ class TestReportPreviewCreateDate(_DialogBase):
         tab.gen_table.deleteLater()
 
 
+class TestDialogGlobalThemeContract(_DialogBase):
+    """六個編輯彈窗與結算彈窗都實際建構、顯示並由公版處理停用態。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from lib.theme import APPLE_STYLE
+        cls._old_style = _app.styleSheet()
+        _app.setStyleSheet(APPLE_STYLE)
+
+    @classmethod
+    def tearDownClass(cls):
+        _app.setStyleSheet(cls._old_style)
+
+    def test_dialog_factories_render_disabled_controls_from_global_theme(self):
+        from ui_utils.edit_dialog import (
+            CriminalEditDialog, GeneralEditDialog, TaskEditDialog,
+        )
+        from ui_utils.reward_dialog import RewardEditDialog
+        from ui_utils.settings_dialogs import REF_PERSONNEL, RefItemDialog
+        from ui_utils.settle_dialog import SettleDialog
+        from ui_utils.ticket_dialog import TicketEditDialog
+
+        # ⚠️ `RescueDialog` **刻意不在這份清單裡**，不是漏列：它保留一份元件專屬
+        # QSS（標題紅字與 `#danger` 還原鈕，公版沒有這兩樣），且該份 QSS 自帶
+        # `:disabled`，符合 PITFALLS QSS-8 的判準。它的停用態由
+        # `tests/test_dialog_disabled_style.py::test_rescue_dialog_password_field_greys_out`
+        # 以算繪像素單獨守著（資料庫損毀時停用密碼欄那條）。要新增例外請比照
+        # 辦理：在此註明理由，並確認該彈窗另有算繪像素測試。
+        factories = (
+            ("TaskEditDialog", lambda: TaskEditDialog(self.db, "1"), "w_subject"),
+            ("CriminalEditDialog", lambda: CriminalEditDialog(self.db, "2"), "w_subject"),
+            ("GeneralEditDialog", lambda: GeneralEditDialog(self.db, "3"), "w_subject"),
+            ("RewardEditDialog", lambda: RewardEditDialog(self.db, "4"), "w_reason"),
+            ("TicketEditDialog", lambda: TicketEditDialog(self.db, "5"), "w_ticket_no"),
+            ("RefItemDialog", lambda: RefItemDialog(REF_PERSONNEL, self.db), "w_name"),
+            ("SettleDialog", lambda: SettleDialog(self.db), "issue_date"),
+        )
+
+        for name, factory, control_name in factories:
+            with self.subTest(dialog=name):
+                dlg = factory()  # fixture 不完整或建構失敗必須直接使測試失敗
+                try:
+                    dlg.show()
+                    _app.processEvents()
+                    control = getattr(dlg, control_name)
+                    control.setEnabled(False)
+                    _app.processEvents()
+                    self.assertEqual(
+                        _dominant_rgb(control), (0xE5, 0xE5, 0xEA),
+                        f"{name} 的停用控制項被整窗區域 QSS 蓋掉公版反灰")
+                    # 僅為輔助契約；主要驗收是上面的實際算繪像素。
+                    self.assertEqual(
+                        dlg.styleSheet(), "",
+                        f"{name} 不得設定整窗 stylesheet")
+                    self.assertFalse(dlg.grab().isNull(), f"{name} 無法實際算繪")
+                finally:
+                    dlg.close()
+                    dlg.deleteLater()
+
+
 class TestSettleDialog(_DialogBase):
     def test_theme_contract_uses_global_controls_and_shared_buttons(self):
         """結算視窗只保留專用狀態樣式，其餘控制項繼承全域 theme。"""
@@ -977,13 +1076,7 @@ class TestSettleDialog(_DialogBase):
             self.assertNotIn("font-family", dlg._tbl.styleSheet())
             self.assertEqual(dlg.btn_confirm.styleSheet(), BTN_CONFIRM)
             self.assertEqual(dlg.btn_cancel.styleSheet(), BTN_CANCEL)
-            self.assertIn("QDialog", dlg.styleSheet())
-            self.assertIn("QWidget", dlg.styleSheet())
-            self.assertIn("background-color: #ffffff", dlg.styleSheet().lower())
-            self.assertIn("color: #000000", dlg.styleSheet().lower())
-            self.assertNotIn("QLineEdit", dlg.styleSheet())
-            self.assertNotIn("QComboBox", dlg.styleSheet())
-            self.assertNotIn("QDateEdit", dlg.styleSheet())
+            self.assertEqual(dlg.styleSheet(), "")
             self.assertIn("QTableWidget::item:hover", dlg._tbl.styleSheet())
             self.assertIn("QCheckBox::indicator:indeterminate", dlg._tbl.styleSheet())
             self.assertIn("QPushButton#chip:checked", dlg._chips["all"].styleSheet())

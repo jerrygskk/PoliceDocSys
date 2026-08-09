@@ -242,7 +242,7 @@ class TestThemeTicketAddButton(unittest.TestCase):
     def test_ticket_add_in_submit_button_palette(self):
         theme_src = (ROOT / "lib" / "theme.py").read_text(encoding="utf-8")
         start = theme_src.index("送出按鈕")
-        end = theme_src.index("只歸紙本禁用態", start)
+        end = theme_src.index("Tab 標籤", start)
         block = theme_src[start:end]
         for selector in ("QPushButton#ticket_add,",
                          "QPushButton#ticket_add:hover,",

@@ -10,9 +10,7 @@
 """
 import os
 import sys
-import shutil
 import sqlite3
-import subprocess
 import tempfile
 import unittest
 
@@ -23,12 +21,6 @@ from lib.db_utils import (
     nextDocId, listInactiveRefItems, performYearEndReset,
     getSetting, setSetting, resolveArchivedPdf, ARCHIVE_ROOT_KEY,
 )
-
-FIX_REPORT_CREATE_DATE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "fix_add_report_create_date.py",
-)
-
 
 def _build_schema(conn):
     # 直接套用正式 schema 的「程式碼唯一來源」，避免測試自刻假 schema 與正式走鐘。
@@ -112,44 +104,15 @@ class TestGetConn(_DbTestBase):
         self.assertEqual(val, 3000)
 
 
-@unittest.skipUnless(
-    os.path.isfile(FIX_REPORT_CREATE_DATE),
-    "一次性 fix 腳本刻意不入庫；僅在維護者工作區存在時驗證",
-)
-class TestReportCreateDateFix(unittest.TestCase):
+class TestReportCreateDateUpgrade(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.tmpdir.name, "dbfile.db")
-        self.fix_script = os.path.join(
-            self.tmpdir.name, "fix_add_report_create_date.py")
-        shutil.copy2(FIX_REPORT_CREATE_DATE, self.fix_script)
 
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def _run_fix(self):
-        return subprocess.run(
-            [sys.executable, self.fix_script],
-            cwd=self.tmpdir.name,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            env={
-                **os.environ,
-                "PYTHONPATH": os.path.dirname(FIX_REPORT_CREATE_DATE),
-            },
-        )
-
-    def _backup_names(self):
-        return [
-            name for name in os.listdir(self.tmpdir.name)
-            if name.startswith("dbfile.before_report_create_date_")
-            and name.endswith(".db")
-        ]
-
-    def test_backfills_rebuilds_views_and_is_idempotent(self):
+    def test_preserves_values_rebuilds_views_and_is_idempotent(self):
         _build_legacy_report_schema(self.db_path)
         conn = sqlite3.connect(self.db_path)
         try:
@@ -166,8 +129,7 @@ class TestReportCreateDateFix(unittest.TestCase):
         finally:
             conn.close()
 
-        result = self._run_fix()
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        db_schema.ensureSchema(self.db_path)
 
         conn = sqlite3.connect(self.db_path)
         try:
@@ -181,12 +143,12 @@ class TestReportCreateDateFix(unittest.TestCase):
                     "PRAGMA table_info(Document_General)")].count(
                         "create_date"),
                 1)
-            self.assertEqual(conn.execute(
+            self.assertIsNone(conn.execute(
                 "SELECT create_date FROM Document_Criminal "
-                "WHERE doc_id='C1'").fetchone()[0], "2026-07-01")
-            self.assertEqual(conn.execute(
+                "WHERE doc_id='C1'").fetchone()[0])
+            self.assertIsNone(conn.execute(
                 "SELECT create_date FROM Document_General "
-                "WHERE doc_id='G1'").fetchone()[0], "2026-07-02")
+                "WHERE doc_id='G1'").fetchone()[0])
             self.assertIsNone(conn.execute(
                 "SELECT create_date FROM Document_Criminal "
                 "WHERE doc_id='C-DELETED'").fetchone()[0])
@@ -206,12 +168,22 @@ class TestReportCreateDateFix(unittest.TestCase):
                 "(doc_id, create_date, report_date, subject_summary) "
                 "VALUES(?, ?, ?, ?)",
                 ("C-NEW", "2026-07-29", "2026-07-28", "新版刑案"))
+            conn.execute(
+                "INSERT INTO Document_General"
+                "(doc_id, create_date, report_date, subject) "
+                "VALUES(?, ?, ?, ?)",
+                ("G-NEW", "2026-07-30", "2026-07-29", "新版一般"))
+            self.assertEqual(conn.execute(
+                "SELECT 登錄日期 FROM View_Criminal_Full "
+                "WHERE 送文編號='C-NEW'").fetchone()[0], "2026-07-29")
+            self.assertEqual(conn.execute(
+                "SELECT 登錄日期 FROM View_General_Full "
+                "WHERE 送文編號='G-NEW'").fetchone()[0], "2026-07-30")
             conn.commit()
         finally:
             conn.close()
 
-        rerun = self._run_fix()
-        self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+        db_schema.ensureSchema(self.db_path)
         conn = sqlite3.connect(self.db_path)
         try:
             self.assertEqual(conn.execute(
@@ -229,14 +201,39 @@ class TestReportCreateDateFix(unittest.TestCase):
                 1)
         finally:
             conn.close()
-        self.assertEqual(len(self._backup_names()), 2)
+
+    def test_restored_legacy_backup_converges_on_restart(self):
+        backup_path = os.path.join(self.tmpdir.name, "monthly_backup.db")
+        _build_legacy_report_schema(backup_path)
+        restored_path = os.path.join(self.tmpdir.name, "restored.db")
+        source = sqlite3.connect(backup_path)
+        restored = sqlite3.connect(restored_path)
+        try:
+            source.backup(restored)
+        finally:
+            source.close()
+            restored.close()
+
+        db_schema.ensureSchema(restored_path)
+
+        conn = sqlite3.connect(restored_path)
+        try:
+            self.assertIn("create_date", [r[1] for r in conn.execute(
+                "PRAGMA table_info(Document_Criminal)")])
+            self.assertIn("登錄日期", [r[1] for r in conn.execute(
+                "PRAGMA table_info(View_Criminal_Full)")])
+            self.assertIn("登錄日期", [r[1] for r in conn.execute(
+                "PRAGMA table_info(View_General_Full)")])
+            self.assertIsNone(conn.execute(
+                "SELECT create_date FROM Document_Criminal "
+                "WHERE doc_id='C1'").fetchone()[0])
+        finally:
+            conn.close()
 
     def test_pending_rows_do_not_block_schema_upgrade(self):
         _build_legacy_report_schema(self.db_path, pending=True)
 
-        result = self._run_fix()
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        db_schema.ensureSchema(self.db_path)
         conn = sqlite3.connect(self.db_path)
         try:
             self.assertIn("create_date", [
@@ -248,16 +245,15 @@ class TestReportCreateDateFix(unittest.TestCase):
             self.assertIsNone(conn.execute(
                 "SELECT create_date FROM Document_Criminal "
                 "WHERE doc_id='C-PENDING'").fetchone()[0])
-            self.assertEqual(conn.execute(
+            self.assertIsNone(conn.execute(
                 "SELECT create_date FROM Document_General "
-                "WHERE doc_id='G-PENDING'").fetchone()[0], " ")
+                "WHERE doc_id='G-PENDING'").fetchone()[0])
             self.assertIn("登錄日期", [r[1] for r in conn.execute(
                 "PRAGMA table_info(View_Criminal_Full)")])
             self.assertIn("登錄日期", [r[1] for r in conn.execute(
                 "PRAGMA table_info(View_General_Full)")])
         finally:
             conn.close()
-        self.assertEqual(len(self._backup_names()), 1)
 
 
 class TestNextDocId(_DbTestBase):

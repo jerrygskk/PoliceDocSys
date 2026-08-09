@@ -146,13 +146,6 @@ SETTLE_META = (
 
 _META_BY_KEY = {m["key"]: m for m in SETTLE_META}
 
-_SURFACE_SS = """
-QDialog, QWidget {
-    background-color: #ffffff;
-    color: #000000;
-}
-"""
-
 _TABLE_SS = """
 QTableWidget {
     background-color: #ffffff; color: #1c1c1e;
@@ -544,7 +537,6 @@ class SettleDialog(QDialog):
         self.setWindowTitle("結算發文")
         self.setMinimumWidth(1000)
         self.setMinimumHeight(620)
-        self.setStyleSheet(_SURFACE_SS)
         self._settled = False
         self._settled_date = None
         self._build()

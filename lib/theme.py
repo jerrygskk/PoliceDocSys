@@ -236,8 +236,8 @@ QPushButton:pressed {
    `:disabled`——每一支自訂樣式的按鈕都得自己記得補一行，忘了就不會反灰
    （PITFALLS QSS-4 記過的雷，長年靠人記得）。而「按鈕反灰」是本專案權限與
    流程的主要視覺提示，少了它使用者會一直去點沒有反應的鈕。
-   ⚠️ 帶 objectName 的特化按鈕（#deleteBtn、#btn_send 等）特異度較高不受影響，
-   它們各自的 `:disabled` 照舊由自己負責。 */
+   ⚠️ 帶 objectName 的特化按鈕（#deleteBtn、#btn_send 等）特異度較高，不會
+   自動吃到這條；每個特化 selector 群組都必須另有明確的 `:disabled` 規則。 */
 QPushButton:disabled {
     background-color: #e5e5ea;
     color: #aeaeb2;
@@ -298,9 +298,16 @@ QPushButton#crim_do_archive:pressed,
 QPushButton#gen_do_archive:pressed {
     background-color: #39649a;
 }
-/* 只歸紙本禁用態（未選公文）*/
+/* 主要動作鈕停用態：九顆共用同一規則，避免 objectName selector 蓋掉通用灰。 */
+QPushButton#btn_send:disabled,
+QPushButton#btn_recv_submit:disabled,
+QPushButton#btn_rpt_submit:disabled,
+QPushButton#btn_reward_submit:disabled,
+QPushButton#ticket_add:disabled,
 QPushButton#crim_paper_only:disabled,
-QPushButton#gen_paper_only:disabled {
+QPushButton#gen_paper_only:disabled,
+QPushButton#crim_do_archive:disabled,
+QPushButton#gen_do_archive:disabled {
     background-color: #d1d9e3;
     color: #ffffff;
 }

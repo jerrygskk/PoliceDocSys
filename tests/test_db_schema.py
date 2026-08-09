@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """db_schema.ensureSchema 冪等確保附加式結構（純 stdlib，可單測）。"""
 import os
+import re
 import sys
 import tempfile
 import sqlite3
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib import db_schema
@@ -124,7 +126,7 @@ class TestEnsureSchema(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_upgrades_legacy_report_tables_without_backfill_or_view_rebuild(self):
+    def test_upgrades_legacy_report_tables_without_backfill_and_rebuilds_views(self):
         conn = sqlite3.connect(self.db)
         try:
             conn.execute(
@@ -170,8 +172,220 @@ class TestEnsureSchema(unittest.TestCase):
             self.assertIsNone(conn.execute(
                 "SELECT create_date FROM Document_General WHERE doc_id='G1'"
             ).fetchone()[0])
-            self.assertNotIn("登錄日期", _cols(conn, "View_Criminal_Full"))
-            self.assertNotIn("登錄日期", _cols(conn, "View_General_Full"))
+            self.assertIn("登錄日期", _cols(conn, "View_Criminal_Full"))
+            self.assertIn("登錄日期", _cols(conn, "View_General_Full"))
+        finally:
+            conn.close()
+
+    def test_rebuilds_both_report_views_atomically(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            db_schema.applySchema(conn)
+            conn.execute("DROP VIEW View_Criminal_Full")
+            conn.execute("DROP VIEW View_General_Full")
+            conn.execute(
+                "CREATE VIEW View_Criminal_Full AS "
+                "SELECT doc_id AS '舊刑案欄' FROM Document_Criminal")
+            conn.execute(
+                "CREATE VIEW View_General_Full AS "
+                "SELECT doc_id AS '舊一般欄' FROM Document_General")
+            conn.commit()
+        finally:
+            conn.close()
+
+        broken_views = list(db_schema._VIEWS)
+        general_index = next(
+            i for i, sql in enumerate(broken_views)
+            if "View_General_Full" in sql)
+        broken_views[general_index] = (
+            "CREATE VIEW IF NOT EXISTS View_General_Full AS SELECT FROM")
+        with mock.patch.object(db_schema, "_VIEWS", tuple(broken_views)):
+            db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(
+                conn.execute("SELECT 舊刑案欄 FROM View_Criminal_Full").fetchall(),
+                [])
+            self.assertEqual(
+                conn.execute("SELECT 舊一般欄 FROM View_General_Full").fetchall(),
+                [])
+        finally:
+            conn.close()
+
+    def test_skips_view_repair_if_report_column_addition_still_failed(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute(
+                "CREATE TABLE Document_Criminal (doc_id TEXT PRIMARY KEY)")
+            conn.execute(
+                "CREATE TABLE Document_General (doc_id TEXT PRIMARY KEY)")
+            conn.execute(
+                "CREATE VIEW View_Criminal_Full AS "
+                "SELECT doc_id AS '舊刑案欄' FROM Document_Criminal")
+            conn.execute(
+                "CREATE VIEW View_General_Full AS "
+                "SELECT doc_id AS '舊一般欄' FROM Document_General")
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch.object(db_schema, "_add_column", return_value=None):
+            db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertNotIn("create_date", _cols(conn, "Document_Criminal"))
+            self.assertEqual(_cols(conn, "View_Criminal_Full"), ["舊刑案欄"])
+            self.assertEqual(_cols(conn, "View_General_Full"), ["舊一般欄"])
+        finally:
+            conn.close()
+
+    def test_preserves_existing_report_create_dates_while_repairing_views(self):
+        db_schema.ensureSchema(self.db)
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute(
+                "INSERT INTO Document_Criminal(doc_id, create_date) "
+                "VALUES('C-FILLED', '2026-07-15')")
+            conn.execute(
+                "INSERT INTO Document_General(doc_id, create_date) "
+                "VALUES('G-FILLED', '2026-07-16')")
+            conn.execute("DROP VIEW View_Criminal_Full")
+            conn.execute("DROP VIEW View_General_Full")
+            conn.execute(
+                "CREATE VIEW View_Criminal_Full AS "
+                "SELECT doc_id AS '送文編號' FROM Document_Criminal")
+            conn.execute(
+                "CREATE VIEW View_General_Full AS "
+                "SELECT doc_id AS '送文編號' FROM Document_General")
+            conn.commit()
+        finally:
+            conn.close()
+
+        db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(conn.execute(
+                "SELECT create_date FROM Document_Criminal "
+                "WHERE doc_id='C-FILLED'").fetchone()[0], "2026-07-15")
+            self.assertEqual(conn.execute(
+                "SELECT create_date FROM Document_General "
+                "WHERE doc_id='G-FILLED'").fetchone()[0], "2026-07-16")
+        finally:
+            conn.close()
+
+    def test_equivalent_view_formatting_is_not_rebuilt(self):
+        db_schema.ensureSchema(self.db)
+        conn = sqlite3.connect(self.db)
+        try:
+            original = conn.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type='view' AND name='View_Criminal_Full'").fetchone()[0]
+            reformatted = re.sub(
+                r"\bAS '([^']+)'", r'AS "\1"', original).replace(
+                    "\n", "  \n")
+            conn.execute("DROP VIEW View_Criminal_Full")
+            conn.execute(reformatted)
+            conn.commit()
+            stored_before = conn.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type='view' AND name='View_Criminal_Full'").fetchone()[0]
+        finally:
+            conn.close()
+
+        db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            stored_after = conn.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type='view' AND name='View_Criminal_Full'").fetchone()[0]
+            self.assertEqual(stored_after, stored_before)
+        finally:
+            conn.close()
+
+    def test_view_literal_whitespace_difference_triggers_rebuild(self):
+        db_schema.ensureSchema(self.db)
+        canonical = next(
+            sql for sql in db_schema._VIEWS if "View_General_Full" in sql)
+        altered = canonical.replace("THEN '已歸檔'", "THEN '已 歸檔'")
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute("DROP VIEW View_General_Full")
+            conn.execute(altered)
+            conn.execute(
+                "INSERT INTO Document_General"
+                "(doc_id, subject, is_electronic) VALUES('G1', '主旨', 'file.pdf')")
+            conn.commit()
+        finally:
+            conn.close()
+
+        db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(conn.execute(
+                "SELECT 電子檔 FROM View_General_Full "
+                "WHERE 送文編號='G1'").fetchone()[0], "已歸檔")
+        finally:
+            conn.close()
+
+    def test_view_literal_escaped_quote_difference_triggers_rebuild(self):
+        db_schema.ensureSchema(self.db)
+        canonical = next(
+            sql for sql in db_schema._VIEWS if "View_General_Full" in sql)
+        altered = canonical.replace(
+            "ELSE '否' END AS '紙本'", "ELSE '否''' END AS '紙本'")
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute("DROP VIEW View_General_Full")
+            conn.execute(altered)
+            conn.execute(
+                "INSERT INTO Document_General"
+                "(doc_id, subject, is_reported) VALUES('G1', '主旨', 0)")
+            conn.commit()
+        finally:
+            conn.close()
+
+        db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(conn.execute(
+                "SELECT 紙本 FROM View_General_Full "
+                "WHERE 送文編號='G1'").fetchone()[0], "否")
+        finally:
+            conn.close()
+
+    def test_non_ascii_identifier_difference_triggers_rebuild(self):
+        db_schema.ensureSchema(self.db)
+        canonical = next(
+            sql for sql in db_schema._VIEWS if "View_Criminal_Full" in sql)
+        altered = canonical.replace("CS.status_name", "Cſ.status_name")
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute("DROP VIEW View_Criminal_Full")
+            conn.execute(altered)
+            conn.execute(
+                "INSERT INTO Ref_Case_Status(status_id, status_name) "
+                "VALUES('CS01', '現行')")
+            conn.execute(
+                "INSERT INTO Document_Criminal"
+                "(doc_id, subject_summary, case_status) "
+                "VALUES('C1', '案由', 'CS01')")
+            conn.commit()
+        finally:
+            conn.close()
+
+        db_schema.ensureSchema(self.db)
+
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(conn.execute(
+                "SELECT 發文分類 FROM View_Criminal_Full "
+                "WHERE 送文編號='C1'").fetchone()[0], "現行")
         finally:
             conn.close()
 

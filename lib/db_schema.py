@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
-"""啟動時冪等確保結構存在（只增不改），並作為 schema 的「程式碼唯一來源」。
+"""啟動時冪等確保結構存在，並作為 schema 的「程式碼唯一來源」。
 
 界線（重要）：
   - 只放 CREATE ... IF NOT EXISTS 與「缺欄才加」的 ADD COLUMN——冪等、零資料風險。
-  - 破壞性變更（改型別、改既有資料、改 View 定義）不放這裡，走一次性手動腳本
-    （改 View 需 DROP VIEW 後重建，IF NOT EXISTS 不會更新既有 View）。
+  - 改型別或改既有資料仍屬破壞性變更，只走經核可的人工 migration。
+  - 刑案／一般顯示 View 無實體資料；ensureSchema 在主表欄位完整後，
+    會以本檔 _VIEWS 的 canonical DDL 和單一 transaction 自動收斂。
   - 全部表/View/Trigger/索引 在此登記＝唯一來源；`tools/gen_shell_db.py` 用本檔＋
     `db_seed` 產出乾淨空殼，測試也用本檔建表，三方共用同一份定義、不再走鐘。
-  - 對既有現場庫：全 IF NOT EXISTS，已存在＝no-op，不動既有資料、免 migration。
+  - 對既有現場庫：表／欄位只增不改，兩張陳報 View 只收斂結構，
+    不動既有資料。
   - 失敗只記 error.log，絕不拋例外、絕不擋開程式（同 db_backup / app_lock 哲學）。
 """
 import os
 import logging
+import re
 import sqlite3
 
 # 所有資料表（含基礎空殼表）。逐句獨立執行（見 ensureSchema）。
@@ -138,7 +141,7 @@ _COLUMNS = (
     ("Document_Reward", "create_date", "DATE"),
 )
 
-# 三個顯示用 View（JOIN 參照表＋算狀態）。改定義須手動 DROP 重建（見上界線）。
+# 四個顯示用 View（JOIN 參照表＋算狀態）。
 _VIEWS = (
     # View_Criminal_Full
     """CREATE VIEW IF NOT EXISTS View_Criminal_Full AS
@@ -229,6 +232,14 @@ LEFT JOIN Ref_Personnel AS s ON s.staff_id = t.sender_id
 LEFT JOIN Ref_Personnel AS i ON i.staff_id = t.issuer_id""",
 )
 
+_REPORT_VIEW_NAMES = ("View_Criminal_Full", "View_General_Full")
+_REPORT_CREATE_DATE_COLUMNS = (
+    ("Document_Criminal", "create_date"),
+    ("Document_General", "create_date"),
+)
+_ASCII_CASE_TRANSLATION = str.maketrans(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
 # 主表的 last_modified 自動更新 trigger。
 _TRIGGERS = (
     # trg_crim_insert
@@ -314,6 +325,7 @@ def ensureSchema(db_path):
     try:
         conn = sqlite3.connect(db_path)
         applySchema(conn)
+        _repair_report_views(conn)
     except Exception:
         logging.error("ensureSchema 異常", exc_info=True)
     finally:
@@ -354,3 +366,126 @@ def _add_column(conn, table, column, decl):
             conn.commit()
     except Exception:
         logging.error("ensureSchema 加欄失敗", exc_info=True)
+
+
+def _view_name(sql):
+    """從 _VIEWS 的 CREATE VIEW DDL 取出 View 名。"""
+    match = re.match(
+        r"\s*CREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+        r"(?:[\"'`\[])?([^\s\"'`\]]+)",
+        sql,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1) if match else None
+
+
+def _normalize_view_sql(sql):
+    """分詞 SQL：忽略無意義排版，但完整保留 literal 與 identifier。"""
+    tokens = []
+    text = sql or ""
+    punctuation = set("(),.;=<>!+-*/%")
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch.isspace():
+            i += 1
+            continue
+
+        if ch in ("'", '"', "`"):
+            delimiter = ch
+            content = []
+            i += 1
+            while i < len(text):
+                if text[i] == delimiter:
+                    if i + 1 < len(text) and text[i + 1] == delimiter:
+                        content.append(delimiter)
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                content.append(text[i])
+                i += 1
+            is_alias = bool(tokens and tokens[-1] == ("word", "as"))
+            kind = "identifier" if delimiter != "'" or is_alias else "string"
+            tokens.append((kind, "".join(content)))
+            continue
+
+        if ch == "[":
+            end = text.find("]", i + 1)
+            if end < 0:
+                tokens.append(("invalid", text[i:]))
+                break
+            tokens.append(("identifier", text[i + 1:end]))
+            i = end + 1
+            continue
+
+        if ch in punctuation:
+            tokens.append(("symbol", ch))
+            i += 1
+            continue
+
+        start = i
+        while (i < len(text) and not text[i].isspace()
+               and text[i] not in punctuation
+               and text[i] not in "'\"`["):
+            i += 1
+        tokens.append(("word", text[start:i].translate(
+            _ASCII_CASE_TRANSLATION)))
+
+    optional = (("word", "if"), ("word", "not"), ("word", "exists"))
+    for index in range(len(tokens) - 2):
+        if tuple(tokens[index:index + 3]) == optional:
+            del tokens[index:index + 3]
+            break
+    if tokens and tokens[-1] == ("symbol", ";"):
+        tokens.pop()
+    return tuple(tokens)
+
+
+def _repair_report_views(conn):
+    """以單一 transaction 原子收斂刑案／一般 View；失敗則保留舊 View。"""
+    for table, column in _REPORT_CREATE_DATE_COLUMNS:
+        columns = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            logging.error(
+                "ensureSchema 略過陳報 View 修復：%s.%s 仍不存在",
+                table, column)
+            return
+
+    canonical = {
+        name: sql
+        for sql in _VIEWS
+        if (name := _view_name(sql)) in _REPORT_VIEW_NAMES
+    }
+    missing_ddl = [name for name in _REPORT_VIEW_NAMES if name not in canonical]
+    if missing_ddl:
+        logging.error(
+            "ensureSchema 略過陳報 View 修復：canonical DDL 缺少 %s",
+            ", ".join(missing_ddl))
+        return
+
+    current = {
+        name: sql
+        for name, sql in conn.execute(
+            "SELECT name, sql FROM sqlite_master "
+            "WHERE type='view' AND name IN (?, ?)",
+            _REPORT_VIEW_NAMES,
+        )
+    }
+    candidates = [
+        name for name in _REPORT_VIEW_NAMES
+        if _normalize_view_sql(current.get(name))
+        != _normalize_view_sql(canonical[name])
+    ]
+    if not candidates:
+        return
+
+    try:
+        conn.execute("BEGIN")
+        for name in candidates:
+            conn.execute(f'DROP VIEW IF EXISTS "{name}"')
+            conn.execute(canonical[name])
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        logging.error("ensureSchema 陳報 View 修復失敗，已 rollback", exc_info=True)

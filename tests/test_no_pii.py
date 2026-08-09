@@ -1,9 +1,12 @@
 """個資防呆：push 前確認 git 追蹤內容未命中本機已知 denylist。
 
 設計重點：
-  - 掃描清單只來自 ``git ls-files``，不含 untracked／ignored（如正式 dbfile.db）。
-    tracked path 依序讀安全工作樹、index、HEAD；工作樹 path 的 target 與各層 parent
-    必須都留在 repo 內，不跟隨外部 symlink／junction。
+  - 目前狀態的掃描清單只來自 index 與 HEAD tree，不含 untracked／ignored
+    （如正式 dbfile.db）。tracked path 分別讀安全工作樹、index、HEAD；工作樹
+    path 的 target 與各層 parent 必須都留在 repo 內，不跟隨外部
+    symlink／junction，但仍掃 index／HEAD blob。
+  - 逐一掃描 ``@{upstream}..HEAD`` 每個尚未推送 commit 的完整 tree；沒有
+    upstream 時明確失敗，避免掃全歷史或靜默假綠。
   - 另在專案 ``.tmp`` 產一份乾淨空殼（tools/gen_shell_db）掃其位元組，驗證
     db_seed 未命中 denylist。
   - 比對清單 tests/pii_denylist.local.txt 為本機檔（已 gitignore，不入庫，
@@ -24,8 +27,8 @@ import unittest
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DENYLIST = os.path.join(_ROOT, "tests", "pii_denylist.local.txt")
-# 只掃會帶字串個資的文字類追蹤檔；二進位 dbfile.db 另以 blob bytes 掃。
-_TEXT_EXT = (".py", ".md", ".txt", ".ui", ".qrc", ".sql", ".json")
+# 其餘追蹤檔一律嘗試 UTF-8 解碼，只有已知二進位格式明確排除。
+_BINARY_EXT = (".png", ".ico", ".db")
 
 
 class TestScreenshotSeedCandidate(unittest.TestCase):
@@ -113,6 +116,7 @@ class TestTrackedWorktreeScanning(unittest.TestCase):
     """以隔離 git repo 驗證 tracked 工作樹的掃描邊界。"""
 
     DENIED = "禁止姓名"
+    OTHER_DENIED = "另一禁名"
 
     def setUp(self):
         temp_root = Path(_ROOT) / ".tmp"
@@ -172,6 +176,19 @@ class TestTrackedWorktreeScanning(unittest.TestCase):
             self._scan(), [f"staged-deleted.txt：{self.DENIED}"]
         )
 
+    def test_staged_denied_content_is_scanned_when_worktree_is_clean(self):
+        path = self._commit_file("tracked.txt", "乾淨內容")
+        path.write_text(self.DENIED, encoding="utf-8")
+        self._git("add", "tracked.txt")
+        path.write_text("工作樹已清乾淨", encoding="utf-8")
+        self.assertEqual(self._scan(), [f"tracked.txt：{self.DENIED}"])
+
+    def test_head_denied_content_is_scanned_when_index_and_worktree_are_clean(self):
+        path = self._commit_file("tracked.txt", self.DENIED)
+        path.write_text("index 與工作樹都乾淨", encoding="utf-8")
+        self._git("add", "tracked.txt")
+        self.assertEqual(self._scan(), [f"tracked.txt：{self.DENIED}"])
+
     def test_deleted_worktree_file_falls_back_to_head(self):
         path = self._commit_file("deleted.txt", self.DENIED)
         path.unlink()
@@ -181,6 +198,41 @@ class TestTrackedWorktreeScanning(unittest.TestCase):
         self._commit_file(".gitignore", "ignored.txt\n")
         (self.repo / "ignored.txt").write_text(self.DENIED, encoding="utf-8")
         self.assertEqual(self._scan(), [])
+
+    def test_tracked_text_with_non_whitelisted_extensions_is_scanned(self):
+        self._commit_file("baseline.txt", "乾淨內容")
+        for relative in ("release.spec", "run.bat", "icon.svg"):
+            path = self.repo / relative
+            path.write_text(self.DENIED, encoding="utf-8")
+            self._git("add", relative)
+        self.assertEqual(
+            self._scan(),
+            [
+                f"icon.svg：{self.DENIED}",
+                f"release.spec：{self.DENIED}",
+                f"run.bat：{self.DENIED}",
+            ],
+        )
+
+    def test_same_path_and_name_across_sources_is_reported_once_stably(self):
+        for relative in ("b.txt", "a.txt"):
+            path = self.repo / relative
+            path.write_text(
+                f"{self.OTHER_DENIED} {self.DENIED}", encoding="utf-8"
+            )
+            self._git("add", relative)
+        self._git("commit", "-m", "test fixture")
+        self.assertEqual(
+            _scan_tracked_text(
+                self.repo, [self.OTHER_DENIED, self.DENIED]
+            ),
+            [
+                f"a.txt：{self.OTHER_DENIED}",
+                f"a.txt：{self.DENIED}",
+                f"b.txt：{self.OTHER_DENIED}",
+                f"b.txt：{self.DENIED}",
+            ],
+        )
 
     def test_parent_symlink_outside_repo_is_not_followed(self):
         clean = self.repo / "clean-blob.txt"
@@ -205,6 +257,106 @@ class TestTrackedWorktreeScanning(unittest.TestCase):
             except OSError as exc:
                 self.skipTest(f"目前環境不可建立目錄 symlink：{exc}")
             self.assertEqual(self._scan(), [])
+
+    def test_external_symlink_is_not_followed_but_denied_index_blob_is_scanned(self):
+        index_source = self.repo / "index-source.txt"
+        index_source.write_text(self.DENIED, encoding="utf-8")
+        object_id = self._git(
+            "hash-object", "-w", "index-source.txt"
+        ).stdout.strip()
+        index_source.unlink()
+        self._git(
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            f"100644,{object_id},linked/secret.txt",
+        )
+
+        temp_root = Path(_ROOT) / ".tmp"
+        with tempfile.TemporaryDirectory(
+            prefix="pii-external-clean-test-", dir=temp_root
+        ) as outside_dir:
+            outside = Path(outside_dir)
+            (outside / "secret.txt").write_text("外部乾淨內容", encoding="utf-8")
+            try:
+                os.symlink(outside, self.repo / "linked", target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"目前環境不可建立目錄 symlink：{exc}")
+            self.assertEqual(
+                self._scan(), [f"linked/secret.txt：{self.DENIED}"]
+            )
+
+
+class TestOutgoingCommitScanning(unittest.TestCase):
+    """以隔離 git repo 驗證只掃描尚未推送的每個 commit tree。"""
+
+    DENIED = "禁止姓名"
+
+    def setUp(self):
+        temp_root = Path(_ROOT) / ".tmp"
+        temp_root.mkdir(exist_ok=True)
+        self._temp = tempfile.TemporaryDirectory(
+            prefix="pii-outgoing-test-", dir=temp_root
+        )
+        self.repo = Path(self._temp.name)
+        self._git("init")
+        self._git("config", "user.email", "pii-test@example.invalid")
+        self._git("config", "user.name", "PII Test")
+
+    def tearDown(self):
+        self._temp.cleanup()
+
+    def _git(self, *args):
+        return subprocess.run(
+            ["git", "-C", str(self.repo), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+
+    def _commit_file(self, relative: str, content: str):
+        path = self.repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        self._git("add", relative)
+        self._git("commit", "-m", "test fixture")
+        return path
+
+    def _set_local_upstream(self):
+        self._git("branch", "upstream-base")
+        self._git("branch", "--set-upstream-to=upstream-base")
+
+    def _scan(self):
+        scanner = globals().get("_scan_outgoing_text")
+        self.assertIsNotNone(scanner, "尚未提供 outgoing commit 掃描介面")
+        return scanner(self.repo, [self.DENIED])
+
+    def test_deleted_in_later_commit_still_hits_earlier_outgoing_commit(self):
+        path = self._commit_file("baseline.txt", "乾淨內容")
+        self._set_local_upstream()
+        path.write_text(self.DENIED, encoding="utf-8")
+        self._git("add", "baseline.txt")
+        self._git("commit", "-m", "outgoing A")
+        path.unlink()
+        self._git("add", "baseline.txt")
+        self._git("commit", "-m", "outgoing B deletes file")
+        self.assertEqual(self._scan(), [f"baseline.txt：{self.DENIED}"])
+
+    def test_history_before_upstream_is_not_scanned(self):
+        path = self._commit_file("legacy.txt", self.DENIED)
+        path.write_text("已於 upstream 前清除", encoding="utf-8")
+        self._git("add", "legacy.txt")
+        self._git("commit", "-m", "clean baseline")
+        self._set_local_upstream()
+        self.assertEqual(self._scan(), [])
+
+    def test_missing_upstream_fails_and_requests_comparison_base(self):
+        self._commit_file("baseline.txt", "乾淨內容")
+        with self.assertRaisesRegex(
+            RuntimeError, r"upstream.*指定比較基準|指定比較基準.*upstream"
+        ):
+            self._scan()
 
 
 def _git_at(root, *args):
@@ -266,16 +418,34 @@ def _git_blob(root, object_spec):
     return result.stdout if result.returncode == 0 else None
 
 
-def _tracked_blob(root, relative):
-    """安全工作樹優先，其次 index，最後才回退 HEAD。"""
-    worktree_blob = _safe_worktree_blob(root, relative)
-    if worktree_blob is not None:
-        return worktree_blob
-    for object_spec in (f":{relative}", f"HEAD:{relative}"):
-        blob = _git_blob(root, object_spec)
-        if blob is not None:
-            return blob
-    return b""
+def _git_paths(root, *args):
+    result = subprocess.run(
+        ["git", "-C", os.fspath(root), *args],
+        capture_output=True,
+    )
+    if result.returncode:
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise RuntimeError(f"git {' '.join(args)} 失敗：{stderr}")
+    return [
+        raw.decode("utf-8")
+        for raw in result.stdout.split(b"\x00")
+        if raw
+    ]
+
+
+def _is_known_binary(relative):
+    return relative.lower().endswith(_BINARY_EXT)
+
+
+def _has_head(root):
+    result = subprocess.run(
+        ["git", "-C", os.fspath(root), "rev-parse", "--verify", "-q", "HEAD"],
+        capture_output=True,
+    )
+    if result.returncode not in (0, 1):
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise RuntimeError(f"git rev-parse HEAD 失敗：{stderr}")
+    return result.returncode == 0
 
 
 def _text_hits(relative, blob, deny):
@@ -286,18 +456,75 @@ def _text_hits(relative, blob, deny):
     return [f"{relative}：{name}" for name in deny if name in text]
 
 
+def _stable_unique(items):
+    return list(dict.fromkeys(items))
+
+
 def _scan_tracked_text(root, deny):
-    """按安全工作樹、index、HEAD 順序掃描 git ls-files 所列文字檔。"""
-    tracked = _git_at(root, "ls-files", "-z").split(b"\x00")
+    """分別掃描安全工作樹、index、HEAD 的所有可解碼追蹤檔。"""
+    tracked = set(_git_paths(root, "ls-files", "-z"))
+    if _has_head(root):
+        tracked.update(
+            _git_paths(root, "ls-tree", "-r", "--name-only", "-z", "HEAD")
+        )
     hits = []
-    for raw_relative in tracked:
-        if not raw_relative:
+    for relative in sorted(tracked):
+        if _is_known_binary(relative):
             continue
-        relative = raw_relative.decode("utf-8")
-        if not relative.lower().endswith(_TEXT_EXT):
-            continue
-        hits.extend(_text_hits(relative, _tracked_blob(root, relative), deny))
-    return hits
+        blobs = (
+            _safe_worktree_blob(root, relative),
+            _git_blob(root, f":{relative}"),
+            _git_blob(root, f"HEAD:{relative}"),
+        )
+        for blob in blobs:
+            if blob is not None:
+                hits.extend(_text_hits(relative, blob, deny))
+    return _stable_unique(hits)
+
+
+def _resolve_upstream(root):
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            os.fspath(root),
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
+        capture_output=True,
+    )
+    if result.returncode:
+        raise RuntimeError(
+            "目前分支找不到 upstream；請指定比較基準後再執行 PII gate"
+        )
+    return result.stdout.decode("utf-8").strip()
+
+
+def _scan_outgoing_text(root, deny):
+    """掃描 upstream..HEAD 每個 commit 的完整 tree，不回溯既有歷史。"""
+    upstream = _resolve_upstream(root)
+    commits = _git_at(root, "rev-list", "--reverse", f"{upstream}..HEAD")
+    hits = []
+    for commit in commits.decode("ascii").splitlines():
+        paths = _git_paths(
+            root, "ls-tree", "-r", "--name-only", "-z", commit
+        )
+        for relative in paths:
+            if _is_known_binary(relative):
+                continue
+            blob = _git_blob(root, f"{commit}:{relative}")
+            if blob is None:
+                raise RuntimeError(f"無法讀取 commit {commit} 的 {relative}")
+            hits.extend(_text_hits(relative, blob, deny))
+    return _stable_unique(hits)
+
+
+def _scan_repository_text(root, deny):
+    return _stable_unique(
+        _scan_tracked_text(root, deny) + _scan_outgoing_text(root, deny)
+    )
 
 
 def _load_denylist():
@@ -322,8 +549,8 @@ class TestNoPII(unittest.TestCase):
             )
 
     def test_tracked_text_files_clean(self):
-        """所有 git 追蹤的文字檔不得含 denylist 真名。"""
-        hits = _scan_tracked_text(_ROOT, self.deny)
+        """目前三來源與所有尚未推送 commit 均不得含 denylist 真名。"""
+        hits = _scan_repository_text(_ROOT, self.deny)
         self.assertEqual(
             hits, [],
             "git 追蹤檔含真實人名，替換後才能 push：\n  " + "\n  ".join(hits))

@@ -59,6 +59,7 @@ ENABLED_BG = (0xFF, 0xFF, 0xFF)
 NORMAL_TEXT = (0x1C, 0x1C, 0x1E)
 DISABLED_TEXT = (0xAE, 0xAE, 0xB2)
 DANGER_ENABLED = (0xE7, 0x4C, 0x3C)    # 救援視窗還原鈕（#danger）可用時的紅
+PRIMARY_ACTION_ENABLED = (0xA1, 0xB4, 0xCB)
 
 
 def _corner_color(widget):
@@ -254,6 +255,48 @@ class TestTemplateCoversEveryDisabledState(unittest.TestCase):
         dlg.show(); btn.setEnabled(False); _app.processEvents()
         self.assertEqual(_dominant_color(btn), DISABLED_BG,
                          "一般按鈕停用後沒有反灰")
+
+    def test_primary_action_buttons_have_a_distinct_disabled_rendering(self):
+        """主要動作 ID selector 不得蓋掉通用停用態。
+
+        五顆有現行唯讀鎖路徑；兩顆 paper-only 與兩顆 archive 鈕則只驗同一
+        selector 群組的一致性。objectName 從公版 base selector 動態解析，避免
+        測試另養一份九顆清單。
+        """
+        from PySide6.QtWidgets import QPushButton, QVBoxLayout
+
+        match = re.search(
+            r"((?:QPushButton#[\w_]+\s*,\s*)+QPushButton#[\w_]+)\s*\{"
+            r"\s*background-color:\s*#a1b4cb;",
+            STYLE_RULES,
+            flags=re.I,
+        )
+        self.assertIsNotNone(match, "找不到主要動作鈕的 base selector 群組")
+        object_names = re.findall(r"QPushButton#([\w_]+)", match.group(1))
+        self.assertEqual(len(object_names), 9, "主要動作鈕群組應含九個 objectName")
+
+        dlg = QDialog()
+        QVBoxLayout(dlg)
+        self.addCleanup(dlg.deleteLater)
+        for object_name in object_names:
+            btn = QPushButton(object_name)
+            btn.setObjectName(object_name)
+            dlg.layout().addWidget(btn)
+        dlg.show()
+        _app.processEvents()
+
+        for btn in dlg.findChildren(QPushButton):
+            with self.subTest(object_name=btn.objectName()):
+                btn.setEnabled(True)
+                _app.processEvents()
+                enabled = _dominant_color(btn)
+                self.assertEqual(enabled, PRIMARY_ACTION_ENABLED)
+                btn.setEnabled(False)
+                _app.processEvents()
+                disabled = _dominant_color(btn)
+                self.assertNotEqual(
+                    disabled, enabled,
+                    f"#{btn.objectName()} 停用後仍維持主要動作色")
 
     def test_radio_text_greys_out(self):
         """`RADIO_STYLE` 已移除（與公版逐項相同的複製品，但漏了 `:disabled`）。
