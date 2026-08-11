@@ -214,11 +214,12 @@ graph LR
   詳見 PITFALLS **TST-5**。新增會在行程內建立 `DocumentManager` 的測試檔時，
   檔名必須補進 `ISOLATED_MODULES`；不得改用 xdist 硬繞
 
-- **GUI pilot（八支）**：以真實版面與真實資料庫走完一條使用者流程。
+- **GUI pilot（九支）**：以真實版面與真實資料庫走完一條使用者流程。
   `test_reward_gui_pilot`（敘獎登錄→編輯→發文）／`test_logout_gui_pilot`（登出即關窗，
   **唯一在 shell 層、需隔離**）／`test_archive_gui_pilot`／`test_settle_gui_pilot`／
   `test_reset_gui_pilot`／`test_restore_gui_pilot`／`test_trash_gui_pilot`／
-  `test_settings_panel_pilot`。寫新 pilot 的四條規則（都踩過）：
+  `test_settings_panel_pilot`／`test_date_guard_gui_pilot`（日期防呆確認框，
+  `qt` 層）。寫新 pilot 的四條規則（都踩過）：
   1. 只建單一分頁就留在 `qt` 層；會建完整 `DocumentManager` 的才進 shell 層並列入 `ISOLATED_MODULES`
   2. 收尾必須拆掉掛在 `AuthManager` 單例上的 `role_changed` 連線，見 PITFALLS **TST-6**
   3. 一律不得呼叫 `exec()`（PITFALLS TST-4），改以「就地驅動」的函式走真實驗證邏輯
