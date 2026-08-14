@@ -88,6 +88,13 @@ class _BrowseBase(unittest.TestCase):
         self.tabs.addTab(QWidget(), "瀏覽")
         self.tab = TabDBBrowse(self.tabs, self.db)
         self.tab.setup(0)
+        # 本檔用固定的過去日期建資料，測的是差異更新與三結構對齊，不是期間篩選。
+        # 罰單／敘獎的「近期」預設啟用會把這些列藏起（測 setRowHidden 的斷言就會
+        # 誤判為資料沒同步），故此處關掉；該鈕自身行為由 test_browse_recent.py 顧。
+        for key in ("ticket", "reward"):
+            btn = self.tab._ui.get(key, {}).get("recent")
+            if btn:
+                btn.setChecked(False)
         self.addCleanup(self.tabs.deleteLater)
 
     def tearDown(self):

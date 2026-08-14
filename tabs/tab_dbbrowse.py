@@ -18,7 +18,7 @@ from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, refreshDeleteBtns, applyLinkStyle,
     TaskEditDialog, CriminalEditDialog, GeneralEditDialog, runWithBusy, preserveScroll,
-    LinkCursorFilter,
+    LinkCursorFilter, attachStickyScroll,
 )
 from ui_utils.reward_dialog import RewardEditDialog
 from ui_utils.ticket_dialog import TicketEditDialog
@@ -167,6 +167,7 @@ TABLE_META = {
         "dialog": RewardEditDialog, "raw": True, "dialog_kwargs": {"source": "browse"},
         "active_where": REWARD_ACTIVE_SQL, "sort_numeric": True,
         "pending_date_col": "register_date",
+        "recent_date_col": "create_date",
     },
     "ticket": {
         "cols": TICKET_COLS, "view": "Document_Ticket_Full",
@@ -174,6 +175,7 @@ TABLE_META = {
         "dialog": TicketEditDialog, "dialog_kwargs": {"source": "browse"},
         "active_where": TICKET_ACTIVE_SQL, "sort_numeric": True,
         "pending_date_col": "register_date",
+        "recent_date_col": "create_date",
         "admin_only_edit": True, "delete_handler": deleteTicket,
     },
 }
@@ -206,6 +208,31 @@ def queryBrowseRows(conn, key):
     cur = conn.execute(sql)
     names = [d[0] for d in cur.description]
     return [dict(zip(names, row)) for row in cur.fetchall()]
+
+
+# ── 「近期」篩選（罰單／敘獎）─────────────────────────────
+# 罰單一年約四千筆，攤開全表人工翻找吃力。footer 的切換鈕按下時只留最近兩週
+# 登錄的資料（含今天共 14 天的滾動視窗），預設啟用。純日期字串比較，不轉型別。
+RECENT_DAYS = 14
+
+
+def recentCutoff(today, days=RECENT_DAYS):
+    """回傳「近期」視窗的起始日（含）。today 為 ISO 日期字串。"""
+    from datetime import date, timedelta
+    d = date.fromisoformat(today) - timedelta(days=days - 1)
+    return d.isoformat()
+
+
+def isRecentRow(row, date_col, cutoff, today):
+    """該列是否落在近期視窗內（cutoff ≤ 日期 ≤ today，兩端皆含）。
+
+    ⚠️ 上界不可省：登錄日期在編輯彈窗可改，且未擋未來日期。只比下界的話，誤打成
+    明年的列會永遠賴在「近期」裡，還排在最底下（編號昇冪）最顯眼的位置。
+
+    日期欄空白一律視為符合（不藏）：舊資料可能缺登錄日期，靜默藏起來會讓使用者
+    以為資料不見了，寧可多顯示幾列。"""
+    val = str((row or {}).get(date_col) or "").strip()
+    return (not val) or (cutoff <= val <= today)
 
 
 def _statusColor(status):
@@ -299,6 +326,7 @@ class TabDBBrowse(BaseTab):
                 "count":  inner.findChild(QLabel, f"{key}_count"),
                 "hint":   inner.findChild(QLabel, f"{key}_hint"),
                 "overdue": inner.findChild(QPushButton, f"{key}_overdue"),
+                "recent": inner.findChild(QPushButton, f"{key}_recent"),
             }
 
         # 歸檔根目錄警示 label（放在 crim/gen filter row 右側，archive_root 空時顯示）
@@ -347,6 +375,13 @@ class TabDBBrowse(BaseTab):
                 vp.installEventFilter(lcf)
                 self._link_cursors = getattr(self, "_link_cursors", [])
                 self._link_cursors.append(lcf)   # 存參考防 GC
+
+        # 登錄型子頁（罰單／敘獎）套預覽表同一份黏底捲動公版：進頁跟著最新一筆，
+        # 手動捲動即退出黏底保留位置。其餘子頁是查歷史，不套。
+        self._sticky = {}
+        for key in self.allowed_keys:
+            if TABLE_META[key].get("recent_date_col") and self._ui[key]["table"]:
+                self._sticky[key] = attachStickyScroll(self._ui[key]["table"])
 
         # 填充範圍下拉、綁定事件
         for key in self.allowed_keys:
@@ -432,6 +467,11 @@ class TabDBBrowse(BaseTab):
         if u.get("overdue"):
             u["overdue"].toggled.connect(lambda _, k=key: self._applyOverdue(k))
             self._styleOverdue(key)
+        if u.get("recent"):
+            # 預設啟用（先設狀態再接訊號，免在建構期多跑一次可見性計算）
+            u["recent"].setChecked(True)
+            u["recent"].toggled.connect(lambda _, k=key: self._applyRowVisibility(k))
+            self._styleOverdue(key, "recent")
         # 刪除欄、編號欄（文字型 item）：以 cellClicked 攔截，不建 cellWidget
         del_col  = next((i for i, c in enumerate(TABLE_META[key]["cols"]) if c.get("delete")), None)
         link_col = next((i for i, c in enumerate(TABLE_META[key]["cols"]) if c.get("link")),   None)
@@ -506,8 +546,8 @@ class TabDBBrowse(BaseTab):
         QPushButton:!checked:hover { background-color: #f2f2f7; }
     """
 
-    def _styleOverdue(self, key):
-        btn = self._ui[key].get("overdue")
+    def _styleOverdue(self, key, which="overdue"):
+        btn = self._ui[key].get(which)
         if btn:
             btn.setStyleSheet(self._OVERDUE_STYLE)
 
@@ -564,12 +604,24 @@ class TabDBBrowse(BaseTab):
         overdue_on = bool(btn and btn.isChecked())
         pending_col = meta.get("pending_date_col")
 
+        # 「近期」：只留最近兩週登錄的列。關鍵字查詢一律涵蓋全部期間——不然會出現
+        # 「明明有這筆卻搜不到」，比多顯示幾列嚴重得多。
+        rbtn = u.get("recent")
+        recent_col = meta.get("recent_date_col")
+        recent_on = bool(rbtn and rbtn.isChecked() and recent_col)
+        # ⚠️ 這裡取當下日期，不吃 _today_cache：程式常整天開著不關，跨過午夜後仍用
+        # 昨天的視窗算，昨天的資料賴著不走、今天新登錄的反而被當成「未來」藏起。
+        # 每次呼叫只取一次（迴圈內不重複取），原本「不逐列算日期」的用意仍在。
+        recent_today = self._today()
+        recent_cut = recentCutoff(recent_today) if recent_on else ""
+
         order = getattr(self, "_docorder", {}).get(key, [])
         all_rows = getattr(self, "_allRows", {}).get(key, [])
         matched_map = getattr(self, "_matchedCols", {}).get(key, {})
         if not hasattr(self, "_lastSearch"):
             self._lastSearch = {}
         kw, search_cols, _ = self._lastSearch.get(key, ("", [], 0))
+        recent_apply = recent_on and not kw
 
         visible = 0
         table.setUpdatesEnabled(False)
@@ -588,7 +640,12 @@ class TabDBBrowse(BaseTab):
                     overdue_ok = not str(r.get(pending_col) or "").strip()
                 else:
                     overdue_ok = True
-                show = filter_ok and overdue_ok
+                if recent_apply:
+                    r = all_rows[row_idx] if row_idx < len(all_rows) else {}
+                    recent_ok = isRecentRow(r, recent_col, recent_cut, recent_today)
+                else:
+                    recent_ok = True
+                show = filter_ok and overdue_ok and recent_ok
                 table.setRowHidden(row_idx, not show)
                 if show:
                     visible += 1
@@ -608,7 +665,7 @@ class TabDBBrowse(BaseTab):
                 if matched and not (set(matched) & visible_view_cols):
                     hit_hidden = True
                     break
-        self._updateFooter(key, visible, kw, hit_hidden)
+        self._updateFooter(key, visible, kw, hit_hidden, recent_apply)
 
     def _onToggleFull(self, key):
         # 切換精簡/完整：資料不變，只改欄位可見性 + 重算欄寬，不重查/不重建
@@ -727,7 +784,10 @@ class TabDBBrowse(BaseTab):
         self._applyMode(key)
         # 套用搜尋過濾（setRowHidden）→ 內部再呼叫 _applyRowVisibility（含逾期）
         self._applyFilter(key)
-        if _sb:
+        # 黏底中不恢復舊位置：整表重建後該跟著最新一筆，恢復位置會跟黏底互扯。
+        _sticky_btn = getattr(self, "_sticky", {}).get(key)
+        _sticky_on = bool(_sticky_btn and getattr(_sticky_btn, "sticky_state", {}).get("sticky"))
+        if _sb and not _sticky_on:
             QTimer.singleShot(0, lambda b=_sb, v=_scroll_pos: b.setValue(min(v, b.maximum())))
 
     def _applyMode(self, key):
@@ -1005,17 +1065,24 @@ class TabDBBrowse(BaseTab):
         except ValueError:
             return -1
 
-    def _updateFooter(self, key, shown, kw, hit_hidden):
+    def _updateFooter(self, key, shown, kw, hit_hidden, recent_apply=False):
         u = self._ui[key]
         if u["count"]:
-            u["count"].setText(f"共 {shown} 筆")
+            suffix = "（近兩週）" if recent_apply else ""
+            u["count"].setText(f"共 {shown} 筆{suffix}")
 
         # 浮水印（查無資料時顯示）
         wm = self._watermark.get(key)
         tbl = u["table"]
         if wm and tbl:
             if shown == 0:
-                msg = f"查無符合「{kw}」的資料" if kw else "查無資料"
+                if kw:
+                    msg = f"查無符合「{kw}」的資料"
+                elif recent_apply:
+                    # 空表最容易被當成程式故障，明講是篩選造成的
+                    msg = "近兩週查無資料，可關閉「近期」查看全部"
+                else:
+                    msg = "查無資料"
                 wm.setText(msg)
                 wm.resize(tbl.viewport().size())
                 wm.move(0, 0)
