@@ -753,12 +753,11 @@ CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入�
 
 | 版本 | 摘要 |
 |------|------|
+| v1.2.13 | **資料庫瀏覽的欄寬修正，無 schema 變動**。現場截圖回報精簡模式表格右側留一大片空白、交辦事由反被省略成 `...`；切完整模式後段欄位又整排擠成同寬全部切字。三個疊在一起的問題都在公版 `ui_utils/table.py`：①`autoResizeTable` 把 `setColumnHidden` 藏起來的欄一起算進版面加總，「空間不夠」誤判成立、伸縮欄縮回固定值；改為隱藏欄照樣量寬設值但不計入加總（直接跳過會讓它們切回完整模式時停在預設 80px）。②`setColumnHidden` 以寬度 0 送出 `sectionResized`，被判成使用者手動拉欄寬而設下 `user_resized`，此後自動調寬永久失效。③塞不下時本來就該出現水平捲軸，末段的誤差校正卻仍把整段超出量砍在伸縮欄上，主旨被壓到下限 60px。另依現場需求：交辦單「收文日期」納入精簡模式；刑案／一般陳報「電子檔」欄 64→96（該欄早已改顯示「已歸檔／未歸檔」）。新增 `tests/test_table_col_widths.py` 釘住四條不變式，PITFALLS 新增 QTW-15。pytest 1188＋49＋17。 |
 | v1.2.12 | **個資防呆補破口、停用反灰補齊、舊庫與舊備份的陳報 View 自動補正**。①PII gate 原本工作樹／index／HEAD 擇一讀取，改乾淨但忘了重新 add 時會假綠；改為三份取聯集，另掃 `upstream..HEAD`，沒有 upstream 即失敗。掃描範圍由副檔名白名單改為二進位黑名單。②`lib/theme.py` 的 objectName 群組缺 `:disabled`，特異度壓過通用規則，五顆送出鈕停用後仍是藍的；補上群組 `:disabled`。③舊庫的 `View_Criminal_Full`／`View_General_Full` 停在缺登錄日期的舊定義（`CREATE VIEW IF NOT EXISTS` 不更新既有 View），編輯彈窗存檔後跳未預期錯誤；改由 `ensureSchema` 比對 canonical DDL、不符才在單一 transaction 內 DROP＋CREATE（須明確 `BEGIN`，否則 DDL 走 autocommit、rollback 救不回）。舊列 `create_date` 不回填。④彈窗公版契約擴充為七個彈窗實際建構＋算繪像素驗證，`SettleDialog` 的整窗 QSS 一併移除。pytest 1147＋49＋17（PII gate，零 skip）。 |
 | v1.2.11 | **預覽列權限重做、唯讀鎖與停用反灰修正，新增罰單編號長度限制**。①降權不再清空預覽清單，改為逐列重算權限，規則收斂於 `lib/row_perm.py`；原則是「還在預覽列裡、剛登錄完的資料一律可改可刪」，例外只有交辦單發文與唯讀鎖（見 §10「預覽列權限」）。②唯讀鎖改為三身分一律受限，移除 `is_manager()` 豁免與交辦發文頁四處 `DEBUG_MODE` 旁路。③五個編輯彈窗的併發防護統一為 `last_modified` 樂觀鎖（原本三套並存、其中三頁完全沒有保護），秒精度窄縫議定接受。④停用欄位看不出反灰：公版兩條規則順序寫反、六個彈窗又各自帶區域 QSS 蓋掉 `:disabled`；改為順序對調＋彈窗一律不設 stylesheet，另補公版 `QPushButton:disabled`（PITFALLS QSS-8）。⑤新增罰單編號最少字數（`ticket_no_min_len`，預設 0＝不限制，檢查點在 `lib/ticket_utils` 三個寫入入口）。⑥系統設定面板順序改為 `_SYSTEM_PANEL_ORDER` 單一來源，連帶修掉罰單編號長度面板被靜默過濾掉的 bug。⑦閒置逾時改為存檔即時生效（PITFALLS CFG-1）。pytest 1138＋49＋9。<br>**⟪同版號重新發布（tag 移至該 commit，`lib/version.py` 仍為 1.2.11）⟫**⑧唯讀鎖切換後預覽列即時反映（鎖定狀態真的變了才重算，不做成每次切頁都刷）。⑨HELP 與速查卡文案精簡定稿，原則「用途一句＋關鍵步驟」；對照程式修掉三處錯誤（區塊數、缺罰單編號長度、唯讀設定的身分描述與程式相反）。⑩HELP 第 8 頁排列改為與程式一致。 |
-| v1.2.10 | **日期欄防呆：擋掉誤改途徑並在送出前確認，無 schema 變動**。起因是現場事故：某日刑案陳報 12 筆只印得出 4 筆，8 筆的 `report_date` 年份被誤寫成隔年，而簽收表只撈「陳報日期＝所選日期」。送文者模式下日期欄連續登錄共用，錯一次就一路錯到底。①所有 `QDateEdit` 停用滾輪與方向鍵並強制 `NoButtons`，改期路徑只剩打數字與月曆挑；點擊改到年份的根因是 `calendarPopup=True` 與 spin 箭頭座標對不起來（PITFALLS QTW-13／QTW-14）。②送出前確認 `ui_utils/date_guard.py`，只提示不擋，同頁同欄同日期本次執行只問一次，接在六個送出點。③離線測試會被這個 modal 卡住，根 `conftest.py` 統一自動確認（PITFALLS TST-4）。pytest 1026＋49＋9。<br>**⟪同版號重新發布⟫**④「自助取號模式」更名「發文結算模式」，程式識別字與 `report_mode_*` key 刻意不改名。⑤陳報頁補上模式提示條（放 `Layout3.ui` row0 col7／col8，避開 LAY-2b）。⑥日期防呆的「本次已確認」改為各頁分開記（`scope`）。⑦陳報預覽日期改 `MM/DD`。<br>**v1.2.10-v2**：敘獎登錄的修改視窗補上唯讀的發文日期／發文人員兩列，與罰單一致；儲存路徑未動。 |
-| v1.2.9-v6 | **同版號重新發布：自動化驗收擴充，無功能／schema／UI 變動**。①新增六支 GUI pilot（連同敘獎共八支），走完整條使用者流程：登出即關窗、歸檔正名、發文結算到結算發文、跨年度重置、備份還原、回收筒還原、設定面板接線。②釘住兩條不變式——未發文哨兵各流程不一致（陳報 NULL、敘獎與罰單空字串），故 pilot 一律用真實分頁送出不以 SQL 塞資料；跨年度重置的稽核必須寫在備份之前。③設定面板改以消費端讀取函式斷言，而非直接查 `App_Settings`。④每支交付前都以「故意破壞、確認會紅」反證。⑤PITFALLS 新增 TST-6。pytest 995＋49＋9。 |
 
-本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.11／v1.2.10／v1.2.9-v6）；**v1.2.5 以前的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
+本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.13／v1.2.12／v1.2.11）；**被擠掉的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
 
 ---
 
@@ -1094,6 +1093,11 @@ APP 層互斥只是勸導（見上節），使用者可以硬上兩台同開，�
 - **差異更新 `_diffUpdate`**：查 `last_modified > since` 維護 `_allRows`／`_docorder`／表格列，再 `_applyFilter`；變動列 `>= _BUSY_ROW_THRESHOLD` 時重建段以 `runWithBusy` 包
 - **精簡/完整**：單顆「完整」切換鈕（預設精簡），`_applyMode` 做 `setColumnHidden` 再 `_applyRowVisibility`
 - ⚠️ 兩個雷（`_allRows`/`_docorder` 1:1 對應、`setUpdatesEnabled` 須 try/finally）見 PITFALLS SQL 組
+
+**欄寬**：五張表的欄位定義（`TASK_COLS`／`CRIM_COLS`／`GEN_COLS`／`REWARD_COLS`／`TICKET_COLS`）就是單一來源，`slim` 決定精簡模式是否顯示、`w` 是固定像素寬、`stretch` 每張表恰好一欄吃掉剩餘寬度。這些 `w` 以 `fixed_overrides`＋`cap_mode=False` 傳給公版 `setupPreviewTable`，**是固定值不是上限**，也不是比例——除伸縮欄外不隨視窗寬度變化（Qt High-DPI 會整體放大邏輯座標，125% 下不需要、也不該手動乘 1.25）。
+
+- **`w` 要照該欄實際會出現的最長內容抓**：欄位顯示文字改過就得重量。踩過：刑案／一般陳報的「電子檔」早已從「是／否」改成「已歸檔／未歸檔」，`w` 卻沿用 64px，125% 下必定切字（現為 96）。
+- ⚠️ **本頁是全專案唯一「同時有隱藏欄與伸縮欄」的表**，公版 `autoResizeTable` 為此有三條特別規則（隱藏欄不計入版面加總但照樣設寬、`setColumnHidden` 不得判成使用者拉欄寬、塞不下時不倒扣伸縮欄）。三條都壞過，症狀與根因見 PITFALLS **QTW-15**，回歸測試 `tests/test_table_col_widths.py`。
 
 ### 歸檔頁「檔名過濾」（Tab7）
 
