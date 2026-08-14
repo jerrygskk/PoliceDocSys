@@ -43,6 +43,7 @@ EXPECTED_MARKER_MODULES = {
         "test_date_guard_gui_pilot.py",
         "test_base_tab.py", "test_combo_hint.py", "test_context_menu_style.py",
         "test_date_wheel_guard.py", "test_dbbrowse_sync.py",
+        "test_table_col_widths.py",
         "test_dialog_disabled_style.py", "test_dialog_smoke.py",
         "test_dispatch_tab.py", "test_edit_dialog_optimistic_lock.py",
         "test_help_content_contract.py",

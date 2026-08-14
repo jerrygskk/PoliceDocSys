@@ -85,7 +85,7 @@ TASK_COLS = [
     {"header": "狀態",     "view_col": "狀態",     "slim": True,  "color": True, "search": True, "w": 200},
     {"header": "限辦日期", "view_col": "限辦日期", "slim": True,  "search": True, "w": 140},
     {"header": "發文日期", "view_col": "發文日期", "slim": True,  "search": True, "w": 140},
-    {"header": "收文日期", "view_col": "收文日期", "slim": False, "search": True, "w": 140},
+    {"header": "收文日期", "view_col": "收文日期", "slim": True,  "search": True, "w": 140},
     {"header": "收文人員", "view_col": "收文人員", "slim": False, "search": True, "w": 120, "ref_col": True},
     {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120, "ref_col": True},
     {"header": "紀錄時間", "view_col": "紀錄時間", "slim": False, "search": False, "w": 240, "trunc_sec": True},
@@ -105,7 +105,8 @@ CRIM_COLS = [
     {"header": "報案人",      "view_col": "報案人",      "slim": False, "search": True, "w": 130},
     {"header": "受理人",      "view_col": "受理人",      "slim": False, "search": True, "w": 120, "trim_name": True, "ref_col": True},
     {"header": "紙本",        "view_col": "紙本",        "slim": False, "search": False, "w": 56, "bool_col": True},
-    {"header": "電子檔",      "view_col": "電子檔",      "slim": False, "search": False, "w": 64, "bool_col": True},
+    # 電子檔顯示「已歸檔／未歸檔」三個全形字，125% 縮放下量到約 89px，w 需 96
+    {"header": "電子檔",      "view_col": "電子檔",      "slim": False, "search": False, "w": 96, "bool_col": True},
 ]
 
 GEN_COLS = [
@@ -119,7 +120,8 @@ GEN_COLS = [
     {"header": "陳報日期", "view_col": "陳報日期", "slim": True,  "search": True, "w": 135},
     {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120, "ref_col": True},
     {"header": "紙本",     "view_col": "紙本",     "slim": False, "search": False, "w": 56, "bool_col": True},
-    {"header": "電子檔",   "view_col": "電子檔",   "slim": False, "search": False, "w": 64, "bool_col": True},
+    # 同刑案：「已歸檔／未歸檔」需 96
+    {"header": "電子檔",   "view_col": "電子檔",   "slim": False, "search": False, "w": 96, "bool_col": True},
 ]
 
 REWARD_COLS = [

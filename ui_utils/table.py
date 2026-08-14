@@ -106,12 +106,18 @@ def autoResizeTable(table):
         return
 
     usable      = int(available * 0.99)
-    other_total = sum(w for c, w in widths.items() if c != stretch_col)
+    # ⚠️ 隱藏欄要照樣量、照樣設寬（否則切回完整模式時它們停在 Qt 預設 80px 而切字），
+    # 但**不計入版面加總**：資料庫瀏覽的精簡模式是把完整模式的欄位 setColumnHidden，
+    # 這些欄若算進 other_total，會讓「空間不夠」誤判成立，伸縮欄縮回固定值，表格右側
+    # 留一片空白、主旨反被省略成 ...（實機截圖抓到）。
+    other_total = sum(w for c, w in widths.items()
+                      if c != stretch_col and not table.isColumnHidden(c))
     stretch_min = max(widths.get(stretch_col, 80), 60)
 
     # 暫時關閉 init_done，避免 setColumnWidth 觸發 sectionResized 誤設 user_resized
     table.setProperty("init_done", False)
-    if other_total + stretch_min > usable:
+    fitted = other_total + stretch_min <= usable
+    if not fitted:
         for col, w in widths.items():
             table.setColumnWidth(col, w)
     else:
@@ -124,9 +130,12 @@ def autoResizeTable(table):
     # 總寬可能比上面算出來的多幾 px——只要多 1px 就冒水平捲軸。這裡把超出的
     # 部分從伸縮欄扣回來。實測 offscreen 量不到（該環境 minimumSectionSize 只有
     # 23），是實機才會踩到的差異，勿因為離線測不出來就拿掉。
-    actual = sum(table.columnWidth(c) for c in range(table.columnCount()))
+    # ⚠️ 只在「本來就塞得下」時校正：塞不下的情形（完整模式欄位多）本來就會出現
+    # 水平捲軸，此時再扣就是把整段超出量全砍在伸縮欄上，主旨被壓到剩下限 60px。
+    actual = sum(table.columnWidth(c) for c in range(table.columnCount())
+                 if not table.isColumnHidden(c))
     excess = actual - available
-    if excess > 0 and stretch_col is not None:
+    if fitted and excess > 0 and stretch_col is not None:
         cur = table.columnWidth(stretch_col)
         table.setColumnWidth(stretch_col, max(60, cur - excess))
     table.setProperty("init_done", True)
@@ -326,8 +335,14 @@ def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_ove
     table.setProperty("cap_mode",        cap_mode)
 
     def _onSectionResized(idx, old_w, new_w, t=table, sc=stretch_col):
-        if t.property("init_done") and idx != sc:
-            t.setProperty("user_resized", True)
+        if not t.property("init_done") or idx == sc:
+            return
+        # ⚠️ setColumnHidden 會以寬度 0 送出 sectionResized，還原時再送一次；
+        # 這不是使用者拉欄寬。誤判成 user_resized 會讓 autoResizeTable 從此
+        # 直接 return，精簡↔完整切換後欄寬全停在預設 80px 而整排切字（實機踩到）。
+        if new_w == 0 or old_w == 0 or t.isColumnHidden(idx):
+            return
+        t.setProperty("user_resized", True)
 
     hdr.sectionResized.connect(_onSectionResized)
 
