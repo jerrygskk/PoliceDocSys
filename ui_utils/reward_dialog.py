@@ -17,6 +17,7 @@ from .ui_common import BTN_CONFIRM, BTN_CANCEL, msgWarning, reportError
 from .edit_dialog import _BaseEditDialog
 from .widgets import (
     NullableDateEdit, RecipientCombo, parse_recipient_names, setupRecipientCombo,
+    makeFilterCombo, validateFilterCombos,
 )
 
 
@@ -105,10 +106,9 @@ class RewardEditDialog(_BaseEditDialog):
             self.w_date.setPlaceholderText("未發文")
             form.addRow("發文日期：", self.w_date)
             # 發文人員（比照刑案／一般編輯彈窗；保留空白項忠實顯示未結算的 NULL）
-            self.w_sender = QComboBox()
-            self.w_sender.addItem("", None)
-            for sid, sname, _ in personnel:
-                self.w_sender.addItem(sname, sid)
+            # 可打字篩選＋別名，比照敘獎登錄頁
+            self.w_sender = makeFilterCombo(
+                [(sid, sname) for sid, sname, _ in personnel], alias_map=alias_map)
             form.addRow("發文人員：", self.w_sender)
         else:
             # entry：發文資訊一律唯讀純文字（不用反灰輸入框——反灰看起來像
@@ -187,6 +187,8 @@ class RewardEditDialog(_BaseEditDialog):
         # 瀏覽頁的敘獎修改為最高權限管理者專屬（歸檔管理不可，比照交辦單）。
         if self.source == "browse" and not AuthManager.instance().is_admin():
             msgWarning("權限不足", "目前身分無法修改資料庫瀏覽中的敘獎資料。")
+            return
+        if not validateFilterCombos([("發文人員", getattr(self, "w_sender", None))]):
             return
         reason = self.w_reason.text().strip()
         names = parse_recipient_names(self.w_recipients.currentText())

@@ -16,7 +16,8 @@ from lib.db_utils import (LAST_MODIFIED_CAS_SQL, getConn, isSelfServiceMode,
                           writeAudit, buildDetail, auditStaffName)
 from .ui_common import BTN_CONFIRM, BTN_CANCEL, confirmBox
 from lib.auth_manager import AuthManager
-from ui_utils.widgets import setupFilterCombo, NullableDateEdit
+from ui_utils.widgets import (setupFilterCombo, NullableDateEdit,
+                              makeFilterCombo, validateFilterCombos)
 
 
 class _ElidingLabel(QLabel):
@@ -390,15 +391,12 @@ class TaskEditDialog(_BaseEditDialog):
         form.addRow("收文日期：", self.w_recv_date)
 
         # 收文人員
-        self.w_recv_id = QComboBox()
-        for sid, sname in self._personnel:
-            self.w_recv_id.addItem(sname, sid)
+        # 人員／單位下拉一律可打字篩選（比照收文頁）
+        self.w_recv_id = makeFilterCombo(self._personnel)
         form.addRow("收文人員：", self.w_recv_id)
 
         # 業務組
-        self.w_dept = QComboBox()
-        for did, dname in self._depts:
-            self.w_dept.addItem(dname, did)
+        self.w_dept = makeFilterCombo(self._depts)
         form.addRow("業務組：", self.w_dept)
 
         # 交辦事由
@@ -407,9 +405,7 @@ class TaskEditDialog(_BaseEditDialog):
         form.addRow("交辦事由：", self.w_subject)
 
         # 承辦人
-        self.w_proc = QComboBox()
-        for sid, sname in self._personnel:
-            self.w_proc.addItem(sname, sid)
+        self.w_proc = makeFilterCombo(self._personnel)
         form.addRow("承辦人：", self.w_proc)
 
         # 限辦日期 + 免覆
@@ -515,6 +511,10 @@ class TaskEditDialog(_BaseEditDialog):
 
     def _on_save(self):
         from .ui_common import msgWarning, msgCritical, reportError
+        if not validateFilterCombos([("收文人員", self.w_recv_id),
+                                     ("業務組", self.w_dept),
+                                     ("承辦人", self.w_proc)]):
+            return
         recv_date = self.w_recv_date.date().toString("yyyy-MM-dd")
         recv_id   = self.w_recv_id.currentData()
         dept_id   = self.w_dept.currentData()
@@ -667,11 +667,8 @@ class CriminalEditDialog(_BaseEditDialog):
         form.addRow("陳報日期：", self.w_report_date)
 
         # 發文人員（保留空白項：未發文列 sender=NULL 忠實顯示「未設定」，
-        # 且填日期發文時可由必填檢查擋下未選發文人員）
-        self.w_sender = QComboBox()
-        self.w_sender.addItem("", None)
-        for sid, sname in self._personnel:
-            self.w_sender.addItem(sname, sid)
+        # 且填日期發文時可由必填檢查擋下未選發文人員）；可打字篩選，比照陳報頁
+        self.w_sender = makeFilterCombo(self._personnel)
         form.addRow("發文人員：", self.w_sender)
 
         # 案件分類（可輸入關鍵字篩選，預設帶入資料庫值）
@@ -696,16 +693,11 @@ class CriminalEditDialog(_BaseEditDialog):
         form.addRow("發文分類：", radio_row)
 
         # 承辦人
-        self.w_processor = QComboBox()
-        for sid, sname in self._personnel:
-            self.w_processor.addItem(sname, sid)
+        self.w_processor = makeFilterCombo(self._personnel)
         form.addRow("承辦人：", self.w_processor)
 
-        # 受理人
-        self.w_receiver = QComboBox()
-        self.w_receiver.addItem("", None)   # 受理人非必填，保留空白項忠實顯示「未設定」
-        for sid, sname in self._personnel:
-            self.w_receiver.addItem(sname, sid)
+        # 受理人（非必填，空白項忠實顯示「未設定」）
+        self.w_receiver = makeFilterCombo(self._personnel)
         form.addRow("受理人：", self.w_receiver)
 
         # 陳報主旨
@@ -815,6 +807,11 @@ class CriminalEditDialog(_BaseEditDialog):
         from .ui_common import msgWarning, msgCritical, reportError
         # 陳報日期：空白＝未發文（report_date/sender 皆存 NULL）；填有效日期＝發文，
         # 此時發文人員必填。格式錯（非空非法）先擋下亮紅框。
+        if not validateFilterCombos([("發文人員", self.w_sender),
+                                     ("案件分類", self.w_casetype),
+                                     ("承辦人", self.w_processor),
+                                     ("受理人", self.w_receiver)]):
+            return
         ok, report_date, sender_id, issued = self._resolveReportDate(
             self.w_report_date, self.w_sender)
         if not ok:
@@ -951,18 +948,12 @@ class GeneralEditDialog(_BaseEditDialog):
         form.addRow("陳報日期：", self.w_report_date)
 
         # 發文人員（保留空白項：未發文列 sender=NULL 忠實顯示「未設定」，
-        # 且填日期發文時可由必填檢查擋下未選發文人員）
-        self.w_sender = QComboBox()
-        self.w_sender.addItem("", None)
-        for sid, sname in self._personnel:
-            self.w_sender.addItem(sname, sid)
+        # 且填日期發文時可由必填檢查擋下未選發文人員）；可打字篩選，比照陳報頁
+        self.w_sender = makeFilterCombo(self._personnel)
         form.addRow("發文人員：", self.w_sender)
 
-        # 業務單位
-        self.w_dept = QComboBox()
-        self.w_dept.addItem("", None)   # 業務單位非必填，保留空白項忠實顯示「未設定」
-        for did, dname in self._depts:
-            self.w_dept.addItem(dname, did)
+        # 業務單位（非必填，空白項忠實顯示「未設定」）
+        self.w_dept = makeFilterCombo(self._depts)
         form.addRow("業務單位：", self.w_dept)
 
         # 發文分類（Radio）
@@ -981,9 +972,7 @@ class GeneralEditDialog(_BaseEditDialog):
 
         # 陳報主旨
         # 承辦人
-        self.w_processor = QComboBox()
-        for sid, sname in self._personnel:
-            self.w_processor.addItem(sname, sid)
+        self.w_processor = makeFilterCombo(self._personnel)
         form.addRow("陳報人：", self.w_processor)
 
         self.w_subject = QLineEdit()
@@ -1069,6 +1058,10 @@ class GeneralEditDialog(_BaseEditDialog):
         from .ui_common import msgWarning, msgCritical, reportError
         # 陳報日期：空白＝未發文（report_date/sender 皆存 NULL）；填有效日期＝發文，
         # 此時發文人員必填。格式錯（非空非法）先擋下亮紅框。
+        if not validateFilterCombos([("發文人員", self.w_sender),
+                                     ("業務單位", self.w_dept),
+                                     ("陳報人", self.w_processor)]):
+            return
         ok, report_date, sender_id, issued = self._resolveReportDate(
             self.w_report_date, self.w_sender)
         if not ok:

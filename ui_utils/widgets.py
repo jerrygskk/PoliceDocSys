@@ -684,6 +684,49 @@ def setupFilterCombo(combo, data_list, alias_map=None):
     combo.lineEdit().textEdited.connect(_onTextChanged)
 
 
+def makeFilterCombo(data_list, alias_map=None):
+    """建立可打字篩選的下拉（編輯彈窗用，與頁面同一套 setupFilterCombo）。
+    首項固定為空白哨兵（data=None）；必填與否由呼叫端存檔檢查負責。"""
+    combo = QComboBox()
+    combo.setEditable(True)
+    setupFilterCombo(combo, data_list, alias_map=alias_map)
+    return combo
+
+
+def checkFilterCombos(fields):
+    """存檔前檢查可打字下拉，回傳「打了字卻沒選中清單項目」的欄名清單。
+
+    fields: [(欄名, combo), ...]；None 或停用中的 combo 略過。
+    讀值一律走 currentData()，沒有這道檢查時非必填欄打了「王小」會被靜默存成
+    空白。打的字恰為清單某項全名時直接替使用者選中（完整打對名字但沒點候選，
+    不該被當成未選）。
+    """
+    bad = []
+    for label, combo in fields:
+        if combo is None or not combo.isEnabled() or combo.currentData() is not None:
+            continue
+        text = combo.currentText().strip()
+        if not text:
+            continue
+        idx = combo.findText(text, Qt.MatchExactly)
+        if idx >= 0 and combo.itemData(idx) is not None:
+            combo.setCurrentIndex(idx)
+        else:
+            bad.append(label)
+    return bad
+
+
+def validateFilterCombos(fields):
+    """checkFilterCombos＋警告框；全部通過回 True。"""
+    bad = checkFilterCombos(fields)
+    if bad:
+        from .ui_common import msgWarning
+        msgWarning("欄位內容不在清單",
+                   "以下欄位輸入的內容不在清單中，請從下拉清單選取：\n"
+                   + "、".join(bad))
+    return not bad
+
+
 def attachComboHint(combo, hint):
     """可打字 combo 的「提示文字」行為：
     - 第 0 項（空白哨兵）以 hint 文字呈現，灰字／黑字由本函式統一負責

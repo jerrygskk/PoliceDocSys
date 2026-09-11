@@ -38,7 +38,7 @@ from lib.ticket_utils import (
 )
 from .edit_dialog import _BaseEditDialog
 from .ui_common import BTN_CANCEL, BTN_CONFIRM, msgWarning, reportError
-from .widgets import NullableDateEdit
+from .widgets import NullableDateEdit, makeFilterCombo, validateFilterCombos
 
 
 # 併發刪除／併發修改的白話提示改由 `lib.db_utils` 統一提供（見上方 import
@@ -88,7 +88,8 @@ class TicketEditDialog(_BaseEditDialog):
         self.lbl_doc_id.setStyleSheet("font-weight: bold;")
         form.addRow("編號：", self.lbl_doc_id)
 
-        personnel = loadActivePersonnel(self.db_path)[0]
+        personnel, alias_map = loadActivePersonnel(self.db_path)
+        pairs = [(staff_id, staff_name) for staff_id, staff_name, _sort in personnel]
 
         if self.source == "browse":
             # 登錄日期：有效資料必填，但用可空白日期框（避免 QDateEdit 空白哨兵
@@ -101,10 +102,8 @@ class TicketEditDialog(_BaseEditDialog):
             self.w_register_date.setPlaceholderText("未發文")
             form.addRow("發文日期：", self.w_register_date)
             # 發文人員：可空白（未發文時 NULL）；保留空白項忠實顯示未結算狀態。
-            self.w_sender = QComboBox()
-            self.w_sender.addItem("", None)
-            for staff_id, staff_name, _sort in personnel:
-                self.w_sender.addItem(staff_name, staff_id)
+            # 可打字篩選＋別名，比照罰單登錄頁
+            self.w_sender = makeFilterCombo(pairs, alias_map=alias_map)
             form.addRow("發文人員：", self.w_sender)
         else:
             # entry：登錄／發文／發文人員一律唯讀（發文不在登錄頁竄改）。
@@ -115,11 +114,8 @@ class TicketEditDialog(_BaseEditDialog):
             self.w_sender_name = QLabel("")
             form.addRow("發文人員：", self.w_sender_name)
 
-        # 開立人員：單一人員，故用一般下拉（不用 RecipientCombo，不解析多人）
-        self.w_issuer = QComboBox()
-        self.w_issuer.addItem("", None)
-        for staff_id, staff_name, _sort in personnel:
-            self.w_issuer.addItem(staff_name, staff_id)
+        # 開立人員：單一人員，故用可打字篩選下拉（不用 RecipientCombo，不解析多人）
+        self.w_issuer = makeFilterCombo(pairs, alias_map=alias_map)
         form.addRow("開立人員：", self.w_issuer)
 
         self.w_ticket_no = QLineEdit()
@@ -196,6 +192,9 @@ class TicketEditDialog(_BaseEditDialog):
         # 瀏覽頁的罰單修改為 admin 專屬（歸檔管理不可，比照敘獎／交辦）。
         if self.source == "browse" and not AuthManager.instance().is_admin():
             msgWarning("權限不足", "目前身分無法修改資料庫瀏覽中的罰單資料。")
+            return
+        if not validateFilterCombos([("發文人員", getattr(self, "w_sender", None)),
+                                     ("開立人員", self.w_issuer)]):
             return
         missing = []
         if not self.w_issuer.currentData():

@@ -806,6 +806,107 @@ class TestConvertDialog(_DialogBase):
         dlg.deleteLater()
 
 
+class TestEditDialogFilterCombos(_DialogBase):
+    """編輯彈窗的人員／單位下拉比照頁面可打字篩選；打了字沒選中須擋下存檔。"""
+
+    @staticmethod
+    def _type(combo, text):
+        """模擬使用者打字（textEdited 才會觸發篩選重建）。"""
+        le = combo.lineEdit()
+        le.setText(text)
+        le.textEdited.emit(text)
+
+    def test_person_and_dept_combos_are_editable(self):
+        from ui_utils.edit_dialog import (TaskEditDialog, CriminalEditDialog,
+                                          GeneralEditDialog)
+        from ui_utils.ticket_dialog import TicketEditDialog
+        from ui_utils.reward_dialog import RewardEditDialog
+        from ui_utils.convert_dialog import ConvertDialog
+        cases = [
+            (lambda: TaskEditDialog(self.db, "1"), ("w_recv_id", "w_dept", "w_proc")),
+            (lambda: CriminalEditDialog(self.db, "2"),
+             ("w_sender", "w_casetype", "w_processor", "w_receiver")),
+            (lambda: GeneralEditDialog(self.db, "3"),
+             ("w_sender", "w_dept", "w_processor")),
+            (lambda: TicketEditDialog(self.db, "5"), ("w_issuer",)),
+            (lambda: TicketEditDialog(self.db, "5", source="browse"),
+             ("w_sender", "w_issuer")),
+            (lambda: RewardEditDialog(self.db, "4", source="browse"), ("w_sender",)),
+            (lambda: ConvertDialog(self.db, "gen", "3"), ("w_casetype", "w_receiver")),
+            (lambda: ConvertDialog(self.db, "crim", "2"), ("w_dept",)),
+        ]
+        for make, names in cases:
+            dlg = make()
+            for name in names:
+                with self.subTest(dialog=type(dlg).__name__, field=name):
+                    self.assertTrue(getattr(dlg, name).isEditable())
+            dlg.deleteLater()
+
+    def test_prefill_unchanged(self):
+        from ui_utils.edit_dialog import CriminalEditDialog
+        dlg = CriminalEditDialog(self.db, "2")
+        self.assertEqual(dlg.w_sender.currentData(), "P01")
+        self.assertEqual(dlg.w_processor.currentData(), "P02")
+        self.assertIsNone(dlg.w_receiver.currentData())
+        dlg.deleteLater()
+
+    def test_optional_field_unmatched_text_blocks_save(self):
+        from unittest.mock import patch
+        from PySide6.QtWidgets import QDialog
+        from ui_utils.edit_dialog import CriminalEditDialog
+        dlg = CriminalEditDialog(self.db, "2")
+        self._type(dlg.w_receiver, "王小")          # 打了字但沒選中
+        with patch("ui_utils.ui_common.msgWarning") as warn:
+            dlg._on_save()
+            warn.assert_called_once()
+            self.assertIn("受理人", warn.call_args[0][1])
+        self.assertNotEqual(dlg.result(), QDialog.Accepted)
+        dlg.deleteLater()
+
+    def test_exact_full_name_typed_is_accepted(self):
+        from ui_utils.edit_dialog import CriminalEditDialog
+        dlg = CriminalEditDialog(self.db, "2")
+        self._type(dlg.w_receiver, "王小明")        # 完整打對名字、沒點候選
+        dlg._on_save()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT receiver_id FROM Document_Criminal "
+                           "WHERE doc_id='2'").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "P01")
+        dlg.deleteLater()
+
+    def test_required_field_typed_then_saved(self):
+        from ui_utils.edit_dialog import TaskEditDialog
+        dlg = TaskEditDialog(self.db, "1")
+        self._type(dlg.w_proc, "王小明")
+        dlg.w_dept.setCurrentIndex(dlg.w_dept.findData("D01"))   # fixture 未填業務組（必填）
+        with mock.patch("ui_utils.edit_dialog.confirmBox", return_value=True), \
+             mock.patch("ui_utils.ui_common.msgWarning") as warn:
+            dlg._on_save()
+            warn.assert_not_called()
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT processor_id FROM Document_Task "
+                           "WHERE doc_id='1'").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "P01")
+        dlg.deleteLater()
+
+    def test_check_skips_disabled_and_blank(self):
+        from ui_utils.widgets import makeFilterCombo, checkFilterCombos
+        people = [("P01", "王小明"), ("P02", "陳志豪")]
+        blank = makeFilterCombo(people)
+        locked = makeFilterCombo(people)
+        self._type(locked, "亂打")
+        locked.setEnabled(False)
+        typed = makeFilterCombo(people)
+        self._type(typed, "亂打")
+        self.assertEqual(checkFilterCombos([("甲", blank), ("乙", locked),
+                                            ("丙", typed), ("丁", None)]),
+                         ["丙"])
+        for c in (blank, locked, typed):
+            c.deleteLater()
+
+
 class TestReportPreviewCreateDate(_DialogBase):
     def test_preview_headers_put_create_date_after_doc_id(self):
         from tabs.tab_report import CRIM_HEADERS, GEN_HEADERS

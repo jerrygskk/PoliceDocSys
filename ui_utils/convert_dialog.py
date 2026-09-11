@@ -25,7 +25,8 @@ from lib.archive_text import _sanitize
 from lib import doc_convert
 
 from .ui_common import msgCritical, msgInfo, reportError, BTN_CONFIRM, BTN_CANCEL
-from .widgets import setupFilterCombo, NullableDateEdit
+from .widgets import (setupFilterCombo, NullableDateEdit,
+                      makeFilterCombo, validateFilterCombos)
 from .edit_dialog import CriminalEditDialog, GeneralEditDialog
 
 
@@ -185,10 +186,7 @@ class ConvertDialog(QDialog):
             CriminalEditDialog.STATUS_OPTIONS)
         form.addRow("發文分類：", radio_row)
         # 受理人（可空白）
-        self.w_receiver = QComboBox()
-        self.w_receiver.addItem("", None)
-        for sid, sname in self._personnel:
-            self.w_receiver.addItem(sname, sid)
+        self.w_receiver = makeFilterCombo(self._personnel)
         form.addRow("受理人：", self.w_receiver)
         # 查獲日期（必填）
         self.w_occ_date = NullableDateEdit()
@@ -201,10 +199,7 @@ class ConvertDialog(QDialog):
 
     def _build_fill_gen(self, form):
         # 業務單位（必填，決策 #12）
-        self.w_dept = QComboBox()
-        self.w_dept.addItem("", None)
-        for did, dname in self._depts:
-            self.w_dept.addItem(dname, did)
+        self.w_dept = makeFilterCombo(self._depts)
         form.addRow("業務單位：", self.w_dept)
         # 分類（必填，radio）
         self._cat_radios, radio_row = self._radio_row(GeneralEditDialog.CAT_OPTIONS)
@@ -288,6 +283,11 @@ class ConvertDialog(QDialog):
     def _on_confirm(self):
         # 保底權限 guard（呼叫端已 gate，防未來加快捷路徑繞過）
         if not AuthManager.instance().is_manager():
+            return
+        if not validateFilterCombos([
+                ("案件分類", getattr(self, "w_casetype", None)),
+                ("受理人", getattr(self, "w_receiver", None)),
+                ("業務單位", getattr(self, "w_dept", None))]):
             return
         fill, errors = self._collect_fill()
         if errors:
