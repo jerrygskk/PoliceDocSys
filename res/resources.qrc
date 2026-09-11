@@ -2,6 +2,9 @@
 <RCC version="1.0">
   <qresource>
     <file alias="arrow.svg">buttons/arrow.svg</file>
+    <file alias="chk_check.svg">buttons/chk_check.svg</file>
+    <file alias="chk_check_disabled.svg">buttons/chk_check_disabled.svg</file>
+    <file alias="chk_dash.svg">buttons/chk_dash.svg</file>
     <file alias="icon_pdf.svg">buttons/icon_pdf.svg</file>
     <file alias="icon_archive.svg">buttons/icon_archive.svg</file>
     <file alias="icon_paper.svg">buttons/icon_paper.svg</file>

@@ -505,5 +505,61 @@ class TestTaskDialogDisabledStyle(_DisabledStyleBase):
                          "承辦人不該看起來像被鎖住")
 
 
+class TestCheckboxIndicatorTick(unittest.TestCase):
+    """勾選框勾選時要畫出打勾（2026-09-12 維護者裁示：原本只填色、不直覺）。
+
+    公版以 `image: url(:/chk_*.svg)` 疊勾；圖示沒登記進 qrc 或 rcc 沒重編時
+    Qt 不報錯、只是畫不出來，故以算繪像素驗「真的有勾」。
+    """
+
+    CHECKED_BG = (0x6E, 0x8F, 0xAC)
+    TICK = (0xFF, 0xFF, 0xFF)
+
+    def setUp(self):
+        import res.resources_rc  # noqa: F401  qrc 圖示
+        self._old = _app.styleSheet()
+        _app.setStyleSheet(APPLE_STYLE)
+
+    def tearDown(self):
+        _app.setStyleSheet(self._old)
+
+    def _colors(self, checked, enabled):
+        from PySide6.QtWidgets import QCheckBox
+        cb = QCheckBox()
+        self.addCleanup(cb.deleteLater)
+        cb.setChecked(checked)
+        cb.setEnabled(enabled)
+        cb.resize(30, 30)
+        cb.show()
+        _app.processEvents()
+        image = cb.grab().toImage()
+        return Counter(
+            (c.red(), c.green(), c.blue())
+            for c in (image.pixelColor(x, y)
+                      for x in range(image.width())
+                      for y in range(image.height())))
+
+    def test_icons_registered_in_qrc(self):
+        from PySide6.QtCore import QFile
+        import res.resources_rc  # noqa: F401
+        for path in (":/chk_check.svg", ":/chk_check_disabled.svg", ":/chk_dash.svg"):
+            self.assertTrue(QFile.exists(path), f"{path} 未登記進 qrc 或 rcc 未重編")
+
+    def test_checked_draws_white_tick_on_blue(self):
+        colors = self._colors(checked=True, enabled=True)
+        self.assertGreater(colors[self.CHECKED_BG], 0, "勾選底色不是公版深藍")
+        self.assertGreater(colors[self.TICK], 0, "勾選時沒有畫出白勾")
+
+    def test_unchecked_has_no_tick_fill(self):
+        colors = self._colors(checked=False, enabled=True)
+        self.assertEqual(colors[self.CHECKED_BG], 0)
+
+    def test_disabled_checked_still_shows_grey_tick(self):
+        colors = self._colors(checked=True, enabled=False)
+        self.assertGreater(colors[DISABLED_BG], 0)
+        self.assertGreater(colors[DISABLED_TEXT], 0, "停用勾選時勾勾看不見")
+        self.assertEqual(colors[self.TICK], 0, "停用時不該是白勾（灰底上看不見）")
+
+
 if __name__ == "__main__":
     unittest.main()

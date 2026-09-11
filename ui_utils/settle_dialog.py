@@ -161,7 +161,8 @@ QHeaderView::section {
     font-size: 13pt; font-weight: 600;
 }
 QCheckBox::indicator:indeterminate {
-    background-color: #c6d3e2; border-color: #8fa8c8;
+    background-color: #6e8fac; border-color: #6e8fac;
+    image: url(:/chk_dash.svg);
 }
 """
 

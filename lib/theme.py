@@ -408,8 +408,9 @@ QCheckBox::indicator {
     background-color: #ffffff;
 }
 QCheckBox::indicator:checked {
-    background-color: #8fa8c8;
-    border-color: #8fa8c8;
+    background-color: #6e8fac;
+    border-color: #6e8fac;
+    image: url(:/chk_check.svg);
 }
 QCheckBox:disabled {
     color: #aeaeb2;
@@ -417,6 +418,9 @@ QCheckBox:disabled {
 QCheckBox::indicator:disabled {
     background-color: #e5e5ea;
     border-color: #d1d1d6;
+}
+QCheckBox::indicator:checked:disabled {
+    image: url(:/chk_check_disabled.svg);
 }
 
 /* ── RadioButton ── */
