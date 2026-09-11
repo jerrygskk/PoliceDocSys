@@ -348,11 +348,14 @@ class TaskEditDialog(_BaseEditDialog):
         self.setWindowTitle('交辦單修改')
 
         # ── 版面常數 ──────────────────────────────────────────
-        self._CHECKBOX_W = 130   # 免覆 checkbox 寬度
-        self._SPACING_W  = 30    # DateEdit 與 checkbox 間距
-        self._DATE_W     = self._FIELD_W - self._SPACING_W - self._CHECKBOX_W  # = 260
+        # ⚠️ 日期框寬＝_FIELD_W 扣掉間距與 checkbox，不得小於頁面日期框慣例 220，
+        # 否則 125% 下「yyyy-MM-dd」被切字（_FIELD_W 縮到 340 時漏算踩過，PITFALLS LAY）。
+        # checkbox 不縮到剛好兩字寬：125% 下 sizeHint 不準，太貼會切掉「覆」（QTW-6）。
+        self._CHECKBOX_W = 90    # 免覆 checkbox 寬度
+        self._SPACING_W  = 20    # DateEdit 與 checkbox 間距
+        self._DATE_W     = self._FIELD_W - self._SPACING_W - self._CHECKBOX_W
 
-        self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)  # = 580
+        self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)
         self._build_ui()
         self._load_data()
         if self.restricted:

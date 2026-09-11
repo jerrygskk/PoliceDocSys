@@ -111,6 +111,16 @@ class TestEditDialogs(_DialogBase):
         self.assertEqual(dlg.w_subject.text(), "交辦主旨")
         dlg.deleteLater()
 
+    def test_task_edit_deadline_date_not_narrower_than_page_dates(self):
+        # 限辦日期框寬由 _FIELD_W 扣 checkbox／間距推得；共用寬度縮小時曾掉到 180
+        # 而切字。頁面日期框慣例 220，彈窗不得更窄（切字與否仍須上機確認）。
+        from ui_utils.edit_dialog import TaskEditDialog
+        dlg = TaskEditDialog(self.db, "1")
+        self.assertGreaterEqual(dlg._deadline_stack.minimumWidth(), 220)
+        self.assertEqual(dlg._DATE_W + dlg._SPACING_W + dlg._CHECKBOX_W,
+                         dlg._FIELD_W)
+        dlg.deleteLater()
+
     def test_task_edit_restricted_builds(self):
         from ui_utils.edit_dialog import TaskEditDialog
         dlg = TaskEditDialog(self.db, "1", restricted=True)
