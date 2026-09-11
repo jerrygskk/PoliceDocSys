@@ -1,7 +1,8 @@
 from PySide6.QtCore import Qt, QTimer, QObject, QEvent
 from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QPushButton, QWidget, QHBoxLayout, QStyledItemDelegate
+    QPushButton, QWidget, QHBoxLayout, QStyledItemDelegate,
+    QApplication, QStyle
 )
 from PySide6.QtGui import QFontMetrics, QColor
 
@@ -209,6 +210,32 @@ class _ElideRightDelegate(QStyledItemDelegate):
         option.textElideMode = Qt.ElideRight
 
 
+class _WholeCharsDelegate(QStyledItemDelegate):
+    """放不下的字整個不畫，只顯示完整的字（ElideNone 欄位用）。
+
+    ElideNone＋置中時，超寬文字會左右各被切掉半個字；在這裡先依格子實際文字區
+    （含 QSS padding）從尾端逐字砍到放得下，截短後的字串必然放得進格子，置中
+    也不會切到左邊。拖曳欄寬時隨重繪即時重算。
+    """
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        text = option.text
+        if not text:
+            return
+        widget = option.widget
+        style = widget.style() if widget else QApplication.style()
+        avail = style.subElementRect(QStyle.SE_ItemViewItemText, option, widget).width()
+        fm = option.fontMetrics
+        if fm.horizontalAdvance(text) <= avail:
+            return                      # 放得下：維持原本對齊（置中）
+        while text and fm.horizontalAdvance(text) > avail:
+            text = text[:-1]
+        option.text = text
+        # 塞滿時改靠左：字從左邊排起、右邊整字消失，拖窄時字不會左右跳
+        option.displayAlignment = Qt.AlignLeft | Qt.AlignVCenter
+
+
 def applyNoElide(table, elide_cols=()):
     """整張表關掉省略號：放不下就直接切斷，不顯示「…」。
 
@@ -218,8 +245,15 @@ def applyNoElide(table, elide_cols=()):
 
     `elide_cols` 內的欄位以 delegate 個別還原 `ElideRight`（主旨欄需要，
     否則長主旨會在句中硬切、看不出還有後文）。
+
+    同時關掉自動換行：Qt 表格預設會換行，ElideNone 時放不下的字會折到第二行，
+    固定列高只容一行，第二行被切成半截露在格子底部（案類「185-3公共危險…」踩過）。
+    不換行後置中的超寬文字會左右各切半個字，故其餘欄位一律套 `_WholeCharsDelegate`
+    只畫完整的字。
     """
     table.setTextElideMode(Qt.ElideNone)
+    table.setWordWrap(False)
+    table.setItemDelegate(_WholeCharsDelegate(table))
     for col in elide_cols:
         table.setItemDelegateForColumn(col, _ElideRightDelegate(table))
 

@@ -916,12 +916,55 @@ class TestReportPreviewCreateDate(_DialogBase):
             table = QTableWidget(0, len(headers))
             applyNoElide(table, elide_cols=(subject,))
             self.assertEqual(table.textElideMode(), Qt.ElideNone)
+            self.assertFalse(table.wordWrap())   # 換行會在固定列高下露出半截第二行
             self.assertIsInstance(table.itemDelegateForColumn(subject),
                                   _ElideRightDelegate)
             other = 1 if subject != 1 else 2
             self.assertNotIsInstance(table.itemDelegateForColumn(other),
                                      _ElideRightDelegate)
             table.deleteLater()
+
+    def test_no_elide_columns_draw_whole_chars_only(self):
+        """ElideNone 欄位放不下的字整個不畫：截短後放得進文字區，且只砍到剛好。"""
+        from PySide6.QtWidgets import (QStyle, QStyleOptionViewItem,
+                                       QTableWidgetItem)
+        from ui_utils import applyNoElide
+        from ui_utils.table import _WholeCharsDelegate
+        from PySide6.QtCore import Qt
+
+        table = QTableWidget(1, 2)
+        applyNoElide(table, elide_cols=(1,))
+        table.setColumnWidth(0, 120)
+        full = "185-3公共危險(酒駕)"
+        table.setItem(0, 0, QTableWidgetItem(full))
+        table.setItem(0, 1, QTableWidgetItem("短"))
+        self.assertIsInstance(table.itemDelegate(), _WholeCharsDelegate)
+
+        def fitted(col):
+            opt = QStyleOptionViewItem()
+            opt.rect = table.visualRect(table.model().index(0, col))
+            opt.widget = table
+            table.itemDelegate().initStyleOption(opt, table.model().index(0, col))
+            avail = table.style().subElementRect(
+                QStyle.SE_ItemViewItemText, opt, table).width()
+            return opt, avail
+
+        opt, avail = fitted(0)
+        fm = opt.fontMetrics
+        self.assertTrue(full.startswith(opt.text))
+        self.assertLess(len(opt.text), len(full))
+        self.assertLessEqual(fm.horizontalAdvance(opt.text), avail)
+        self.assertGreater(fm.horizontalAdvance(full[:len(opt.text) + 1]), avail)
+        self.assertEqual(opt.displayAlignment & Qt.AlignHorizontal_Mask,
+                         Qt.AlignLeft)        # 塞滿 → 靠左
+
+        table.item(0, 0).setTextAlignment(Qt.AlignCenter)
+        table.setColumnWidth(0, 600)          # 拉寬後放得下 → 原字串、原對齊不動
+        opt, _ = fitted(0)
+        self.assertEqual(opt.text, full)
+        self.assertEqual(opt.displayAlignment & Qt.AlignHorizontal_Mask,
+                         Qt.AlignHCenter)
+        table.deleteLater()
 
     def test_report_previews_wire_no_elide_for_subject_column_only(self):
         """陳報頁確實有呼叫 applyNoElide，且只把主旨欄列為例外。"""
