@@ -333,7 +333,9 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 ### 修改功能（EditDialog）
 
 - 在 `ui_utils/edit_dialog.py`，動態產生表單，不用 .ui
-- `TaskEditDialog`（Tab0/1）、`CriminalEditDialog`（Tab2 刑案）、`GeneralEditDialog`（Tab2 一般），共同繼承 `_BaseEditDialog`（`_LABEL_W=120`／`_FIELD_W=340`／`_MARGIN=40`，`setMinimumWidth=580`）
+- `TaskEditDialog`（Tab0/1）、`CriminalEditDialog`（Tab2 刑案）、`GeneralEditDialog`（Tab2 一般），共同繼承 `_BaseEditDialog`（`_LABEL_W=120`／`_FIELD_W=340`／`_MARGIN=40`，最小寬＝三者相加）
+  - ⚠️ 由 `_FIELD_W` 扣減推得的寬度（如交辦單限辦日期框＝`_FIELD_W`−間距−免覆勾選框）改共用寬度時要逐一重算，下限寫在註解、不寫推算結果（PITFALLS LAY-10）
+- **人員／單位下拉比照頁面可打字篩選**（v1.2.14）：六個彈窗（交辦、刑案、一般、罰單、敘獎修改與轉換類別）一律用 `widgets.makeFilterCombo`（內部即 `setupFilterCombo`，首項固定空白哨兵），罰單／敘獎人員欄帶別名。存檔前先呼叫 `validateFilterCombos([(欄名, combo), ...])`：打了字卻沒選中清單項目即擋下列出欄名（否則非必填欄會被 `currentData()` 靜默存成空白）；完整打對名字但沒點候選時自動選中；停用欄位略過。⚠️ 頁面本身尚無此檢查（維護者裁示先只做彈窗）
 - 觸發：點預覽表編號欄超連結；刪除列後須重綁刪除鈕與編號 QLabel 的 row index（參考 `_rebindDocIdCell`）
 - **歸檔狀態區塊（僅 admin）**：刑案/一般 dialog 末端「歸檔狀態」分組框（`_build_archive_group`；dbbrowse 與 archive 共用同 dialog，一改兩頁生效）。紙本 `is_reported` checkbox 雙向可勾消；電子檔 `is_electronic` 只能「清除」（popup 產不出 PDF，清空後該筆自動回待歸清單），不動實體 PDF（留孤兒檔，重歸時 rename 覆蓋）。清除為 pending，按「儲存」才真寫 `is_electronic=''`、取消則還原。非 admin 不建此區塊（`save` 跳過這兩欄）
 
@@ -434,6 +436,11 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
   放不下就直接切斷。省略號會再吃掉一個字元寬，而欄寬是照字數算好的
   （日期欄踩過：64px 本該剛好顯示 `07-16`，加省略號變成 `07-1…`）。
   主旨欄以 `_ElideRightDelegate` 個別還原，否則長主旨會在句中硬切、看不出有後文
+  - `applyNoElide` 同時**關掉自動換行**：Qt 表格預設換行，ElideNone 時放不下的字會折到第二行，
+    固定列高只容一行，第二行被切成半截露在格子底部（v1.2.14 案類欄踩過）
+  - 其餘欄位掛 `_WholeCharsDelegate`：依格子實際文字區（含 QSS padding）從尾端逐字砍到放得下，
+    **只畫完整的字**；放得下維持置中，**塞滿時改靠左**（否則置中的超寬文字左右各切半個字，
+    拖曳欄寬時也不會左右跳）。回歸測試 `test_no_elide_columns_draw_whole_chars_only`
 - **兩個日期欄刻意只顯示 `MM/DD` 段**（維護者決定，年份被切可接受；分隔符用 `/` 是為了與 DB 的 `YYYY-MM-DD` 一眼區隔），
   但**標題不可被切**，故寬度由標題決定：登錄日期＝4 全形＝**92**、
   日期＝**64**（標題 2 全形＝58，內容 5 半形剛好放下 `07-16`）。
@@ -692,7 +699,7 @@ python tools/check_bundle_deps.py
 ### 注意事項
 
 - `dbfile.db` 不打包，與 exe 同資料夾（真實資料）
-- 共用 icon（`arrow`／`icon_pdf`／`icon_archive`／`icon_paper`／`icon_help`）及 `res/buttons/*.svg`（`:/btn/`）、`res/tabs/*.svg`（`:/tab/`）已透過 `resources_rc.py` 內嵌、不需 `--add-data`；改了要重編 qrc（`pyside6-rcc res/resources.qrc -o res/resources_rc.py`）。`res/buttons/*.svg`／`res/tabs/*.svg` 由 `tools/gen_buttons.py` 產出
+- 共用 icon（`arrow`／`icon_pdf`／`icon_archive`／`icon_paper`／`icon_help`／勾選框的 `chk_check`／`chk_check_disabled`／`chk_dash`，後三者由 `lib/theme.py` 與 `settle_dialog` 的 QSS `image:` 引用，漏登記 qrc 時 Qt 不報錯、只是不畫勾）及 `res/buttons/*.svg`（`:/btn/`）、`res/tabs/*.svg`（`:/tab/`）已透過 `resources_rc.py` 內嵌、不需 `--add-data`；改了要重編 qrc（`pyside6-rcc res/resources.qrc -o res/resources_rc.py`）。`res/buttons/*.svg`／`res/tabs/*.svg` 由 `tools/gen_buttons.py` 產出
 - **build 前先砍 `build/`／`dist/`**（`--clean` 只清 PyInstaller 快取，不清舊產物）。⚠️ **build 一律用 PowerShell tool 執行**
 - ⚠️ **跨年度重啟**：onefile 版重啟新程序前必設 `PYINSTALLER_RESET_ENVIRONMENT=1`（否則 `Failed to load Python DLL`／`unicodedata` 缺，`_restartApp()` 已處理，見 PITFALLS PKG 組）
 - 打包報 `No module named res`／`lib.xxx` → 補進對應 spec 的 `hiddenimports`
@@ -753,11 +760,11 @@ CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入�
 
 | 版本 | 摘要 |
 |------|------|
+| v1.2.14 | **編輯彈窗下拉可打字、勾選框改打勾、陳報預覽與限辦日期切字修正，無 schema 變動**。①六個編輯彈窗（交辦、刑案、一般、罰單、敘獎與轉換類別）的人員／單位下拉原為純下拉，與頁面可打字篩選不一致；改用 `widgets.makeFilterCombo`，存檔前 `validateFilterCombos` 擋下「打了字沒選中」（否則非必填欄被 `currentData()` 靜默存成空白），完整打對姓名自動選中。②公版勾選框勾選時只填色、無勾勾，不直覺；改深藍 `#6e8fac` 疊白勾，停用勾選為灰底灰勾，結算表頭半選為白色短橫（圖示 `res/buttons/chk_*.svg` 登記 qrc）。③陳報預覽表 `applyNoElide` 未關自動換行，放不下的字折到第二行被切成半截；關閉換行並以 `_WholeCharsDelegate` 只畫完整的字、塞滿改靠左。④交辦單修改限辦日期框由 `_FIELD_W` 扣減推得，共用寬度縮成 340 時沒重算、掉到 180 被切字；改回 230（PITFALLS LAY-10）。pytest 1200＋49＋17。 |
 | v1.2.13 | **資料庫瀏覽的欄寬修正，無 schema 變動**。現場截圖回報精簡模式表格右側留一大片空白、交辦事由反被省略成 `...`；切完整模式後段欄位又整排擠成同寬全部切字。三個疊在一起的問題都在公版 `ui_utils/table.py`：①`autoResizeTable` 把 `setColumnHidden` 藏起來的欄一起算進版面加總，「空間不夠」誤判成立、伸縮欄縮回固定值；改為隱藏欄照樣量寬設值但不計入加總（直接跳過會讓它們切回完整模式時停在預設 80px）。②`setColumnHidden` 以寬度 0 送出 `sectionResized`，被判成使用者手動拉欄寬而設下 `user_resized`，此後自動調寬永久失效。③塞不下時本來就該出現水平捲軸，末段的誤差校正卻仍把整段超出量砍在伸縮欄上，主旨被壓到下限 60px。另依現場需求：交辦單「收文日期」納入精簡模式；刑案／一般陳報「電子檔」欄 64→96（該欄早已改顯示「已歸檔／未歸檔」）。新增 `tests/test_table_col_widths.py` 釘住四條不變式，PITFALLS 新增 QTW-15。pytest 1188＋49＋17。 |
 | v1.2.12 | **個資防呆補破口、停用反灰補齊、舊庫與舊備份的陳報 View 自動補正**。①PII gate 原本工作樹／index／HEAD 擇一讀取，改乾淨但忘了重新 add 時會假綠；改為三份取聯集，另掃 `upstream..HEAD`，沒有 upstream 即失敗。掃描範圍由副檔名白名單改為二進位黑名單。②`lib/theme.py` 的 objectName 群組缺 `:disabled`，特異度壓過通用規則，五顆送出鈕停用後仍是藍的；補上群組 `:disabled`。③舊庫的 `View_Criminal_Full`／`View_General_Full` 停在缺登錄日期的舊定義（`CREATE VIEW IF NOT EXISTS` 不更新既有 View），編輯彈窗存檔後跳未預期錯誤；改由 `ensureSchema` 比對 canonical DDL、不符才在單一 transaction 內 DROP＋CREATE（須明確 `BEGIN`，否則 DDL 走 autocommit、rollback 救不回）。舊列 `create_date` 不回填。④彈窗公版契約擴充為七個彈窗實際建構＋算繪像素驗證，`SettleDialog` 的整窗 QSS 一併移除。pytest 1147＋49＋17（PII gate，零 skip）。 |
-| v1.2.11 | **預覽列權限重做、唯讀鎖與停用反灰修正，新增罰單編號長度限制**。①降權不再清空預覽清單，改為逐列重算權限，規則收斂於 `lib/row_perm.py`；原則是「還在預覽列裡、剛登錄完的資料一律可改可刪」，例外只有交辦單發文與唯讀鎖（見 §10「預覽列權限」）。②唯讀鎖改為三身分一律受限，移除 `is_manager()` 豁免與交辦發文頁四處 `DEBUG_MODE` 旁路。③五個編輯彈窗的併發防護統一為 `last_modified` 樂觀鎖（原本三套並存、其中三頁完全沒有保護），秒精度窄縫議定接受。④停用欄位看不出反灰：公版兩條規則順序寫反、六個彈窗又各自帶區域 QSS 蓋掉 `:disabled`；改為順序對調＋彈窗一律不設 stylesheet，另補公版 `QPushButton:disabled`（PITFALLS QSS-8）。⑤新增罰單編號最少字數（`ticket_no_min_len`，預設 0＝不限制，檢查點在 `lib/ticket_utils` 三個寫入入口）。⑥系統設定面板順序改為 `_SYSTEM_PANEL_ORDER` 單一來源，連帶修掉罰單編號長度面板被靜默過濾掉的 bug。⑦閒置逾時改為存檔即時生效（PITFALLS CFG-1）。pytest 1138＋49＋9。<br>**⟪同版號重新發布（tag 移至該 commit，`lib/version.py` 仍為 1.2.11）⟫**⑧唯讀鎖切換後預覽列即時反映（鎖定狀態真的變了才重算，不做成每次切頁都刷）。⑨HELP 與速查卡文案精簡定稿，原則「用途一句＋關鍵步驟」；對照程式修掉三處錯誤（區塊數、缺罰單編號長度、唯讀設定的身分描述與程式相反）。⑩HELP 第 8 頁排列改為與程式一致。 |
 
-本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.13／v1.2.12／v1.2.11）；**被擠掉的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
+本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.14／v1.2.13／v1.2.12）；**被擠掉的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
 
 ---
 
