@@ -1,6 +1,6 @@
 # 踩雷速查表（Pitfalls）
 
-依主題分組（UI／QSS／QTW／LAY／TAB／PRM／SVG／SQL／ARC／NET／PKG／TST）；每條為「**症狀** → 解法（必要時括註原因）」。寫過的雷再踩會被點名。本檔自 DEVELOPER.md §2 拆出；任務對照索引見 CLAUDE.md。
+依主題分組（UI／QSS／QTW／LAY／TAB／PRM／SVG／SQL／ARC／NET／PKG／TST）；每條為「**症狀** → 解法（必要時括註原因）」。寫過的雷再踩會被點名。本檔自 DEVELOPER.md §2 拆出；任務對照索引見 AGENTS.md。
 
 #### UI：`.ui` 載入
 - **UI-1**: **`Unable to open/read ui device`** → margin 改用 `leftMargin`/`topMargin`/`rightMargin`/`bottomMargin` 四獨立 property，勿用 `contentsMargins`+`<rect>`。
@@ -59,7 +59,7 @@
 
 #### PRM：權限（預覽列的可改／可刪）
 - **PRM-1**: **擋住了「還在預覽列、剛登錄完」的資料的修改／刪除** → ⚠️⚠️ **這是凌駕權限矩陣的原則（維護者裁示）：不管權限與設定怎麼調整，都不允許擋。例外只有兩個——交辦單發文（它的預覽列是掃入文號拉出來的既有公文，不是剛登錄的），以及唯讀鎖（見 PRM-6）。** 理由是作業節奏：預覽列就是承辦人這一次自己打進去的東西，打錯字當場自己改掉、按 ✕ 重來是最高頻操作，擋掉等於逼人為一個錯字去找管理身分。⚠️ **這是「改回開發初期的行為」**：中途曾被改成「降權就把預覽清單整張清空」「已發文列鎖住一般使用者」，維護者當時即覺得不合理、事後還得花時間調回來——**看到相關程式不要再「修正」一次，要動先問維護者**。規則單一來源 `lib/row_perm.py` 的 `SESSION_PREVIEW_PAGES`，測試 `tests/test_row_perm.py::TestSessionPreviewPrinciple`（那組紅了不要改斷言）。分界表見 DEVELOPER §10「預覽列權限」。
-- **PRM-2**: **「降權只清 widget」與「降權只重刷 widget」都不夠** → `setEnabled(False)` 與編號欄純文字化都只是**提示**：CLAUDE.md 明列反灰擋不住替代路徑，且降權與使用者實際點下去之間存在時間差。**每個動作進入點都要自己再檢查一次**（`BaseTab._rowActionBlockReason`，重查 DB 現值後回傳擋下原因）。⚠️ 舊行為清空清單時「列不存在」本身就是防線，改成留列之後那條防線消失了，**這一層是補回來的，不是多餘的**。驗收要**同時斷言「資料庫沒變」與「提示框有被叫到」**——只驗前者分不出「被正確擋下」與「根本沒跑到那一步」（同 TST-7）。
+- **PRM-2**: **「降權只清 widget」與「降權只重刷 widget」都不夠** → `setEnabled(False)` 與編號欄純文字化都只是**提示**：AGENTS.md 明列反灰擋不住替代路徑，且降權與使用者實際點下去之間存在時間差。**每個動作進入點都要自己再檢查一次**（`BaseTab._rowActionBlockReason`，重查 DB 現值後回傳擋下原因）。⚠️ 舊行為清空清單時「列不存在」本身就是防線，改成留列之後那條防線消失了，**這一層是補回來的，不是多餘的**。驗收要**同時斷言「資料庫沒變」與「提示框有被叫到」**——只驗前者分不出「被正確擋下」與「根本沒跑到那一步」（同 TST-7）。
 - **PRM-3**: **共用層直接彈 `msgWarning`，離線測試整包卡死** → 擋下的提示必須**由各分頁模組自己的 `msgWarning` 名稱發出**，共用層（`lib/base_tab.py`）只回傳 `(標題, 訊息)`。測試攔的是被測模組裡的那個名字（`patch("tabs.tab_reward.msgWarning")`），換不掉共用層 import 進去的參考，於是 modal `exec()` 在無人可按的環境無限等待（2026-08-07 實際踩過，症狀是「跑到一半停住」而非紅燈）。同 TST-7 的病根。
 - **PRM-4**: **三態判斷逐頁不同，套同一條規則會整批誤判** → 敘獎／罰單的未發文是 `register_date=''`、軟刪除是 `NULL`；**刑案／一般陳報的未發文是 `report_date IS NULL`**，軟刪除則看主旨欄被清空、與日期無關。2026-08-07 的計畫書原先把「`NULL`＝軟刪除」當全頁通則，照著寫會把**陳報所有未發文列誤判成已刪除**。判斷一律走 `row_perm.isDispatched()` 與 `isLiveRow(page, ...)`，**且必須回查 DB**——畫面上「未發文」與「已刪除」都是空白，從 cell 文字在原理上分不出三態。
 - **PRM-5**: **測試建立的分頁沒拆 `role_changed` 連線，改成逐列重刷後會炸得更明顯** → TST-6 記的是「懸空連線打到已釋放的 C++ 物件」；逐列重刷會**再多查一次資料庫**，於是殭屍分頁在別支測試切換身分時去查一個早就被刪掉的暫存 DB（`no such table: Document_Reward`），紅在毫不相干的檔案上。處置同 TST-6：`tearDown` 逐一 `auth.role_changed.disconnect(tab._onRoleRefresh)`。

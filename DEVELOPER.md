@@ -6,7 +6,7 @@ Windows 桌面應用，PySide6 + SQLite，管理警察單位公文（交辦單�
 
 ## 0. 給接手者
 
-協作規定與偏好見 [CLAUDE.md](CLAUDE.md)（Claude 開新對話時會自動載入）。本檔為技術文件、按需查閱，每節開頭點明用途。
+協作規定與偏好見 [AGENTS.md](AGENTS.md)（Claude／Codex 開新對話時會自動載入）。本檔為技術文件、按需查閱，每節開頭點明用途。
 踩雷速查表在 [PITFALLS.md](PITFALLS.md)；**簽收單列印**（引擎／版面／驗收網）已獨立成 [PRINTING.md](PRINTING.md)。
 
 ---
@@ -65,7 +65,7 @@ main.py
 
 ## 2. 踩雷速查表（動手前必掃）
 
-十二組症狀→解法條目已拆至 [PITFALLS.md](PITFALLS.md)（群組代號 UI／QSS／QTW／LAY／TAB／PRM／SVG／SQL／ARC／NET／PKG／TST，任務對照索引見 CLAUDE.md）。
+十二組症狀→解法條目已拆至 [PITFALLS.md](PITFALLS.md)（群組代號 UI／QSS／QTW／LAY／TAB／PRM／SVG／SQL／ARC／NET／PKG／TST，任務對照索引見 AGENTS.md）。
 
 ### 跨功能影響對照表（動到左欄主題＝右欄逐項檢查）
 
@@ -91,7 +91,7 @@ graph LR
 | **罰單編號長度**（`ticket_no_min_len`） | `TicketNoLengthPanel`（settings_panels）；`ticketNoMinLen`／`parseTicketNoMinLen`／`_requireMinLen`（ticket_utils）；**三個寫入入口都要擋**（`createTicket`／`updateTicket`／`updateTicketFromBrowse`）；`AppProfile.system_panels` 兩份都含 `ticket_len`（獨立版也有罰單登錄）；tab_settings 四份清單；Reset 不清 | §6 App_Settings 列＋§5 面板表；HELP 罰單頁；`tests/test_ticket_data`（TestTicketNoMinLen）、`tests/test_settings_panel_pilot` |
 | **自動備份／備份還原**（`backup_second_dir`／異地／quick_check／還原子頁） | `run_auto_backup(extra_dirs=)`＋`_run_gfs`＋`quick_check`／`list_backups`／`verify_backup`／`restore_backup`（db_backup）；`main.py` 啟動 quick_check→備份；`BackupPanel`（settings_panels）；`BackupRestorePanel`（backup_restore_panel）；tab_settings nav 第 6 子頁四處掛載（`_nav_btns`／兩份 loaders／`_applyRolePermissions`）；Reset 不清 `backup_second_dir` | §10「平時自動備份（`lib/db_backup.py`）」＋§5 面板表＋「備份還原子頁」＋§6 App_Settings 列；HELP 設定頁；QUICKSTART；README FAQ 資料安全段；`tests/test_db_backup` |
 | **陳報模式**（`report_input_mode`／發文結算） | `isSelfServiceMode`（db_utils）；`InputModePanel`（settings_panels）；陳報頁、敘獎登錄頁與罰單頁 `_applyInputLock`→`_applySelfServiceMode`，提交帶 NULL 與放行發文人員（三頁皆以可見 QLabel 提示條 `*_sender_hint` 顯示「發文結算模式」，不用 tooltip，見 PITFALLS QSS-7；陳報頁的提示條放 `Layout3.ui` row0 的 col7／col8，見 §5「tab_report.py 特殊架構」）；**刑案／一般編輯彈窗 `_BaseEditDialog._lockReportFieldsIfSelfService()`**（發文結算模式且非管理身分才反灰陳報日期／發文人員，涵蓋陳報／瀏覽／歸檔三處開啟點）；列印頁 `_settle_group`／`_refresh_settle_group`／`_on_settle`＋`SettleDialog`／`count_unissued`（settle_dialog 的 `SETTLE_META` 含刑案／一般／敘獎／罰單，罰單衝突 strict rollback）；歸檔 `_queryUnarchived`／`_tableSignature` 排除未發文列；瀏覽頁未發文欄位橘字提示；Reset 不清。⚠️ `reward` **不吃**舊 `report_input_mode` 全域 fallback（見 `LEGACY_MODE_FALLBACK_KINDS`） | §5「發文結算模式」＋§5 面板表＋§6 App_Settings 列；HELP 陳報/列印/設定頁；QUICKSTART；README 功能段＋陳報模式 TIP；`tests/test_report_input_mode` |
-| **權限／角色**（新增任何「受限身分不可做」） | **每條觸發路徑 guard**（按鈕/雙擊/行內編輯/Enter/右鍵/拖拉，見 CLAUDE.md 協作偏好 B）；`role_changed`→`_onRolePerm`/`_applyRolePermissions`；遮罩頁（歸檔/稽核）；閒置登出後的行為；**破壞性或動實體檔案的流程另加「modal 返回後再檢查一次」**（見 §10「執行時權限複核」）；**新增預覽表要接上逐列重刷**（`_setupInputLock(refresh_tables=)`＋覆寫 `_refreshRowPermissions`，規則走 `lib/row_perm.py`，見 §10「預覽列權限」）；**新增動作進入點要補入口複核**（`_rowActionBlockReason`） | **§10「權限」權限矩陣必更新**＋§10「預覽列權限」＋§10「執行時權限複核」；HELP 各頁的權限描述；QUICKSTART 權限段；`tests/test_row_perm.py`；上機以受限身分逐路徑驗證 |
+| **權限／角色**（新增任何「受限身分不可做」） | **每條觸發路徑 guard**（按鈕/雙擊/行內編輯/Enter/右鍵/拖拉，見 AGENTS.md 協作偏好 B）；`role_changed`→`_onRolePerm`/`_applyRolePermissions`；遮罩頁（歸檔/稽核）；閒置登出後的行為；**破壞性或動實體檔案的流程另加「modal 返回後再檢查一次」**（見 §10「執行時權限複核」）；**新增預覽表要接上逐列重刷**（`_setupInputLock(refresh_tables=)`＋覆寫 `_refreshRowPermissions`，規則走 `lib/row_perm.py`，見 §10「預覽列權限」）；**新增動作進入點要補入口複核**（`_rowActionBlockReason`） | **§10「權限」權限矩陣必更新**＋§10「預覽列權限」＋§10「執行時權限複核」；HELP 各頁的權限描述；QUICKSTART 權限段；`tests/test_row_perm.py`；上機以受限身分逐路徑驗證 |
 | **角色 TAB 顯隱**（user／archive／admin） | `visibleTabKeys` 權限矩陣；`DocumentManager` 執行期顯隱與登出 fallback；`MainMenu` 全入口 `requestTab`；設定頁登入與待前往目標 | §10「權限」9／10／11 TAB 清單；HELP 固定 Profile index 映射；QUICKSTART 權限段；README 登入說明；角色切換、主選單導向、登出／閒置登出與 HELP mapping 測試 |
 | **新增 App_Settings key**（通用步驟） | db_utils 常數＋讀取 helper（含 fallback 預設）；`db_seed` 要不要播種；Reset 清不清（`performYearEndReset`）；生效時機（即時讀 vs 重啟） | §6 App_Settings 那一列；對應 tests |
 | **系統設定新面板** | `settings_panels.py` 新類別＋`ui_utils/__init__` 匯出；⚠️ **`TabSettings._SYSTEM_PANEL_ORDER` 必須補上該 key**——`enabled_system_panel_keys` 是拿 `profile.system_panels` 與它取交集，漏列會被**靜默過濾掉**（profile 加了、建立那段也寫了，畫面上就是不出現，且無任何錯誤；2026-08-08 踩過）；`AppProfile.system_panels` 兩份視需要各自加；tab_settings **四份清單**（建立/`_applyRolePermissions`/`_loadSystem`/`_dirtyPanels`）；`_save()` 開頭權限 guard；儲存鈕 dirty UX（亮/灰/clearFocus） | §5 面板表；HELP 設定頁；QUICKSTART；⚠️ 測試要走**設定頁組裝路徑**（`tests/test_standalone_settings.py`），直接 new 面板類別測不到被過濾掉這個洞 |
@@ -497,7 +497,7 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
 第一個半形逗號前的姓名當代表人（SQL 內 `INSTR`／`SUBSTR` 裁切，純顯示、不改寫入），
 主旨欄仍完整列出「事由：全部人員」。純讀取，結算 UPDATE 一字未動。
 ⚠️ **初始焦點給送文者下拉、不給發文日期**：日期已預設今天，焦點停在 `QDateEdit`
-上時鍵盤或滾輪會靜默改掉日期（通則見 CLAUDE.md B 節，適用所有視窗）。
+上時鍵盤或滾輪會靜默改掉日期（通則見 AGENTS.md B 節，適用所有視窗）。
 4. **歸檔頁（`tab_archive`）＋瀏覽頁（`tab_dbbrowse`）**：待歸清單／指紋查詢（`_queryUnarchived`／`_tableSignature`）加 `report_date IS NOT NULL AND != ''`＝**未發文不進歸檔**（未發文的公文流程尚未走完）。瀏覽頁陳報日期欄 NULL 顯示橘字「未發文」（`#e67e22`）；敘獎子頁則由 `register_date=''` 表示尚未發文。歸檔本就不含敘獎（無 PDF），免改。
 
 > ⚠️ 切換模式**不回溯**既有資料：切成發文結算模式後既有已發文公文仍是已發文；切回送文者後已存在的未發文（NULL）公文仍需靠結算或手動補日期才會離開「未發文」狀態。這是刻意行為（模式是作業型態、非資料遷移）。
@@ -547,7 +547,7 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
 - **儲存鈕 UX**：各面板獨立「儲存」（墨藍樣式）。**未變動反灰、改值即亮、存檔成功直接回灰**＝完成回饋，無成功彈窗。回灰前先 `clearFocus()`——Qt 停用「持有焦點的元件」時會把焦點塞給 tab 順序下一個輸入欄（游標亂跳、QScrollArea 跟著捲）
 - **dirty 追蹤**：`reload()` 存值快照 `_loaded`，`isDirty()` 比對畫面值。切子頁／切出大 Tab 沿用 `_promptUnsaved`（併入面板 dirty，噪音字依來源顯示「排序／設定」）；按「儲存」批次呼叫 `panel._save()`（回 bool，被擋則留在頁面）；登出＝放棄（`_onRoleChanged` reload）
 - **共用基底 `_SettingsPanel(QGroupBox)`（`settings_panels.py`）**：四面板的 `isDirty`／`_updateSaveBtn`（含回灰前 `clearFocus`）／`__init__`（套 `_PANEL_SS`＋`_build`＋`reload`）／`_markLoaded`（重設 dirty 基準）收斂於此，子類只實作 `_build()`／`_values()`（回傳當前畫面值供 `!=` 比較）／`reload()`（結尾呼叫 `self._markLoaded()`）
-- **權限 gate**：面板整塊 `setEnabled` 之外，各 `_save()` 開頭都有 `is_admin()`／`is_manager()` guard 保底（防替代觸發路徑，見 CLAUDE.md 紀律）
+- **權限 gate**：面板整塊 `setEnabled` 之外，各 `_save()` 開頭都有 `is_admin()`／`is_manager()` guard 保底（防替代觸發路徑，見 AGENTS.md 紀律）
 - **下游刷新免處理**：列印頁（`_onShown` 重算紅字＋標題指紋）、歸檔頁（`_onShown` 重讀根目錄）、瀏覽頁（開檔時讀）皆顯示時重讀；PDF 索引快取由 `_save` 內 `clearPdfIndexCache()` 清
 
 ### 跨年度重置（Reset，tab_settings.py）
@@ -620,7 +620,7 @@ renderer（`drawTicketPage`）與三層驗收網（`print_baseline` 逐位元組
 2. **寫 handover**（需跨對話交接才寫，`docs/handover.md` 不入庫）
 3. **寫 release note**（`release_note_v{版號}.md`，不入庫；內容寫給使用者看，技術細節留 DEVELOPER.md）
 4. **推送前完整 gate**：依 §4 的 Python 選擇方式執行 Windows offscreen pytest **兩段**（`python -m pytest tests -q -m "not shell" --ignore=tests/test_no_pii.py` 與 `python -m pytest tests -q -m shell --ignore=tests/test_no_pii.py`，⚠️ 兩段是**刻意保留**的：合併成一條在 2026-08-03 行程隔離之前會穩定 native 崩潰；隔離後實測合併連跑 5 輪全綠（964 passed、每輪約 3 分 15 秒，與兩段的 3 分 29 秒相當），**但正式 gate 仍維持兩段**——分層結果可讀、shell 段的判讀規則獨立，且合併沒有時間收益。要改成一條須另行決定，原委見 PITFALLS **TST-5**）、再獨立執行 `python -m unittest tests.test_no_pii`；執行前須確認本機 denylist 存在且有有效項目，缺少／空白會明確 skipped，**不可把 skip 當通過**。全部通過後才可推送與建立 tag。`unittest discover` 僅是無 pytest 時的備援，不是發布 gate。
-5. **版號進版並推上去**：bump＋commit，建立 tag `v{版號}`，再 push commit 與 tag（逐檔 add 等鐵則見 CLAUDE.md C 節）
+5. **版號進版並推上去**：bump＋commit，建立 tag `v{版號}`，再 push commit 與 tag（逐檔 add 等鐵則見 AGENTS.md C 節）
 6. **build**：刪除既有 `build/`／`dist/` 後 onefile 全新 build（見下方指令），**兩支 exe 都要重建**；兩支 fresh build 完成後立即於同次執行 `python tools/check_bundle_deps.py Police-Document-Manager Police-Entry-Manager`，不得沿用舊 `build/` 或 `PKG-00.toc`。回報成功/失敗（失敗才貼錯誤末段）
 7. **發 GitHub Release**：5 asset，指令與 asset 取得方式見本節末「發 GitHub Release」
 
@@ -708,7 +708,7 @@ python tools/check_bundle_deps.py
 
 ### 發 GitHub Release（5 個 asset）
 
-CLAUDE.md 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入獨立版 exe，速查卡改帶版號）：
+§7 發布流程第 7 步的執行細節。5 個 asset（v1.2.6 起加入獨立版 exe，速查卡改帶版號）：
 
 1. `Police-Document-Manager_v{版號}.exe`（本次 build 的 onefile；⚠️ **上傳前把 `dist/Police-Document-Manager.exe` 複製成帶版號的檔名**再傳，例：`Police-Document-Manager_v1.2.0.exe`，方便使用者辨識版本。`gh` 以本機檔名當 asset 名，故改檔名即改 asset 名。PACKED.zip 內則保留 build 的固定英文原名，不帶版號）
 2. `dbfile.db`（**乾淨空殼**——用 `python tools/gen_shell_db.py <暫存路徑> --force` 產生。schema 來自 `lib/db_schema.py`、種子來自 `lib/db_seed.py`，兩者是唯一來源，產出即與程式碼一致。例：`python tools/gen_shell_db.py 暫存/dbfile.db --force`。**不要用工作區根目錄那份**（真實測試資料）；`gen_shell_db.py` 的暫存產物是發版來源。）
@@ -890,7 +890,7 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 > 敘獎登錄與罰單登錄本身不設角色 gate（三身分皆可登錄／改／刪本次登錄清單）。**瀏覽頁編輯改為逐子頁判定**（`tab_dbbrowse._canEditKey(key)`）：**交辦（task）／敘獎（reward）／罰單（ticket）僅 admin 可改**；**刑案（crim）／一般（gen）** 維持 `is_manager()`（歸檔管理者可改）。刪除一律 `is_admin()`。編輯 gate 涵蓋四條進入點：`_onRolePerm`、`_fillRow`、`_onLinkCell`、`_onEdit`；各 browse 對話框儲存另有 admin 內層防線。測試 `tests/test_reward_browse.py`／`tests/test_ticket_browse.py`。
 
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；身分變更時 `_onRolePerm` 重刷編號連結與刪除鈕。瀏覽頁已改純 item，`_onRolePerm` 只切編號欄 `setForeground`（藍＝可點）、`refreshDeleteBtns` 切 ✕ 字色，點擊走 `cellClicked`；收/發/陳報頁仍由 `setDocIdLinkCell(clickable=…)`（cellWidget）控制。
-> 「歸檔管理也能做」用 `is_manager()`；「僅 admin」（Tab6 刪除、Tab6 交辦／敘獎／罰單編輯、Tab0 發文）維持 `is_admin()`。設定頁參照維護按鈕對 archive `setEnabled(False)`（需配 `:disabled` 樣式，見 PITFALLS QSS 組）；雙擊參照列會繞過按鈕 enabled，故 `_add*/_edit*`（現已收斂為 `_addRef`／`_editRef`）皆有 `_refEditable()`（僅 admin）guard。⚠️ **排序的替代路徑也要 gate**：拖拉在 `_applyRolePermissions` 以 `NoDragDrop` 關閉；**序號欄雙擊行內編輯**曾漏 gate（archive 可雙擊改序號→ `_moveRow` 把已反灰的「儲存排序」鈕重新點亮→ 存回 DB＝權限繞過），已於 `_onCellDoubleClicked` 開頭與 `_onSeqItemChanged` 補 `_refEditable()` guard。凡新增「受限身分不可做」的功能，務必檢查**每一條**觸發路徑（按鈕／雙擊／行內編輯／Enter／拖拉），見 CLAUDE.md 協作偏好 B。
+> 「歸檔管理也能做」用 `is_manager()`；「僅 admin」（Tab6 刪除、Tab6 交辦／敘獎／罰單編輯、Tab0 發文）維持 `is_admin()`。設定頁參照維護按鈕對 archive `setEnabled(False)`（需配 `:disabled` 樣式，見 PITFALLS QSS 組）；雙擊參照列會繞過按鈕 enabled，故 `_add*/_edit*`（現已收斂為 `_addRef`／`_editRef`）皆有 `_refEditable()`（僅 admin）guard。⚠️ **排序的替代路徑也要 gate**：拖拉在 `_applyRolePermissions` 以 `NoDragDrop` 關閉；**序號欄雙擊行內編輯**曾漏 gate（archive 可雙擊改序號→ `_moveRow` 把已反灰的「儲存排序」鈕重新點亮→ 存回 DB＝權限繞過），已於 `_onCellDoubleClicked` 開頭與 `_onSeqItemChanged` 補 `_refEditable()` guard。凡新增「受限身分不可做」的功能，務必檢查**每一條**觸發路徑（按鈕／雙擊／行內編輯／Enter／拖拉），見 AGENTS.md 協作偏好 B。
 
 #### 權限上機檢查清單（發版前照表點一遍，約 10～15 分鐘）
 

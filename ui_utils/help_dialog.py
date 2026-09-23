@@ -129,7 +129,7 @@ def attachHelpButton(tab_widget: QTabWidget, window: QWidget, tab_keys=None):
     btn.setToolTip("本頁使用說明")
     btn.setCursor(Qt.PointingHandCursor)
     btn.setStyleSheet(_HELP_BTN_QSS)
-    # clicked 會多塞一個 checked 布林，用 lambda 吃掉（見 CLAUDE.md 踩雷表）
+    # clicked 會多塞一個 checked 布林，用 lambda 吃掉（見 AGENTS.md 踩雷表）
     btn.clicked.connect(lambda _=False: helpDialog(
         window, helpPageIndex(tab_widget.currentIndex(), tab_keys)))
     tab_widget.setCornerWidget(btn, Qt.TopRightCorner)
