@@ -856,8 +856,10 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
 
     # ── 平時自動備份（GFS 輪替，純靜默）──
     from lib.db_utils import getBackupSecondDir as _getBackupSecondDir
+    from lib.db_utils import getBackupConnectTimeout as _getBackupConnectTimeout
     _second = _getBackupSecondDir(db_path)
-    _backup.run_auto_backup(db_path, extra_dirs=[_second] if _second else None)
+    _backup.run_auto_backup(db_path, extra_dirs=[_second] if _second else None,
+                            connect_timeout=_getBackupConnectTimeout(db_path))
 
     def _heartbeat():
         _lock.write_lock(_lock_path, _machine, _user, _opened_iso,

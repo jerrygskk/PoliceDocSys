@@ -137,10 +137,11 @@ class BackupRestorePanel(QWidget):
 
     def reload(self):
         from lib.db_backup import list_backups
-        from lib.db_utils import getBackupSecondDir
+        from lib.db_utils import getBackupSecondDir, getBackupConnectTimeout
         second = getBackupSecondDir(self.db_path)
         self._entries = list_backups(
-            self.db_path, extra_dirs=[second] if second else None)
+            self.db_path, extra_dirs=[second] if second else None,
+            connect_timeout=getBackupConnectTimeout(self.db_path))
         self.table.setRowCount(0)
         for e in self._entries:
             r = self.table.rowCount()

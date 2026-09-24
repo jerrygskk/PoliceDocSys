@@ -107,10 +107,11 @@ class RescueDialog(QDialog):
     def _autoPick(self):
         """自動挑最新可用備份；無則進手動選檔模式。"""
         from lib.db_backup import find_latest_usable_backup
-        from lib.db_utils import getBackupSecondDir
+        from lib.db_utils import getBackupSecondDir, getBackupConnectTimeout
         second = getBackupSecondDir(self.db_path)   # 壞 DB 多半仍讀得到 App_Settings；讀不到回空
         e = find_latest_usable_backup(
-            self.db_path, extra_dirs=[second] if second else None)
+            self.db_path, extra_dirs=[second] if second else None,
+            connect_timeout=getBackupConnectTimeout(self.db_path))
         if e:
             self._setSource(e["path"], auto=True)
         else:

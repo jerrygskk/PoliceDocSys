@@ -838,6 +838,32 @@ def getBackupSecondDir(db_path):
         return ""
 
 
+# 異地備份連線等待秒數：網路位置在這個秒數內連不上就略過，不讓 Windows 自己
+# 等 20～40 秒（且一輪備份會碰好幾次）拖慢開程式。區網正常 1 秒內回應。
+BACKUP_CONNECT_TIMEOUT_KEY = "backup_connect_timeout_sec"
+BACKUP_CONNECT_TIMEOUT_DEFAULT = 3
+BACKUP_CONNECT_TIMEOUT_RANGE = (1, 30)
+
+
+def parseBackupConnectTimeout(raw):
+    """App_Settings 字串 → 秒數（int）；未設定／非數字／超出範圍回預設。"""
+    try:
+        val = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return BACKUP_CONNECT_TIMEOUT_DEFAULT
+    lo, hi = BACKUP_CONNECT_TIMEOUT_RANGE
+    return val if lo <= val <= hi else BACKUP_CONNECT_TIMEOUT_DEFAULT
+
+
+def getBackupConnectTimeout(db_path):
+    """異地備份連線等待秒數；讀不到（含 DB 損毀）回預設。"""
+    try:
+        return parseBackupConnectTimeout(
+            getSetting(db_path, BACKUP_CONNECT_TIMEOUT_KEY, ""))
+    except Exception:
+        return BACKUP_CONNECT_TIMEOUT_DEFAULT
+
+
 _PDF_INDEX_CACHE = {}   # base_dir -> {nfc(檔名): 完整路徑}
 
 

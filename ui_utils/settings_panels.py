@@ -746,6 +746,24 @@ class BackupPanel(_SettingsPanel):
         v.addLayout(row)
         btn_pick.clicked.connect(self._pick)
 
+        # 異地備份連線等待秒數：逾時即略過異地備份（比照 TicketNoLengthPanel 的無箭頭數字框）
+        from lib.db_utils import BACKUP_CONNECT_TIMEOUT_RANGE
+        lo, hi = BACKUP_CONNECT_TIMEOUT_RANGE
+        row2 = QHBoxLayout()
+        row2.setSpacing(10)
+        row2.addWidget(QLabel("異地備份連線等待秒數"))
+        self.sp_timeout = QSpinBox()
+        self.sp_timeout.setRange(lo, hi)
+        self.sp_timeout.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self.sp_timeout.setFixedWidth(90)
+        self.sp_timeout.setAlignment(Qt.AlignCenter)
+        row2.addWidget(self.sp_timeout)
+        tip = QLabel("（逾時即略過本次異地備份）")
+        tip.setStyleSheet(_HINT_SS)
+        row2.addWidget(tip)
+        row2.addStretch()
+        v.addLayout(row2)
+
         # 異地副本最近備份時間（reload 時更新；過舊紅字、正常灰字）
         self.lbl_status = QLabel("")
         self.lbl_status.setWordWrap(True)
@@ -754,6 +772,7 @@ class BackupPanel(_SettingsPanel):
         self._btn_save = _save_row(v)
         self._btn_save.clicked.connect(self._save)
         self.w_path.textChanged.connect(self._updateSaveBtn)
+        self.sp_timeout.valueChanged.connect(self._updateSaveBtn)
 
     def _pick(self):
         from lib.db_utils import toUncPath
@@ -769,9 +788,11 @@ class BackupPanel(_SettingsPanel):
         self.w_path.setText(unc if unc else self._normPath(folder))
 
     def reload(self):
-        from lib.db_utils import getSetting, BACKUP_SECOND_DIR_KEY
+        from lib.db_utils import (getSetting, BACKUP_SECOND_DIR_KEY,
+                                  getBackupConnectTimeout)
         cur = (getSetting(self.db_path, BACKUP_SECOND_DIR_KEY, "") or "").strip()
         self.w_path.setText(cur)
+        self.sp_timeout.setValue(getBackupConnectTimeout(self.db_path))
         self._refreshStatus(cur)
         self._markLoaded()
 
@@ -779,7 +800,8 @@ class BackupPanel(_SettingsPanel):
         """更新「最近副本備份」狀態字：未設定→隱藏；有設定→顯示最新日期，
         無備份／過舊給提醒色。"""
         from datetime import date
-        from lib.db_backup import latest_backup_date, last_backup_error
+        from lib.db_backup import (latest_backup_date, last_backup_error,
+                                   is_reachable)
         if not path:
             self.lbl_status.setText("")
             return
@@ -789,6 +811,14 @@ class BackupPanel(_SettingsPanel):
             self.lbl_status.setStyleSheet(
                 "color: #c0392b; font-size: 11pt; font-weight: 400;")
             self.lbl_status.setText(f"⚠ {failed}")
+            return
+        # 先敲門：網路電腦沒回應就不去讀資料夾，免得面板卡住數十秒
+        secs = self.sp_timeout.value()
+        if not is_reachable(path, secs):
+            self.lbl_status.setStyleSheet(
+                "color: #c0392b; font-size: 11pt; font-weight: 400;")
+            self.lbl_status.setText(
+                f"⚠ 此網路位置在 {secs} 秒內沒有回應，請確認對方電腦已開機且網路連線正常。")
             return
         latest = latest_backup_date(path)
         if latest is None:
@@ -816,26 +846,37 @@ class BackupPanel(_SettingsPanel):
             self.lbl_status.setText(f"最近異地備份：{latest:%Y-%m-%d}。")
 
     def _values(self):
-        return (self.w_path.text().strip(),)
+        return (self.w_path.text().strip(), self.sp_timeout.value())
 
     def _save(self):
         """存檔成功回 True、被擋回 False。"""
         from lib.auth_manager import AuthManager
         from lib.db_utils import (setSetting, getSetting, BACKUP_SECOND_DIR_KEY,
+                                  BACKUP_CONNECT_TIMEOUT_KEY,
+                                  getBackupConnectTimeout,
                                   writeAuditSafe, buildDetail)
         # 權限 gate：僅 admin（面板反灰之外的保底，防替代觸發路徑繞過）
         if not AuthManager.instance().is_admin():
             return False
         new = self._normPath(self.w_path.text())
         old = (getSetting(self.db_path, BACKUP_SECOND_DIR_KEY, "") or "").strip()
+        old_secs = getBackupConnectTimeout(self.db_path)
+        new_secs = self.sp_timeout.value()
         setSetting(self.db_path, BACKUP_SECOND_DIR_KEY, new)
+        setSetting(self.db_path, BACKUP_CONNECT_TIMEOUT_KEY, str(new_secs))
+        am = AuthManager.instance()
         if new != old:
-            am = AuthManager.instance()
             writeAuditSafe(self.db_path, role=am.current_role, action="CONFIG",
                            operator=am.actor_name(),
                            detail=buildDetail(
                                "系統", "修改",
                                f"第二備份位置：{old or '（未設定）'} → {new or '（未設定）'}"))
+        if new_secs != old_secs:
+            writeAuditSafe(self.db_path, role=am.current_role, action="CONFIG",
+                           operator=am.actor_name(),
+                           detail=buildDetail(
+                               "系統", "修改",
+                               f"異地備份連線等待秒數：{old_secs} → {new_secs}"))
         # 帳密／權限問題（如未登入的網路位置）由 reload→_refreshStatus 以紅字呈現，
         # 不彈 popup。
         self.reload()   # 重設 dirty 基準（儲存鈕隨之回灰）＋更新狀態字

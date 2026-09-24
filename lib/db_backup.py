@@ -164,6 +164,43 @@ def _ensure_dir(bdir):
     os.makedirs(bdir, exist_ok=True)
 
 
+class BackupHostUnreachable(OSError):
+    """網路備份位置在設定秒數內連不上（由 check_reachable 拋出）。"""
+
+
+def _unc_host(path):
+    """`\\\\主機\\分享\\...` → 主機；非網路路徑回 None（純邏輯，可單測）。"""
+    p = (path or "").strip().replace("/", "\\")
+    if not p.startswith("\\\\"):
+        return None
+    host = p[2:].split("\\", 1)[0]
+    return host or None
+
+
+def is_reachable(path, timeout):
+    """網路路徑先試連該主機的檔案分享服務（SMB，445 埠），最多等 timeout 秒；
+    本機碟／外接碟直接回 True。
+
+    ⚠️ 不能只靠 os.path.isdir 之類去碰：主機不在線時 Windows 要等 20～40 秒才放棄，
+    而一輪備份會碰同一位置好幾次，每次都重等。故先敲門，連不上整處略過。
+    """
+    import socket
+    host = _unc_host(path)
+    if host is None:
+        return True
+    try:
+        socket.create_connection((host, 445), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+def check_reachable(path, timeout):
+    """同 is_reachable，但連不上時拋 BackupHostUnreachable（給備份流程走既有錯誤記錄）。"""
+    if not is_reachable(path, timeout):
+        raise BackupHostUnreachable(f"{timeout} 秒內連不上 {_unc_host(path)}")
+
+
 def _run_gfs(db_path, bdir, today):
     """對單一備份資料夾跑一輪每日＋每週＋每月 GFS 輪替修剪。"""
     _ensure_dir(bdir)
@@ -251,6 +288,8 @@ def _reason_for(exc):
     """把例外對應成一句原因短語；對照不到回「無法存取」。"""
     winerr = getattr(exc, "winerror", None)
     errno_ = getattr(exc, "errno", None)
+    if isinstance(exc, BackupHostUnreachable):
+        return "網路電腦在設定的秒數內沒有回應，可能未開機或網路不通"
     if winerr in _WINERR_REASONS:
         return _WINERR_REASONS[winerr]
     if isDiskFullError(exc):
@@ -266,12 +305,13 @@ def _reason_for(exc):
     return "無法存取"
 
 
-def run_auto_backup(db_path, now=None, extra_dirs=None):
+def run_auto_backup(db_path, now=None, extra_dirs=None, connect_timeout=3):
     """啟動時呼叫：主備份（db 旁 backups/）＋可選異地副本（extra_dirs 各一份），
     每處各自跑每日／每週輪替修剪。全程靜默，絕不阻擋開程式。
 
     extra_dirs：絕對路徑清單（第二備份位置），由呼叫端讀設定後傳入。每處各自
     獨立 try——某處失敗（如網路碟斷線、權限不足）不影響其他處，也不擋開程式。
+    connect_timeout：異地位置為網路路徑時，先試連最多等幾秒，連不上即略過。
     """
     today = (now or datetime.now()).date()
     dirs = [(backup_dir(db_path), False)]
@@ -280,6 +320,8 @@ def run_auto_backup(db_path, now=None, extra_dirs=None):
             dirs.append((d.strip(), True))
     for bdir, is_extra in dirs:
         try:
+            if is_extra:
+                check_reachable(bdir, connect_timeout)
             _run_gfs(db_path, bdir, today)
             _LAST_ERRORS.pop(bdir, None)
         except Exception as e:
@@ -434,10 +476,10 @@ def _entry(path, source, kind, when):
             "source": source, "kind": kind, "when": when, "size": size}
 
 
-def list_backups(db_path, extra_dirs=None):
+def list_backups(db_path, extra_dirs=None, connect_timeout=3):
     """彙整所有可還原備份，最新在前。來源三類：
        - 主備份：db 旁 backups/（每日／每週）
-       - 異地副本：extra_dirs 各資料夾（每日／每週）
+       - 異地副本：extra_dirs 各資料夾（每日／每週；網路位置連不上即略過）
        - 重置／還原留底：db 同目錄的 dbfile_backup_*_*.db／dbfile_prerestore_*.db
     每筆 dict：{path,name,source,kind,when(datetime),size}。讀不到的資料夾靜默略過。"""
     out = []
@@ -465,7 +507,7 @@ def list_backups(db_path, extra_dirs=None):
 
     scan_gfs(backup_dir(db_path), "主備份")
     for d in (extra_dirs or []):
-        if d and d.strip():
+        if d and d.strip() and is_reachable(d.strip(), connect_timeout):
             scan_gfs(d.strip(), "異地副本")
 
     db_dir = os.path.dirname(os.path.abspath(db_path))
@@ -547,10 +589,11 @@ def formatDocCounts(counts, prefix="", suffix=""):
     )
 
 
-def find_latest_usable_backup(db_path, extra_dirs=None):
+def find_latest_usable_backup(db_path, extra_dirs=None, connect_timeout=3):
     """從所有候選備份（最新在前）逐份 quick_check，回第一份完好的 entry；無則 None。
     給開機救援「自動挑最新可還原的備份」用——最新那份也壞就自動跳下一份。"""
-    for e in list_backups(db_path, extra_dirs=extra_dirs):
+    for e in list_backups(db_path, extra_dirs=extra_dirs,
+                          connect_timeout=connect_timeout):
         ok, _ = verify_backup(e["path"])
         if ok:
             return e

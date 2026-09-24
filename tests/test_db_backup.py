@@ -626,5 +626,71 @@ class TestVerifyAdminPassword(unittest.TestCase):
         self.assertFalse(db_backup.verify_admin_password(bk2, "secret"))  # 其他不過
 
 
+class TestReachability(unittest.TestCase):
+    """異地備份的連線檢查：網路位置連不上就在設定秒數內略過。"""
+
+    def test_unc_host(self):
+        self.assertEqual(db_backup._unc_host(r"\\10.1.2.3\long\#CFbackup"), "10.1.2.3")
+        self.assertEqual(db_backup._unc_host("//srv/share"), "srv")
+        self.assertIsNone(db_backup._unc_host(r"D:\backup"))
+        self.assertIsNone(db_backup._unc_host(""))
+
+    def test_local_path_skips_probe(self):
+        with unittest.mock.patch("socket.create_connection") as cc:
+            self.assertTrue(db_backup.is_reachable(r"D:\backup", 3))
+        cc.assert_not_called()
+
+    def test_unc_probe_uses_smb_port_and_timeout(self):
+        with unittest.mock.patch("socket.create_connection") as cc:
+            self.assertTrue(db_backup.is_reachable(r"\\10.1.2.3\long", 3))
+        cc.assert_called_once_with(("10.1.2.3", 445), timeout=3)
+
+    def test_unc_unreachable(self):
+        with unittest.mock.patch("socket.create_connection",
+                                 side_effect=TimeoutError()):
+            self.assertFalse(db_backup.is_reachable(r"\\10.1.2.3\long", 3))
+
+    def test_auto_backup_skips_unreachable_extra_and_records_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "dbfile.db")
+            sqlite3.connect(src).close()
+            second = r"\\10.1.2.3\long"
+            with unittest.mock.patch("socket.create_connection",
+                                     side_effect=TimeoutError()), \
+                 unittest.mock.patch.object(db_backup, "_run_gfs",
+                                            wraps=db_backup._run_gfs) as gfs, \
+                 self.assertLogs(level="ERROR") as logs:
+                db_backup.run_auto_backup(src, extra_dirs=[second],
+                                          connect_timeout=3)
+            self.assertEqual(gfs.call_count, 1)          # 只跑主備份
+            self.assertIn("沒有回應", logs.output[0])
+            self.assertTrue(db_backup.last_backup_error(second))
+            db_backup._LAST_ERRORS.pop(second, None)
+
+    def test_list_backups_skips_unreachable_extra(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "dbfile.db")
+            sqlite3.connect(src).close()
+            with unittest.mock.patch("socket.create_connection",
+                                     side_effect=TimeoutError()), \
+                 unittest.mock.patch("os.listdir", wraps=os.listdir) as ld:
+                db_backup.list_backups(src, extra_dirs=[r"\\10.1.2.3\long"])
+            self.assertNotIn(r"\\10.1.2.3\long",
+                             [c.args[0] for c in ld.call_args_list])
+
+
+class TestConnectTimeoutSetting(unittest.TestCase):
+    def test_parse(self):
+        from lib.db_utils import (parseBackupConnectTimeout as p,
+                                  BACKUP_CONNECT_TIMEOUT_DEFAULT as d)
+        self.assertEqual(p(""), d)
+        self.assertEqual(p(None), d)
+        self.assertEqual(p("abc"), d)
+        self.assertEqual(p("0"), d)
+        self.assertEqual(p("31"), d)
+        self.assertEqual(p("5"), 5)
+        self.assertEqual(p(" 1 "), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
