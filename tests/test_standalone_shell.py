@@ -44,22 +44,9 @@ def shell_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _detach_manager_signals():
-    """AuthManager 是單例，DocumentManager 會把 _updateTitle 掛上 role_changed。
-    正式程式只建立一個 manager 且活到程式結束，故不受影響；但測試會反覆建立
-    manager，widget 被回收後連線仍留在單例上，之後任何測試切換身分都會打到
-    已釋放的視窗（RuntimeError: Internal C++ object already deleted），
-    在 pytest-qt 的例外攔截下會讓「別支」測試莫名紅燈。故每支測試後拆掉本次
-    新增的連線，回到乾淨狀態。"""
-    auth = AuthManager.instance()
-    auth._role = "user"
-    signal = auth.role_changed
-    yield
-    try:
-        signal.disconnect()
-    except (RuntimeError, TypeError):
-        pass   # 本來就沒有連線
-    auth._role = "user"
+def _start_as_user():
+    """收尾的拆線與身分還原由 conftest 統一處理（PITFALLS TST-6）。"""
+    AuthManager.instance()._role = "user"
 
 
 def _visible_tab_keys(manager):
@@ -526,6 +513,13 @@ def test_run_application_activates_selected_startup_tab_exactly_once(
 
         def setStyleSheet(self, style):
             pass
+
+        def setPalette(self, palette):
+            pass
+
+        @staticmethod
+        def styleHints():
+            return object()
 
         def setWindowIcon(self, icon):
             pass

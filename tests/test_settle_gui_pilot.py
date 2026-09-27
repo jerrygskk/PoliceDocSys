@@ -86,19 +86,8 @@ def db_path(tmp_path):
 def _admin_role():
     """登錄與結算都以管理身分進行（唯讀鎖不是本檔要驗的東西）。
 
-    ⚠️ 收尾必須拆掉 `role_changed` 的連線：`AuthManager` 是單例，各分頁在
-    `setup()` 時把自己的處理函式掛上去，本檔建立的分頁在測試結束後被回收，
-    連線卻留在單例上；之後**別支測試**切換身分就會打到已釋放的 C++ 物件
-    （`RuntimeError: Internal C++ object already deleted`），紅在毫不相干的地方。
-    作法比照 `tests/test_standalone_shell.py`。"""
-    auth = AuthManager.instance()
-    auth._role = "admin"
-    yield
-    try:
-        auth.role_changed.disconnect()
-    except (RuntimeError, TypeError):
-        pass   # 本來就沒有連線
-    auth._role = "user"
+    收尾的拆線與身分還原由 conftest 統一處理（PITFALLS TST-6）。"""
+    AuthManager.instance()._role = "admin"
 
 
 @pytest.fixture

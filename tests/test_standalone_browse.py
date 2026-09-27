@@ -383,19 +383,10 @@ class _EntryPreviewBase(unittest.TestCase):
         conn.commit()
         conn.close()
         self._extra_tabs = []
-        self._tabs_made = []      # tearDown 要逐一拆 role_changed 連線（TST-6）
         AuthManager.instance()._role = "user"
 
     def tearDown(self):
-        # ⚠️ 拆掉本檔分頁掛在 AuthManager 單例上的連線（PITFALLS TST-6／PRM-5）：
-        # 逐列重刷會再查一次資料庫，殭屍分頁會去查早已刪除的暫存 DB。
-        am = AuthManager.instance()
-        for tab in getattr(self, "_tabs_made", []):
-            try:
-                am.role_changed.disconnect(tab._onRoleRefresh)
-            except (RuntimeError, TypeError):
-                pass
-        am._role = "user"
+        # 分頁掛在 AuthManager 單例上的連線與身分由 conftest 統一還原（PITFALLS TST-6）
         for t in self._extra_tabs:
             t.deleteLater()
         try:
@@ -410,7 +401,6 @@ class _EntryPreviewBase(unittest.TestCase):
         self._extra_tabs.append(tabs)
         tab = TabReward(tabs, self.db)
         tab.setup(0)
-        self._tabs_made.append(tab)
         return tab
 
     def _ticket_tab(self, role):
@@ -420,7 +410,6 @@ class _EntryPreviewBase(unittest.TestCase):
         self._extra_tabs.append(tabs)
         tab = TabTicket(tabs, self.db)
         tab.setup(0)
-        self._tabs_made.append(tab)
         return tab
 
 

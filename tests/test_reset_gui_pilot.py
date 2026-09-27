@@ -48,9 +48,6 @@ from tabs.tab_settings import TabSettings
 from ui_utils.settings_dialogs import ResetDialog
 
 
-# 本檔建立的設定頁；收尾要逐一拆掉掛在 AuthManager 單例上的連線（見 _admin_role）
-_MADE_TABS = []
-
 ACTIVE_STAFF = ("P01", "王小明")
 INACTIVE_STAFF = ("P02", "李小華")     # 停用項目：重置時應被刪除
 
@@ -81,19 +78,8 @@ def db_path(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _admin_role():
-    """重置僅管理身分可為。收尾必須拆掉 `role_changed` 連線——`TabSettings.setup`
-    會把處理函式掛上 `AuthManager` 單例，分頁被回收後連線仍在，之後別支測試
-    切換身分就會打到已釋放的 C++ 物件，紅在毫不相干的檔案上（本專案踩過）。"""
-    auth = AuthManager.instance()
-    auth._role = "admin"
-    yield
-    while _MADE_TABS:
-        tab = _MADE_TABS.pop()
-        try:
-            auth.role_changed.disconnect(tab._onRoleChanged)
-        except (RuntimeError, TypeError):
-            pass   # 已隨 widget 一併失效
-    auth._role = "user"
+    """重置僅管理身分可為。收尾的拆線與身分還原由 conftest 統一處理（PITFALLS TST-6）。"""
+    AuthManager.instance()._role = "admin"
 
 
 @pytest.fixture
@@ -129,7 +115,6 @@ def _make_settings(qtbot, db_path):
     tab = TabSettings(tabs, db_path)
     tab.setup(0)
     tab._applyRolePermissions()
-    _MADE_TABS.append(tab)
     return tab
 
 

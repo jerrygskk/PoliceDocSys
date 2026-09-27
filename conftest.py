@@ -46,7 +46,8 @@ MARKER_MODULES = {
         "test_dialog_disabled_style.py", "test_dialog_smoke.py",
         "test_dispatch_tab.py", "test_edit_dialog_optimistic_lock.py",
         "test_help_content_contract.py",
-        "test_idle_timeout_live_apply.py",
+        "test_idle_timeout_live_apply.py", "test_light_palette.py",
+        "test_auth_singleton_reset.py",
         "test_loading_screen_banner.py", "test_nullable_date.py",
         "test_pytest_qt_runtime.py", "test_report_mode_switch.py",
         "test_reset_gui_pilot.py", "test_restore_gui_pilot.py",
@@ -204,6 +205,21 @@ def _auto_confirm_date_guard(request, monkeypatch):
     if request.path.name in DATE_GUARD_OWN_TESTS:
         return
     installAutoConfirm(monkeypatch)
+
+
+# --- AuthManager 單例的收尾（PITFALLS TST-6）--------------------------------
+# 分頁／面板在 setup 時把處理函式接到單例的 role_changed；單例活過整個 session，
+# 分頁卻隨測試回收。連線沒拆，下一支切換身分的測試就會打到已釋放的物件，
+# 紅在毫不相干的檔案上。統一在此拆線並還原身分，各測試檔不必自己記得。
+@pytest.fixture(autouse=True)
+def _reset_auth_singleton():
+    yield
+    from PySide6.QtCore import SIGNAL
+    from lib.auth_manager import AuthManager
+    auth = AuthManager.instance()
+    if auth.receivers(SIGNAL("role_changed(QString)")):
+        auth.role_changed.disconnect()
+    auth._role = "user"
 
 
 def classify_test_module(module_name: str) -> str:

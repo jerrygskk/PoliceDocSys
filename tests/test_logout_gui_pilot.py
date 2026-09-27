@@ -73,18 +73,9 @@ def pilot_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _detach_manager_signals():
-    """AuthManager 是單例；測試反覆建立 manager 會把已回收的視窗留在 role_changed
-    上，之後任何切換身分都會打到已釋放的 C++ 物件而讓別支測試莫名紅燈。
-    同 `test_standalone_shell.py` 的處理。"""
-    auth = AuthManager.instance()
-    auth._role = "user"
-    yield
-    try:
-        auth.role_changed.disconnect()
-    except (RuntimeError, TypeError):
-        pass   # 本來就沒有連線
-    auth._role = "user"
+def _start_as_user():
+    """收尾的拆線與身分還原由 conftest 統一處理（PITFALLS TST-6）。"""
+    AuthManager.instance()._role = "user"
 
 
 def _read_reason(db_path):

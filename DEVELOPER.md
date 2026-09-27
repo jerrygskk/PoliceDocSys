@@ -221,7 +221,7 @@ graph LR
   `test_settings_panel_pilot`／`test_date_guard_gui_pilot`（日期防呆確認框，
   `qt` 層）。寫新 pilot 的四條規則（都踩過）：
   1. 只建單一分頁就留在 `qt` 層；會建完整 `DocumentManager` 的才進 shell 層並列入 `ISOLATED_MODULES`
-  2. 收尾必須拆掉掛在 `AuthManager` 單例上的 `role_changed` 連線，見 PITFALLS **TST-6**
+  2. `AuthManager` 單例的 `role_changed` 連線與身分由根 `conftest.py` 在每支測試後統一拆除／還原，**測試檔不必也不要自己拆**；此收尾只在 pytest 下生效（unittest 備援跑法不含，見 PITFALLS **TST-6**）
   3. 一律不得呼叫 `exec()`（PITFALLS TST-4），改以「就地驅動」的函式走真實驗證邏輯
   4. 設計階段先盤點該流程會彈哪些框，逐一決定攔掉或斷言，見 PITFALLS **TST-7**
   ⚠️ 每支交付前都以「故意破壞被測機制、確認對應那支會紅」反證過，新增時照做

@@ -43,22 +43,10 @@ class _SettingsBase(unittest.TestCase):
         conn.commit()
         conn.close()
         self._extra_tabs = []
-        self._settings_tabs = []
         AuthManager.instance()._role = "user"
 
     def tearDown(self):
-        AuthManager.instance()._role = "user"
-        # ⚠️ TabSettings.setup 會把 _onRoleChanged 接到 AuthManager 單例上，
-        # 而單例活過整個 test session：只 deleteLater 容器的話，widget 被銷毀、
-        # 但連線還在，之後別的測試 emit role_changed 就會打到已刪除的
-        # _outer_stack（`RuntimeError: ... QStackedWidget already deleted`）。
-        # 這是跨檔汙染，只有特定執行順序才會炸（實際踩過：pytest 全跑時
-        # test_ticket_tab 的降權測試被牽連）。務必在這裡斷開。
-        for tab in self._settings_tabs:
-            try:
-                AuthManager.instance().role_changed.disconnect(tab._onRoleChanged)
-            except (RuntimeError, TypeError):
-                pass
+        # 分頁掛在 AuthManager 單例上的連線與身分由 conftest 統一還原（PITFALLS TST-6）
         for t in self._extra_tabs:
             t.deleteLater()
         try:
@@ -75,7 +63,6 @@ class _SettingsBase(unittest.TestCase):
         else:
             tab = TabSettings(tabs, self.db, profile=profile)
         tab.setup(0)
-        self._settings_tabs.append(tab)
         return tab
 
     def _login_as(self, settings, role):

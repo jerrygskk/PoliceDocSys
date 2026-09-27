@@ -496,3 +496,31 @@ QLabel#versionLabel {
     color: #aeaeb2;
 }
 """
+
+
+def apply_light_palette(app):
+    """整支程式固定用淺色 palette，不跟 Windows 深色模式走（PITFALLS QSS-9）。
+
+    APPLE_STYLE 寫死淺色底，但樣式表沒點名文字色的元件（預覽表格、多行文字框、
+    數字框、群組框標題）與 Qt 內建圖示（月曆 ‹ › 換月箭頭等）仍依系統 palette
+    繪製；深色模式下前景變白，畫在白底上就看不見。須在 setStyleSheet 之前呼叫。
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor, QPalette
+
+    hints = app.styleHints()
+    if hasattr(hints, "setColorScheme"):  # Qt 6.8+
+        hints.setColorScheme(Qt.ColorScheme.Light)
+    pal = QPalette()
+    for role, color in (
+        (QPalette.Window, "#f2f2f7"), (QPalette.Base, "#ffffff"),
+        (QPalette.AlternateBase, "#f2f2f7"), (QPalette.Button, "#ffffff"),
+        (QPalette.WindowText, TEXT_COLOR), (QPalette.Text, TEXT_COLOR),
+        (QPalette.ButtonText, TEXT_COLOR), (QPalette.PlaceholderText, HINT_COLOR),
+        (QPalette.ToolTipBase, "#ffffff"), (QPalette.ToolTipText, TEXT_COLOR),
+        (QPalette.Highlight, "#007aff"), (QPalette.HighlightedText, "#ffffff"),
+    ):
+        pal.setColor(role, QColor(color))
+    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
+        pal.setColor(QPalette.Disabled, role, QColor(HINT_COLOR))
+    app.setPalette(pal)

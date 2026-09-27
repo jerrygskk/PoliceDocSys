@@ -74,20 +74,9 @@ class TicketTabBase(unittest.TestCase):
         conn.close()
         self.tabs = QTabWidget()
         self.tabs.addTab(QWidget(), "罰單登錄")
-        self._tabs_made = []      # tearDown 要逐一拆 role_changed 連線（TST-6）
 
     def tearDown(self):
-        # ⚠️ 拆掉本檔分頁掛在 AuthManager 單例上的連線（PITFALLS TST-6）。
-        # 單例活過整個 session、分頁隨測試回收；不拆的話，之後任何測試切換身分
-        # 都會叫到這些殭屍分頁的 `_refreshRowPermissions`，而它們的暫存資料庫
-        # 早已被刪除，紅在毫不相干的測試上。
-        from lib.auth_manager import AuthManager
-        am = AuthManager.instance()
-        for tab in getattr(self, "_tabs_made", []):
-            try:
-                am.role_changed.disconnect(tab._onRoleRefresh)
-            except (RuntimeError, TypeError):
-                pass
+        # 分頁掛在 AuthManager 單例上的連線由 conftest 統一拆（PITFALLS TST-6）
         self.tabs.deleteLater()
         try:
             os.remove(self.db)
@@ -105,7 +94,6 @@ class TicketTabBase(unittest.TestCase):
         from tabs.tab_ticket import TabTicket
         tab = TabTicket(self.tabs, self.db)
         tab.setup(0)
-        self._tabs_made.append(tab)
         return tab
 
     def _index_for(self, staff_id, tab=None, combo=None):
@@ -516,7 +504,6 @@ class TestTicketInputLock(TicketTabBase):
         self._extra_tabs.append(tabs)
         tab = TabTicket(tabs, self.db)
         tab.setup(0)
-        self._tabs_made.append(tab)
         return tab
 
     def _make_multi_tab(self):
@@ -529,7 +516,6 @@ class TestTicketInputLock(TicketTabBase):
         self._extra_tabs.append(tabs)
         tab = TabTicket(tabs, self.db)
         tab.setup(1)
-        self._tabs_made.append(tab)
         return tabs, tab
 
     def _set_lock(self, on):
@@ -685,7 +671,6 @@ class TestTicketCrossPageRefresh(TicketTabBase):
         self._extra_tabs.append(tabs)
         tab = TabTicket(tabs, self.db)
         tab.setup(1)
-        self._tabs_made.append(tab)
         return tabs, tab
 
     def tearDown(self):

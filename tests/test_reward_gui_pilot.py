@@ -67,7 +67,7 @@ def fetch_reward(db_path, doc_id):
         conn.close()
 
 
-def test_reward_lifecycle_pilot(qtbot, reward_db, request):
+def test_reward_lifecycle_pilot(qtbot, reward_db):
     """登錄頁送文者模式一條龍：登錄即發文 → 編號連結開修改視窗 → 儲存。
 
     未設定 report_mode_reward 即預設送文者輸入模式（reward 不吃舊
@@ -79,17 +79,8 @@ def test_reward_lifecycle_pilot(qtbot, reward_db, request):
     的是「登錄→編輯→儲存」這條接縫，不是權限矩陣（那由 test_row_perm.py 與
     各頁測試負責），故以管理身分跑完整條路徑。
     """
-    am = AuthManager.instance()
-    original_role = am.current_role
-    am._role = "admin"
-    # ⚠️ 收尾要還原身分並拆掉分頁掛在單例上的 role_changed 連線（PITFALLS TST-6）
-    def _restore():
-        try:
-            am.role_changed.disconnect(entry._onRoleRefresh)
-        except (RuntimeError, TypeError):
-            pass
-        am._role = original_role
-    request.addfinalizer(_restore)
+    # 收尾的拆線與身分還原由 conftest 統一處理（PITFALLS TST-6）
+    AuthManager.instance()._role = "admin"
 
     tabs = QTabWidget()
     tabs.addTab(QWidget(), "登錄")

@@ -32,19 +32,9 @@ class TestRewardTab(unittest.TestCase):
         conn.close()
         self.tabs = QTabWidget()
         self.tabs.addTab(QWidget(), "敘獎登錄")
-        self._tabs_made = []      # tearDown 要逐一拆 role_changed 連線（TST-6）
 
     def tearDown(self):
-        # ⚠️ 拆掉本檔分頁掛在 AuthManager 單例上的連線（PITFALLS TST-6）。
-        # 單例活過整個 session、分頁隨測試回收；不拆的話，之後任何測試切換身分
-        # 都會叫到這些殭屍分頁的 `_refreshRowPermissions`，而它們的暫存資料庫
-        # 早就被刪掉了（`no such table: Document_Reward`），紅在別支測試上。
-        am = AuthManager.instance()
-        for tab in self._tabs_made:
-            try:
-                am.role_changed.disconnect(tab._onRoleRefresh)
-            except (RuntimeError, TypeError):
-                pass
+        # 分頁掛在 AuthManager 單例上的連線由 conftest 統一拆（PITFALLS TST-6）
         self.tabs.deleteLater()
         try:
             os.remove(self.db)
@@ -55,7 +45,6 @@ class TestRewardTab(unittest.TestCase):
         from tabs.tab_reward import TabReward
         tab = TabReward(self.tabs, self.db)
         tab.setup(0)
-        self._tabs_made.append(tab)
         return tab
 
     def test_setup_initializes_form_with_issue_fields(self):
@@ -317,22 +306,10 @@ class TestRewardInputLock(unittest.TestCase):
         conn.commit()
         conn.close()
         self._extra_tabs = []
-        self._tabs_made = []      # tearDown 要逐一拆 role_changed 連線（TST-6）
         AuthManager.instance()._role = "user"
 
     def tearDown(self):
-        # ⚠️ 先拆掉本檔建立的分頁掛在 AuthManager 單例上的 role_changed 連線
-        # （PITFALLS TST-6）。單例活過整個 test session，分頁卻隨測試回收；
-        # 連線留著的話，之後任何測試切換身分都會打到已釋放的物件，或
-        # ——本檔實際踩過——觸發 `_refreshRowPermissions` 去查一個已被刪掉的
-        # 暫存資料庫（`no such table: Document_Reward`），紅在毫不相干的測試上。
-        am = AuthManager.instance()
-        for tab in getattr(self, "_tabs_made", []):
-            try:
-                am.role_changed.disconnect(tab._onRoleRefresh)
-            except (RuntimeError, TypeError):
-                pass
-        am._role = "user"                       # 還原單例（不 emit）
+        # 分頁掛在 AuthManager 單例上的連線與身分由 conftest 統一還原（PITFALLS TST-6）
         for t in self._extra_tabs:
             t.deleteLater()
         try:
@@ -348,7 +325,6 @@ class TestRewardInputLock(unittest.TestCase):
         self._extra_tabs.append(tabs)
         tab = TabReward(tabs, self.db)
         tab.setup(0)
-        self._tabs_made.append(tab)
         return tab
 
     def _make_multi_tab(self):
@@ -361,7 +337,6 @@ class TestRewardInputLock(unittest.TestCase):
         self._extra_tabs.append(tabs)
         tab = TabReward(tabs, self.db)
         tab.setup(1)
-        self._tabs_made.append(tab)
         return tabs, tab
 
     def _set_lock(self, on):

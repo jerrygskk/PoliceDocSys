@@ -77,7 +77,7 @@ from PySide6.QtWidgets import QApplication, QDialog
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFont
 
-from lib.theme import APPLE_STYLE
+from lib.theme import APPLE_STYLE, apply_light_palette
 from lib.version import __version__
 from lib.db_utils import getResourcePath
 from ui_utils import loadUi, msgInfo, installDateEditInputGuard
@@ -777,6 +777,7 @@ def runApplication(profile: AppProfile = FULL_PROFILE) -> int:
     _installChineseTranslator(app)
     installDateEditInputGuard(app)
     app.setFont(QFont("Microsoft JhengHei", 14))
+    apply_light_palette(app)  # 不跟 Windows 深色模式走（PITFALLS QSS-9）
     app.setStyleSheet(APPLE_STYLE)
 
     from PySide6.QtGui import QIcon
