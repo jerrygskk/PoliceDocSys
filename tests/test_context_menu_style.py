@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QLibraryInfo
+from PySide6.QtCore import QCoreApplication, QEvent, QLibraryInfo
 from PySide6.QtWidgets import QApplication, QLineEdit
 
 import main
@@ -166,7 +166,17 @@ class TestChineseTranslatorIntegration(unittest.TestCase):
             self.addCleanup(menu.deleteLater)
             first_text = menu.actions()[0].text().replace("&", "")
             self.assertIn("復原", first_text)
+            texts = [a.text() for a in menu.actions() if a.text()]
+            self.assertTrue(any(t.startswith("全選") for t in texts))
+            tr = QCoreApplication.translate
+            self.assertEqual(tr("QScrollBar", "Scroll here"), "捲動到這裡")
+            self.assertEqual(tr("QScrollBar", "Bottom"), "底部")
+            self.assertEqual(tr("QLineEdit", "&Copy"), "複製(&C)")  # 沒改寫的照官方
         finally:
+            fix = getattr(_app, "_wording_fix_translator", None)
+            if fix is not None:
+                _app.removeTranslator(fix)
+                delattr(_app, "_wording_fix_translator")
             if installed is not None and installed is not previous:
                 _app.removeTranslator(installed)
             if previous is None:
@@ -213,7 +223,7 @@ class TestChineseTranslatorLoading(unittest.TestCase):
         self.assertTrue(self._install(official_dir, self.root / "bundle"))
         self.assertEqual(_FakeTranslator.attempted_paths,
                          [os.path.normpath(str(qm_path))])
-        self.assertEqual(len(self.app.installed), 1)
+        self.assertEqual(len(self.app.installed), 2)  # 官方翻譯＋用語改寫
         self.assertIs(self.app._qtbase_zh_tw_translator, self.app.installed[0])
 
     def test_falls_back_to_pyinstaller_translation_directory(self):
@@ -225,7 +235,7 @@ class TestChineseTranslatorLoading(unittest.TestCase):
         self.get_resource_path.assert_called_once_with("PySide6/translations")
         self.assertEqual(_FakeTranslator.attempted_paths,
                          [os.path.normpath(str(qm_path))])
-        self.assertEqual(len(self.app.installed), 1)
+        self.assertEqual(len(self.app.installed), 2)  # 官方翻譯＋用語改寫
         self.assertIs(self.app._qtbase_zh_tw_translator, self.app.installed[0])
 
     def test_missing_translation_files_is_silent_and_installs_nothing(self):
@@ -250,7 +260,7 @@ class TestChineseTranslatorLoading(unittest.TestCase):
             _FakeTranslator.attempted_paths,
             [os.path.normpath(str(official_qm)), os.path.normpath(str(bundled_qm))],
         )
-        self.assertEqual(len(self.app.installed), 1)
+        self.assertEqual(len(self.app.installed), 2)  # 官方翻譯＋用語改寫
         self.assertIs(self.app._qtbase_zh_tw_translator, self.app.installed[0])
 
     def test_load_error_falls_back_to_bundle(self):
@@ -289,8 +299,8 @@ class TestChineseTranslatorLoading(unittest.TestCase):
         self.app.install_effects = [RuntimeError("install failed"), True]
 
         self.assertTrue(self._install(official_dir, bundled_dir))
-        self.assertEqual(len(self.app.install_attempts), 2)
-        self.assertEqual(len(self.app.installed), 1)
+        self.assertEqual(len(self.app.install_attempts), 3)  # 失敗一次＋官方＋用語改寫
+        self.assertEqual(len(self.app.installed), 2)  # 官方翻譯＋用語改寫
         self.assertIs(self.app._qtbase_zh_tw_translator, self.app.installed[0])
         self.assertIsNot(self.app._qtbase_zh_tw_translator,
                          self.app.install_attempts[0])
@@ -303,8 +313,8 @@ class TestChineseTranslatorLoading(unittest.TestCase):
         self.app.install_effects = [False, True]
 
         self.assertTrue(self._install(official_dir, bundled_dir))
-        self.assertEqual(len(self.app.install_attempts), 2)
-        self.assertEqual(len(self.app.installed), 1)
+        self.assertEqual(len(self.app.install_attempts), 3)  # 失敗一次＋官方＋用語改寫
+        self.assertEqual(len(self.app.installed), 2)  # 官方翻譯＋用語改寫
         self.assertIs(self.app._qtbase_zh_tw_translator, self.app.installed[0])
         self.assertIsNot(self.app._qtbase_zh_tw_translator,
                          self.app.install_attempts[0])
@@ -319,7 +329,7 @@ class TestChineseTranslatorLoading(unittest.TestCase):
         self.assertTrue(self._install(official_dir, bundled_dir))
         self.assertEqual(_FakeTranslator.attempted_paths,
                          [os.path.normpath(str(bundled_qm))])
-        self.assertEqual(len(self.app.installed), 1)
+        self.assertEqual(len(self.app.installed), 2)  # 官方翻譯＋用語改寫
         self.assertIs(self.app._qtbase_zh_tw_translator, self.app.installed[0])
 
 

@@ -726,9 +726,30 @@ def _buildDocumentManagerOrExit(loading, results, profile, cleanup_lock):
     return mgr
 
 
+# 捲軸右鍵選單與「全選」改用 Windows 正式用語（取自 zh-TW user32.dll.mui，
+# 2026-10-16 維護者核定整套對齊，與樂透 539 一致）；不分 context，只認原文
+WORDING_FIX = {
+    "Scroll here": "捲動到這裡",
+    "Top": "頂端", "Bottom": "底部",
+    "Left edge": "左邊緣", "Right edge": "右邊緣",
+    "Page up": "上一頁", "Page down": "下一頁",
+    "Page left": "左頁", "Page right": "右頁",
+    "Scroll up": "向上捲動", "Scroll down": "向下捲動",
+    "Scroll left": "向左捲動", "Scroll right": "向右捲動",
+    "Select All": "全選",
+}
+
+
 def _installChineseTranslator(app) -> bool:
     """找到 Qt 官方或打包內的繁中翻譯時安裝；缺檔不影響程式啟動。"""
     from PySide6.QtCore import QLibraryInfo, QTranslator
+
+    class WordingFix(QTranslator):
+        def translate(self, context, source, disambiguation=None, n=-1):
+            return WORDING_FIX.get(source)  # None＝交給官方翻譯（回空字串會被當成譯文）
+
+        def isEmpty(self):
+            return False
 
     translation_dirs = []
     try:
@@ -766,6 +787,10 @@ def _installChineseTranslator(app) -> bool:
         if not installed:
             continue
         app._qtbase_zh_tw_translator = translator
+        # 後裝的優先：蓋掉官方詞不達意的幾句
+        fix = WordingFix(app)
+        app.installTranslator(fix)
+        app._wording_fix_translator = fix
         return True
     return False
 
