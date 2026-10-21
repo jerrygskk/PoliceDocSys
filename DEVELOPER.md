@@ -761,11 +761,11 @@ python tools/check_bundle_deps.py
 
 | 版本 | 摘要 |
 |------|------|
-| v1.2.16 | **刑案報案人改必填，新增「無報案人」勾選，無 schema 變動**。現場需求：報案人原為選填，常漏填增加歸檔負擔。陳報頁（`Layout3.ui` row3 col9 `crim_no_reporter`）、刑案編輯彈窗（`CriminalEditDialog`，陳報／歸檔／資料庫瀏覽共用）與一般轉刑案的補填視窗（`ConvertDialog`）三處報案人欄旁新增「無報案人」，預設不勾；未勾且報案人空白即列入「欄位未填」擋下；勾選則報案人欄反灰清空、存 NULL。陳報頁「清除表單」恢復不勾，唯讀鎖重套（`_applyInputLock`）不會把反灰的報案人欄重新啟用；編輯彈窗載入報案人空白的舊資料時自動勾上，避免舊資料無法存檔。HELP 刑案陳報重點同步改寫（QUICKSTART PDF 需重產）。新增測試於 `test_report_input_mode`／`test_report_mode_switch`／`test_dialog_smoke`；日期防呆 pilot 補填報案人。 |
+| v1.2.16 | **刑案報案人改必填（新增「無報案人」勾選）、深色模式文字看不見與右鍵選單用語修正，無 schema 變動**。①現場需求：報案人原為選填，常漏填增加歸檔負擔。陳報頁（`Layout3.ui` row3 col9 `crim_no_reporter`）、刑案編輯彈窗（`CriminalEditDialog`，陳報／歸檔／資料庫瀏覽共用）與一般轉刑案的補填視窗（`ConvertDialog`）三處報案人欄旁新增「無報案人」，預設不勾；未勾且報案人空白即列入「欄位未填」擋下；勾選則報案人欄反灰清空、存 NULL。陳報頁「清除表單」恢復不勾，唯讀鎖重套（`_applyInputLock`）不會把反灰的報案人欄重新啟用；編輯彈窗載入報案人空白的舊資料時自動勾上，避免舊資料無法存檔。HELP 刑案陳報重點同步改寫（QUICKSTART PDF 需重產）。新增測試於 `test_report_input_mode`／`test_report_mode_switch`／`test_dialog_smoke`；日期防呆與結算兩支 pilot 補填報案人（結算 pilot 漏補時五項找不到刑案列）。②Windows 深色模式下 Qt 系統 palette 文字色變白，而 `APPLE_STYLE` 寫死淺色底，未點名文字色的預覽表格、多行文字框、數字框、群組框標題畫成白底白字；`lib/theme.apply_light_palette` 讓整支程式固定淺色 palette（含 Qt 6.8+ 的 colorScheme），兩支 exe 共用（PITFALLS QSS-9）。同批把測試對 `AuthManager` 單例 `role_changed` 的拆線收進根 conftest 的 autouse fixture（TST-6）。③載入 Qt 官方繁中翻譯後捲軸右鍵選單詞不達意（「在此捲動」「頁面上方」），`main.py` 的 `WORDING_FIX` 改寫成 Windows `user32.dll.mui` 的正式用語（捲動到這裡、頂端、上一頁、全選…）。pytest 1222＋49＋17。 |
 | v1.2.15 | **異地備份連線逾時可設定，無 schema 變動**。現場回報異地備份的網路電腦沒回應時，程式開啟被拖慢許久：Windows 對不在線的 SMB 主機要等 20～40 秒才放棄，一輪 GFS 又對同一位置碰好幾次、每次重等，Python 檔案 API 沒有逾時可設。改為碰資料夾前先 `is_reachable` 以 445 埠試連，逾時整處略過並走既有 error.log＋面板紅字；開機備份、自動備份面板、備份還原清單、開機救援四處共用同一道檢查。秒數為新設定項 `backup_connect_timeout_sec`（1～30，預設 3，Reset 不清），放在「自動備份」面板。PITFALLS 新增 NET-3。pytest 1207＋49＋17。 |
 | v1.2.14 | **編輯彈窗下拉可打字、勾選框改打勾、陳報預覽與限辦日期切字修正，無 schema 變動**。①六個編輯彈窗（交辦、刑案、一般、罰單、敘獎與轉換類別）的人員／單位下拉原為純下拉，與頁面可打字篩選不一致；改用 `widgets.makeFilterCombo`，存檔前 `validateFilterCombos` 擋下「打了字沒選中」（否則非必填欄被 `currentData()` 靜默存成空白），完整打對姓名自動選中。②公版勾選框勾選時只填色、無勾勾，不直覺；改深藍 `#6e8fac` 疊白勾，停用勾選為灰底灰勾，結算表頭半選為白色短橫（圖示 `res/buttons/chk_*.svg` 登記 qrc）。③陳報預覽表 `applyNoElide` 未關自動換行，放不下的字折到第二行被切成半截；關閉換行並以 `_WholeCharsDelegate` 只畫完整的字、塞滿改靠左。④交辦單修改限辦日期框由 `_FIELD_W` 扣減推得，共用寬度縮成 340 時沒重算、掉到 180 被切字；改回 230（PITFALLS LAY-10）。pytest 1200＋49＋17。 |
 
-本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.15／v1.2.14／v1.2.13）；**被擠掉的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
+本節只留最近三個版本（`-v2` 重發與其原版視為同一格，故此處為 v1.2.16／v1.2.15／v1.2.14）；**被擠掉的逐版記錄全部在 [HISTORY.md](HISTORY.md)**，進版時把被擠掉的那一列搬過去。
 
 ---
 
