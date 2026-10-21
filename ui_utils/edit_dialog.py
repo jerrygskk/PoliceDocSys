@@ -715,8 +715,13 @@ class CriminalEditDialog(_BaseEditDialog):
 
         # 報案人
         self.w_reporter = QLineEdit()
-        self.w_reporter.setPlaceholderText("請輸入報案人")
-        form.addRow("報案人：", self.w_reporter)
+        self.w_reporter.setPlaceholderText("必填")
+        self.w_no_reporter = QCheckBox("無報案人")
+        self.w_no_reporter.toggled.connect(self._sync_no_reporter)
+        reporter_row = QHBoxLayout()
+        reporter_row.addWidget(self.w_reporter, 1)
+        reporter_row.addWidget(self.w_no_reporter)
+        form.addRow("報案人：", reporter_row)
 
         # 按鈕
         btn_save   = QPushButton("儲存")
@@ -803,8 +808,16 @@ class CriminalEditDialog(_BaseEditDialog):
             self.w_occ_date.clear()
 
         self.w_reporter.setText(str(reporter) if reporter else "")
+        # 既有資料報案人空白＝當初沒有報案人，載入時直接勾上
+        self.w_no_reporter.setChecked(not reporter)
 
         _load_arch_status(self, is_reported, is_electronic)
+
+    def _sync_no_reporter(self, checked):
+        """勾「無報案人」→ 報案人欄反灰並清空。"""
+        if checked:
+            self.w_reporter.clear()
+        self.w_reporter.setEnabled(not checked)
 
     def _on_save(self):
         from .ui_common import msgWarning, msgCritical, reportError
@@ -843,6 +856,8 @@ class CriminalEditDialog(_BaseEditDialog):
         if not subject:   errors.append("陳報主旨")
         if occ_blank:     errors.append("查獲日期")
         elif occ_err:     errors.append("查獲日期格式（請用 yyyy-MM-dd）")
+        if not reporter and not self.w_no_reporter.isChecked():
+            errors.append("報案人（無報案人請勾選「無報案人」）")
         if errors:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return

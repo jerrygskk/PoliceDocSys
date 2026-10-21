@@ -133,6 +133,29 @@ class TestEditDialogs(_DialogBase):
         self.assertEqual(dlg.w_subject.text(), "刑案主旨")
         dlg.deleteLater()
 
+    def test_criminal_edit_no_reporter_checkbox(self):
+        """報案人空白的舊資料載入即勾「無報案人」；取消勾選須填報案人才能存。"""
+        from ui_utils import ui_common
+        from ui_utils.edit_dialog import CriminalEditDialog
+        dlg = CriminalEditDialog(self.db, "2")
+        self.addCleanup(dlg.deleteLater)
+        self.assertTrue(dlg.w_no_reporter.isChecked())
+        self.assertFalse(dlg.w_reporter.isEnabled())
+
+        dlg.w_no_reporter.setChecked(False)
+        self.assertTrue(dlg.w_reporter.isEnabled())
+        warnings = []
+        with mock.patch.object(ui_common, "msgWarning",
+                               side_effect=lambda *a, **kw: warnings.append(a)):
+            dlg._on_save()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("報案人", warnings[0][1])
+
+        dlg.w_reporter.setText("某甲")
+        dlg.w_no_reporter.setChecked(True)
+        self.assertEqual(dlg.w_reporter.text(), "")
+        self.assertFalse(dlg.w_reporter.isEnabled())
+
     def test_upgraded_report_views_support_get_updated(self):
         from ui_utils.edit_dialog import CriminalEditDialog, GeneralEditDialog
         conn = sqlite3.connect(self.db)
