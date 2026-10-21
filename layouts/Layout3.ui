@@ -234,7 +234,13 @@
        <widget class="QLineEdit" name="crim_reporter">
         <property name="minimumSize"><size><width>160</width><height>36</height></size></property>
         <property name="maximumSize"><size><width>160</width><height>36</height></size></property>
-        <property name="placeholderText"><string>選填</string></property>
+        <property name="placeholderText"><string>必填</string></property>
+       </widget>
+      </item>
+      <item row="3" column="9" alignment="Qt::AlignLeft|Qt::AlignVCenter">
+       <widget class="QCheckBox" name="crim_no_reporter">
+        <property name="text"><string>無報案人</string></property>
+        <property name="checked"><bool>false</bool></property>
        </widget>
       </item>
 

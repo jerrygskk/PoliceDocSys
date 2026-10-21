@@ -184,6 +184,41 @@ class TestReportCreateDate(unittest.TestCase):
             conn.close()
         self.assertEqual(row, ("2026-07-29", "2026-07-15", "P001"))
 
+    def _submit_crim_count(self, warnings):
+        from tabs import tab_report
+        with mock.patch.object(tab_report.AuthManager, "instance",
+                               return_value=self._manager_auth()), \
+             mock.patch.object(tab_report, "QDate", _FixedQDate), \
+             mock.patch.object(tab_report, "msgWarning",
+                               side_effect=lambda *a, **kw: warnings.append(a)), \
+             mock.patch.object(tab_report, "reportError",
+                               side_effect=lambda _title, exc: (_ for _ in ()).throw(exc)), \
+             mock.patch.object(tab_report, "DEBUG_MODE", True):
+            self.tab._submitCriminal("2026-07-15", "P001")
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return conn.execute(
+                "SELECT COUNT(*) FROM Document_Criminal").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_blank_reporter_without_no_reporter_is_blocked(self):
+        """報案人空白且未勾「無報案人」→ 跳警告、不寫入。"""
+        self.tab.crim_reporter = _FakeLineEdit("  ")
+        self.tab.crim_no_reporter = _FakeRadio(False)
+        warnings = []
+        self.assertEqual(self._submit_crim_count(warnings), 0)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("報案人", warnings[0][1])
+
+    def test_blank_reporter_with_no_reporter_checked_submits(self):
+        """勾「無報案人」→ 報案人空白照常寫入。"""
+        self.tab.crim_reporter = _FakeLineEdit("")
+        self.tab.crim_no_reporter = _FakeRadio(True)
+        warnings = []
+        self.assertEqual(self._submit_crim_count(warnings), 1)
+        self.assertEqual(warnings, [])
+
     def test_self_service_general_uses_today_and_leaves_report_fields_null(self):
         from tabs import tab_report
         conn = sqlite3.connect(self.db_path)

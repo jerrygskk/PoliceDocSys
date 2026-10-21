@@ -117,3 +117,30 @@ class TestReportModeSwitch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNoReporterCheckbox(TestReportModeSwitch):
+    """「無報案人」勾選框：預設不勾；勾選時報案人欄反灰清空，清除表單恢復。"""
+
+    def test_toggle_disables_reporter_and_form_clear_resets(self):
+        tab = self._make_tab()
+        tab.type_tabbar.setCurrentIndex(0)
+        self.assertFalse(tab.crim_no_reporter.isChecked())
+        self.assertTrue(tab.crim_reporter.isEnabled())
+
+        tab.crim_reporter.setText("某甲")
+        tab.crim_no_reporter.setChecked(True)
+        self.assertFalse(tab.crim_reporter.isEnabled())
+        self.assertEqual(tab.crim_reporter.text(), "")
+
+        tab._applyInputLock()   # 唯讀鎖重套時不可把報案人欄重新啟用
+        self.assertFalse(tab.crim_reporter.isEnabled())
+
+        tab._formClear()
+        self.assertFalse(tab.crim_no_reporter.isChecked())
+        self.assertTrue(tab.crim_reporter.isEnabled())
+
+    def test_general_mode_hides_checkbox(self):
+        tab = self._make_tab()
+        tab.type_tabbar.setCurrentIndex(1)
+        self.assertTrue(tab.crim_no_reporter.isHidden())

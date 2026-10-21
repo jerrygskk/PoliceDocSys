@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QRadioButton, QVBoxLayout, QHBoxLayout,
     QGridLayout, QTabBar, QSizePolicy, QWidget,
     QDateEdit, QComboBox, QLineEdit, QLabel,
-    QTableWidget, QPushButton
+    QTableWidget, QPushButton, QCheckBox
 )
 
 from lib.base_tab import BaseTab, InputLockMixin
@@ -145,6 +145,9 @@ class TabReport(BaseTab, InputLockMixin):
         self.crim_subject   = inner.findChild(QLineEdit, 'crim_subject')
         self.crim_occdate   = inner.findChild(NullableDateEdit, 'crim_occdate')
         self.crim_reporter  = inner.findChild(QLineEdit, 'crim_reporter')
+        self.crim_no_reporter = inner.findChild(QCheckBox, 'crim_no_reporter')
+        if self.crim_no_reporter:
+            self.crim_no_reporter.toggled.connect(self._syncNoReporter)
 
         # ── 一般欄位（rows 4-5） ──────────────────────────
         self.radio_gen_cat_a = inner.findChild(QRadioButton, 'radio_gen_cat_a')  # GC01 業務陳報
@@ -206,6 +209,7 @@ class TabReport(BaseTab, InputLockMixin):
             inner.findChild(QLabel, 'lbl_crim_processor'), self.crim_processor,
             inner.findChild(QPushButton, 'btn_copy_to_processor'),
             inner.findChild(QLabel, 'lbl_crim_reporter'), self.crim_reporter,
+            self.crim_no_reporter,
         ]
         self._gen_row_widgets = [
             inner.findChild(QLabel, 'lbl_gen_cat'), self.gen_cat_group,
@@ -313,6 +317,7 @@ class TabReport(BaseTab, InputLockMixin):
                 "crim": [w for w in (shared + [
                     self.crim_casetype, self.crim_processor, self.crim_receiver,
                     self.crim_subject, self.crim_occdate, self.crim_reporter,
+                    self.crim_no_reporter,
                     self.radio_status_a, self.radio_status_b, self.radio_status_c,
                     btn_copy_to_receiver, btn_copy_to_processor,
                     btn_submit, btn_clear]) if w],
@@ -393,6 +398,18 @@ class TabReport(BaseTab, InputLockMixin):
         """覆寫：先套唯讀設定鎖，再疊加發文結算模式的欄位反灰。"""
         super()._applyInputLock()
         self._applySelfServiceMode()
+        self._syncNoReporter()
+
+    def _syncNoReporter(self, *_):
+        """勾「無報案人」→ 報案人欄反灰並清空；唯讀解鎖時不可把它重新啟用。"""
+        box = getattr(self, "crim_no_reporter", None)
+        if not box or not self.crim_reporter:
+            return
+        if box.isChecked():
+            self.crim_reporter.clear()
+            self.crim_reporter.setEnabled(False)
+        else:
+            self.crim_reporter.setEnabled(box.isEnabled())
 
     def _applySelfServiceMode(self):
         """發文結算模式：陳報日期／發文人員兩欄反灰（由結算時自動填入）。
@@ -590,6 +607,8 @@ class TabReport(BaseTab, InputLockMixin):
         if self.crim_subject:  self.crim_subject.clear()
         if self.crim_occdate:  self.crim_occdate.clear()
         if self.crim_reporter: self.crim_reporter.clear()
+        if getattr(self, "crim_no_reporter", None):
+            self.crim_no_reporter.setChecked(False)
         if self.radio_gen_cat_a: self.radio_gen_cat_a.setChecked(True)
         setupFilterCombo(self.gen_dept,      self._depts)
         setupFilterCombo(self.gen_processor, self._personnel)
@@ -639,6 +658,9 @@ class TabReport(BaseTab, InputLockMixin):
         if not processor_id: errors.append("承辦人員")
         if not subject:      errors.append("陳報主旨")
         if occ_blank:        errors.append("查獲日期")
+        no_reporter = getattr(self, "crim_no_reporter", None)
+        if not reporter and not (no_reporter and no_reporter.isChecked()):
+            errors.append("報案人（無報案人請勾選「無報案人」）")
         elif occ_err:        errors.append("查獲日期格式（請用 yyyy-MM-dd）")
         if errors:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")

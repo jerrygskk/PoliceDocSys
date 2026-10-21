@@ -108,6 +108,7 @@ def _report_tab(qtbot, db_path, *, report_date, occ_date="2026-08-01"):
     tab.crim_processor.setCurrentIndex(tab.crim_processor.findData(STAFF_ID))
     tab.crim_subject.setText("防呆測試案由")
     tab.crim_occdate.setText(occ_date)
+    tab.crim_reporter.setText("防呆報案人")
     return tab
 
 
@@ -165,6 +166,7 @@ def test_same_date_only_asks_once_across_consecutive_entries(
     tab.crim_processor.setCurrentIndex(tab.crim_processor.findData(STAFF_ID))
     tab.crim_subject.setText("第二筆")
     tab.crim_occdate.setText("2026-08-01")
+    tab.crim_reporter.setText("防呆報案人")
     tab._submit()
 
     assert len(prompts["calls"]) == 1, "同一日期不該問第二次"
