@@ -13,7 +13,7 @@ import shutil
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QComboBox, QPushButton, QRadioButton, QButtonGroup,
-    QGroupBox,
+    QGroupBox, QCheckBox,
 )
 from PySide6.QtCore import Qt, QDate
 
@@ -192,10 +192,21 @@ class ConvertDialog(QDialog):
         self.w_occ_date = NullableDateEdit()
         self.w_occ_date.setPlaceholderText("下拉選擇日期")
         form.addRow("查獲日期：", self.w_occ_date)
-        # 報案人（可空白）
+        # 報案人（必填；確實沒有報案人時勾「無報案人」）
         self.w_reporter = QLineEdit()
-        self.w_reporter.setPlaceholderText("請輸入報案人（可空白）")
-        form.addRow("報案人：", self.w_reporter)
+        self.w_reporter.setPlaceholderText("必填")
+        self.w_no_reporter = QCheckBox("無報案人")
+        self.w_no_reporter.toggled.connect(self._sync_no_reporter)
+        reporter_row = QHBoxLayout()
+        reporter_row.addWidget(self.w_reporter, 1)
+        reporter_row.addWidget(self.w_no_reporter)
+        form.addRow("報案人：", reporter_row)
+
+    def _sync_no_reporter(self, checked):
+        """勾「無報案人」→ 報案人欄反灰並清空。"""
+        if checked:
+            self.w_reporter.clear()
+        self.w_reporter.setEnabled(not checked)
 
     def _build_fill_gen(self, form):
         # 業務單位（必填，決策 #12）
@@ -263,6 +274,8 @@ class ConvertDialog(QDialog):
                 errors.append("查獲日期格式（請用 yyyy-MM-dd）")
             occ = self.w_occ_date.getDate()
             reporter = self.w_reporter.text().strip()
+            if not reporter and not self.w_no_reporter.isChecked():
+                errors.append("報案人（無報案人請勾選「無報案人」）")
             fill = {
                 "case_type":       case_type,
                 "case_status":     self._radio_value(self._status_radios),

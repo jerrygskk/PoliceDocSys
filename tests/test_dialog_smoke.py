@@ -838,6 +838,23 @@ class TestConvertDialog(_DialogBase):
         dlg = ConvertDialog(self.db, "gen", "3")
         dlg.deleteLater()
 
+    def test_gen_to_crim_requires_reporter_or_no_reporter(self):
+        """轉成刑案：報案人空白且未勾「無報案人」須列入必填錯誤。"""
+        from ui_utils.convert_dialog import ConvertDialog
+        dlg = ConvertDialog(self.db, "gen", "3")
+        self.addCleanup(dlg.deleteLater)
+        self.assertFalse(dlg.w_no_reporter.isChecked())
+        _fill, errors = dlg._collect_fill()
+        self.assertTrue(any("報案人" in e for e in errors))
+
+        dlg.w_reporter.setText("某甲")
+        dlg.w_no_reporter.setChecked(True)
+        self.assertEqual(dlg.w_reporter.text(), "")
+        self.assertFalse(dlg.w_reporter.isEnabled())
+        fill, errors = dlg._collect_fill()
+        self.assertFalse(any("報案人" in e for e in errors))
+        self.assertIsNone(fill["reporter_name"])
+
 
 class TestEditDialogFilterCombos(_DialogBase):
     """編輯彈窗的人員／單位下拉比照頁面可打字篩選；打了字沒選中須擋下存檔。"""
