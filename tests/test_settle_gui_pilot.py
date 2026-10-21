@@ -142,6 +142,7 @@ def _submit_report(qtbot, db_path, kind, *, subject):
         _pick(tab.crim_processor, STAFF_ID)
         tab.crim_subject.setText(subject)
         tab.crim_occdate.setText("2026-08-01")
+        tab.crim_reporter.setText("結算報案人")
     else:
         _pick(tab.gen_processor, STAFF_ID)
         tab.gen_subject.setText(subject)
@@ -356,6 +357,7 @@ def test_sender_mode_keeps_fields_editable_and_requires_sender(
     _pick(tab.crim_processor, STAFF_ID)
     tab.crim_subject.setText("送文者模式測試")
     tab.crim_occdate.setText("2026-08-01")
+    tab.crim_reporter.setText("結算報案人")     # 只留發文人員未填，擋下才是因為它
     tab.rpt_sender.setCurrentIndex(-1)          # 未選發文人員
 
     tab._submit()
