@@ -26,7 +26,7 @@ from PySide6.QtWidgets import QApplication, QTabWidget, QWidget
 
 from lib.app_profile import ENTRY_PROFILE, FULL_PROFILE
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_utils import getSetting, setSetting
 from tabs.tab_settings import TabSettings
 from ui_utils.settings_panels import InputLockPanel, InputModePanel

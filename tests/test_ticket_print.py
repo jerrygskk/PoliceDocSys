@@ -25,6 +25,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import db_schema, db_seed, db_utils
+from tests import schema_template
 from lib.print_canvas import LineOp, RecordingCanvas, RectOp, TextOp
 from lib.ticket_utils import createTicket
 from ui_utils.settle_dialog import settle_selected
@@ -668,7 +669,7 @@ class TestQueryTicketPrintRows(unittest.TestCase):
         fd, self.db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
         conn = sqlite3.connect(self.db_path)
-        db_schema.applySchema(conn)
+        schema_template.applySchema(conn)
         db_seed.seedFreshDb(conn)
         conn.execute(
             "INSERT OR REPLACE INTO Ref_Personnel"

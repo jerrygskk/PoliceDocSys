@@ -21,7 +21,7 @@ from PySide6.QtCore import QDate, QObject
 from PySide6.QtWidgets import QApplication, QTabWidget, QWidget
 
 import res.resources_rc          # 註冊 qrc，勿刪
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from ui_utils import loadUi
 import tabs.tab_ticket as tab_ticket_module
 

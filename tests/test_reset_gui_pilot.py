@@ -40,7 +40,7 @@ from PySide6.QtWidgets import QDialog, QTabWidget, QWidget
 
 from lib.auth_manager import AuthManager
 from lib.db_backup import RESET_KEEP
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_seed import seedFreshDb
 from lib.db_utils import ARCHIVE_ROOT_KEY, getSetting, setSetting
 import tabs.tab_settings as settings_module

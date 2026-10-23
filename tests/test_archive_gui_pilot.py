@@ -32,7 +32,7 @@ except ModuleNotFoundError as exc:  # 讓 unittest discover 在缺 pytest 時記
 from PySide6.QtWidgets import QPushButton, QStackedWidget, QTabWidget, QWidget
 
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 import tabs.tab_archive as archive_module
 from tabs.tab_archive import TabArchive
 

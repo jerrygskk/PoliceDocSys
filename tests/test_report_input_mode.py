@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 def _make_db():
     """建立 in-memory SQLite 並套用完整 schema。"""
-    from lib.db_schema import applySchema
+    from tests.schema_template import applySchema
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     applySchema(conn)
@@ -43,7 +43,7 @@ def _make_db():
 def _make_db_file(path):
     """比照 `_make_db()`，但建在磁碟檔案而非 :memory:（供需要驗證真正
     commit 落盤的測試使用）。"""
-    from lib.db_schema import applySchema
+    from tests.schema_template import applySchema
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     applySchema(conn)
@@ -250,7 +250,7 @@ class TestSeedDefaults(unittest.TestCase):
 
     def test_seed_sets_migrated_kinds_to_sender_mode(self):
         """crim／gen／ticket 三把 key 有播種（它們有舊全域 key 要覆蓋）。"""
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         from lib.db_seed import seedFreshDb
         from lib.db_utils import REPORT_MODE_KEYS
         conn = sqlite3.connect(":memory:")
@@ -268,7 +268,7 @@ class TestSeedDefaults(unittest.TestCase):
     def test_seed_leaves_reward_key_absent_and_defaults_to_sender_mode(self):
         """reward 不吃舊全域 key，故不需播種；key 不存在即送文者模式。"""
         import tempfile
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         from lib.db_seed import seedFreshDb
         from lib.db_utils import REPORT_MODE_KEYS, isSelfServiceMode
         tmp = tempfile.mkdtemp()
@@ -287,7 +287,7 @@ class TestSeedDefaults(unittest.TestCase):
         shutil.rmtree(tmp, ignore_errors=True)
 
     def test_seed_does_not_write_legacy_key(self):
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         from lib.db_seed import seedFreshDb
         conn = sqlite3.connect(":memory:")
         applySchema(conn)
@@ -304,7 +304,7 @@ class TestIsSelfServiceMode(unittest.TestCase):
     def _make_db_file(self, tmp_path, settings=None):
         """建立暫存 DB 檔，並寫入指定 App_Settings。"""
         import tempfile, os
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         fd, path = tempfile.mkstemp(suffix=".db", dir=tmp_path)
         os.close(fd)
         conn = sqlite3.connect(path)
@@ -366,7 +366,7 @@ class TestPerKindMode(unittest.TestCase):
         import tempfile
         fd, path = tempfile.mkstemp(suffix=".db", dir=self._tmp)
         os.close(fd)
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         conn = sqlite3.connect(path)
         applySchema(conn)
         for key, value in (settings or {}).items():
@@ -561,7 +561,7 @@ class TestSettleDocumentTypes(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         self._tmp = tempfile.mkdtemp()
         self.path = os.path.join(self._tmp, "reward.db")
         conn = sqlite3.connect(self.path)
@@ -623,7 +623,7 @@ class TestUnissuedCountQueries(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
 
         self._tmp = tempfile.mkdtemp()
         self.path = os.path.join(self._tmp, "unissued_count.db")
@@ -703,7 +703,7 @@ class TestSettleMetaTicket(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         self._tmp = tempfile.mkdtemp()
         self.path = os.path.join(self._tmp, "ticket_settle.db")
         conn = sqlite3.connect(self.path)
@@ -1028,7 +1028,7 @@ class TestInputModePanelSave(unittest.TestCase):
     def setUp(self):
         import tempfile
         from lib.auth_manager import AuthManager
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         self._tmp = tempfile.mkdtemp()
         self._path = os.path.join(self._tmp, "t.db")
         conn = sqlite3.connect(self._path)
@@ -1181,7 +1181,7 @@ class TestResetLegacyKeyCleanup(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def _db(self, settings):
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         path = os.path.join(self._tmp, "t.db")
         conn = sqlite3.connect(path)
         applySchema(conn)
@@ -1235,7 +1235,7 @@ class TestSettleRewardProcessor(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         self._tmp = tempfile.mkdtemp()
         self.path = os.path.join(self._tmp, "reward_settle.db")
         conn = sqlite3.connect(self.path)

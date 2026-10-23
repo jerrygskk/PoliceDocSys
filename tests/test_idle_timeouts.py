@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import db_schema
+from tests import schema_template
 from lib.db_utils import (
     parseIdleMinutes, getIdleTimeoutsMs, setSetting,
     IDLE_TIMEOUT_KEYS, IDLE_TIMEOUT_DEFAULTS,
@@ -75,7 +76,7 @@ class TestGetIdleTimeoutsMs(unittest.TestCase):
         fd, self.db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
         conn = sqlite3.connect(self.db_path)
-        db_schema.applySchema(conn)
+        schema_template.applySchema(conn)
         conn.commit()
         conn.close()
 

@@ -19,7 +19,9 @@ from PySide6.QtWidgets import QApplication, QDateEdit, QLabel, QTableWidget
 import res.resources_rc
 _app = QApplication.instance() or QApplication([])
 
-from lib.db_schema import applySchema, ensureSchema
+from lib.db_schema import ensureSchema
+
+from tests.schema_template import applySchema
 
 
 def _dominant_rgb(widget):

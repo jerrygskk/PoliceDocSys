@@ -34,7 +34,7 @@ except ModuleNotFoundError as exc:  # 讓 unittest discover 在缺 pytest 時記
     raise unittest.SkipTest("需 pytest/pytest-qt，請以 pytest 執行此檔")
 
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_seed import seedFreshDb
 from lib.db_utils import (
     PRINT_TITLE_KEYS, archiveDefaultDir, getBackupSecondDir, getIdleTimeoutsMs,

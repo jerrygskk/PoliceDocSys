@@ -2,7 +2,7 @@
 import sqlite3
 import unittest
 
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_utils import (
     REWARD_ACTIVE_SQL,
     REWARD_DELETED_SQL,

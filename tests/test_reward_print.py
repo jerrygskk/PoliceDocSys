@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 from PySide6.QtWidgets import QApplication, QLabel
 
 from lib import db_schema, db_seed, db_utils
+from tests import schema_template
 from tabs import tab_print
 from ui_utils.settings_panels import PrintTitlePanel
 
@@ -22,7 +23,7 @@ class TestRewardPrint(unittest.TestCase):
         fd, self.db = tempfile.mkstemp(suffix=".db")
         os.close(fd)
         self.conn = sqlite3.connect(self.db)
-        db_schema.applySchema(self.conn)
+        schema_template.applySchema(self.conn)
         db_seed.seedFreshDb(self.conn)
         self.conn.commit()
 

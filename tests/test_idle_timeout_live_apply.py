@@ -23,6 +23,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from lib import db_schema
+from tests import schema_template
 from lib.auth_manager import AuthManager
 from lib.db_utils import setSetting, IDLE_TIMEOUT_KEYS
 from ui_utils.settings_panels import IdleTimeoutPanel
@@ -61,7 +62,7 @@ class _IdleTimeoutLiveBase(unittest.TestCase):
         fd, self.db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
         conn = sqlite3.connect(self.db_path)
-        db_schema.applySchema(conn)
+        schema_template.applySchema(conn)
         conn.commit()
         conn.close()
         self._role = AuthManager.instance().current_role

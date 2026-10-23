@@ -48,7 +48,7 @@ _BUILD_MANAGER_SCRIPT = textwrap.dedent("""
     import tempfile
     import os
 
-    from lib.db_schema import applySchema
+    from tests.schema_template import applySchema
     from lib.app_profile import {profile_name}
     import main as main_module
     from PySide6.QtWidgets import QApplication
@@ -178,7 +178,7 @@ class TestLoadWorkerSurvivesPackagedEntryEnvironment(unittest.TestCase):
             sys.meta_path.insert(0, _Blocker())
 
             from lib.app_profile import ENTRY_PROFILE
-            from lib.db_schema import applySchema
+            from tests.schema_template import applySchema
             from lib.loading_screen import LoadWorker
             from main import TAB_CLASSES
 
@@ -205,7 +205,7 @@ class TestLoadWorkerSurvivesPackagedEntryEnvironment(unittest.TestCase):
     def test_broken_preheat_entry_does_not_break_loading(self):
         script = textwrap.dedent("""
             import sqlite3, tempfile, os
-            from lib.db_schema import applySchema
+            from tests.schema_template import applySchema
             from lib.loading_screen import LoadWorker
 
             tmp = tempfile.mkdtemp()

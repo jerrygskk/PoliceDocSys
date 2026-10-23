@@ -9,6 +9,7 @@ from unittest import mock
 from lib import ticket_utils
 
 from lib import db_schema, db_seed
+from tests import schema_template
 from lib.ticket_utils import (
     TICKET_NO_MIN_LEN_DEFAULT, TICKET_NO_MIN_LEN_KEY,
     TicketConflictError, TicketDuplicateError, TicketNotFoundError,
@@ -27,7 +28,7 @@ class TicketDbTestCase(unittest.TestCase):
         self.conn = sqlite3.connect(self.db_path)
         # raw sqlite3 連線預設關閉外鍵；不在此明確開啟，FK 測試會假綠。
         self.conn.execute("PRAGMA foreign_keys=ON")
-        db_schema.applySchema(self.conn)
+        schema_template.applySchema(self.conn)
         db_seed.seedFreshDb(self.conn)
         self.conn.commit()
 
@@ -176,7 +177,7 @@ class TestTicketSchema(TicketDbTestCase):
             )
 
     def test_apply_schema_is_idempotent_and_columns_match(self):
-        db_schema.applySchema(self.conn)
+        schema_template.applySchema(self.conn)
         columns = [r[1] for r in self.conn.execute(
             "PRAGMA table_info(Document_Ticket)")]
         self.assertEqual(columns, [

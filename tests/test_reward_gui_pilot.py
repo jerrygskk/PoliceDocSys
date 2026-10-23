@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from tabs.tab_reward import TabReward
 from ui_utils.reward_dialog import RewardEditDialog
 from ui_utils.table import setupPreviewTable

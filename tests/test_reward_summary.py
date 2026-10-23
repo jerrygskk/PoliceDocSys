@@ -32,7 +32,7 @@ class TestRewardSummary(unittest.TestCase):
         import os
         import sqlite3
         import tempfile
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         fd, path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
         try:

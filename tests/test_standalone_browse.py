@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QApplication, QTabWidget, QWidget
 
 import res.resources_rc  # noqa: F401  資源（icon）註冊，_fillRow 會用到 :/icon_pdf.svg
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_utils import restoreFromTrash, softDeleteDoc
 from lib.ticket_utils import deleteTicket
 from tabs.tab_dbbrowse import BROWSE_KEYS, TABLE_META, TabDBBrowse, queryBrowseRows

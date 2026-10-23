@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QTabWidget, QWidget
 
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from tabs.tab_dbbrowse import BROWSE_KEYS, PRELOAD_KEYS, TABLE_META, TabDBBrowse, queryBrowseRows
 
 _app = QApplication.instance() or QApplication([])

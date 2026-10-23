@@ -37,7 +37,7 @@ from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QTabWidget, QWidget
 
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_seed import seedFreshDb
 from lib.db_utils import REPORT_MODE_KEYS, setSetting
 import ui_utils.settle_dialog as settle_module

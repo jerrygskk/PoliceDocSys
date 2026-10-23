@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 
 import res.resources_rc          # 註冊 qrc，勿刪
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_seed import seedFreshDb
 
 _app = QApplication.instance() or QApplication([])

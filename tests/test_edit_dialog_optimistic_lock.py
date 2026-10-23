@@ -27,7 +27,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_seed import seedFreshDb
 from ui_utils.edit_dialog import (
     CriminalEditDialog, GeneralEditDialog, TaskEditDialog,

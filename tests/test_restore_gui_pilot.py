@@ -34,7 +34,7 @@ from lib import app_lock
 from lib.auth_manager import AuthManager
 from lib.db_backup import (
     PRERESTORE_KEEP, PRERESTORE_PREFIX, backup_dir, daily_filename)
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_seed import seedFreshDb
 import ui_utils.backup_restore_panel as panel_module
 from ui_utils.backup_restore_panel import BackupRestorePanel

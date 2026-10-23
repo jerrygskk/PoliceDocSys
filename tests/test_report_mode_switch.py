@@ -20,7 +20,7 @@ class TestReportModeSwitch(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         from lib.db_seed import seedFreshDb
 
         self._tmp = tempfile.mkdtemp()

@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from lib import db_schema, db_seed, db_utils
+from tests import schema_template
 
 
 class RewardDbTestCase(unittest.TestCase):
@@ -14,7 +15,7 @@ class RewardDbTestCase(unittest.TestCase):
         fd, self.db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
         self.conn = sqlite3.connect(self.db_path)
-        db_schema.applySchema(self.conn)
+        schema_template.applySchema(self.conn)
 
     def tearDown(self):
         self.conn.close()
@@ -23,7 +24,7 @@ class RewardDbTestCase(unittest.TestCase):
 
 class TestRewardSchema(RewardDbTestCase):
     def test_apply_schema_is_idempotent_and_creates_reward_table(self):
-        db_schema.applySchema(self.conn)
+        schema_template.applySchema(self.conn)
         columns = [r[1] for r in self.conn.execute(
             "PRAGMA table_info(Document_Reward)")]
         self.assertEqual(columns, [

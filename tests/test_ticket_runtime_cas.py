@@ -13,7 +13,7 @@ from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QApplication
 
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from ui_utils.ticket_dialog import TicketEditDialog
 
 

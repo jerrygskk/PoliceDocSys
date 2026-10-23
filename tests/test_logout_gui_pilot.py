@@ -29,7 +29,7 @@ from PySide6.QtWidgets import QDialog
 
 from lib.app_profile import FULL_PROFILE
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 import main as main_module
 from main import DocumentManager
 from ui_utils.reward_dialog import RewardEditDialog

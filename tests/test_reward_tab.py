@@ -12,7 +12,7 @@ from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QApplication, QPushButton, QTabWidget, QWidget
 
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 
 _app = QApplication.instance() or QApplication([])
 

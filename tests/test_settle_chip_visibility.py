@@ -65,7 +65,7 @@ class TestSettleEntryVisible(unittest.TestCase):
     """Sender mode retains the entry only while unissued records remain."""
 
     def setUp(self):
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         self._tmp = tempfile.mkdtemp()
         self._path = os.path.join(self._tmp, "t.db")
         conn = sqlite3.connect(self._path)
@@ -143,7 +143,7 @@ class TestSettleCompletionRefresh(unittest.TestCase):
     """結算最後一筆殘留資料後，入口必須依新狀態隱藏。"""
 
     def setUp(self):
-        from lib.db_schema import applySchema
+        from tests.schema_template import applySchema
         self._tmp = tempfile.mkdtemp()
         self._path = os.path.join(self._tmp, "t.db")
         conn = sqlite3.connect(self._path)

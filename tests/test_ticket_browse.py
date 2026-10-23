@@ -21,7 +21,7 @@ from PySide6.QtWidgets import QApplication, QTabWidget, QWidget
 
 import res.resources_rc  # noqa: F401  資源（icon）註冊，_fillRow 會用到 :/icon_pdf.svg
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from tabs.tab_dbbrowse import BROWSE_KEYS, TABLE_META, TabDBBrowse
 
 _app = QApplication.instance() or QApplication([])

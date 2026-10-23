@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QDialog
 
 from lib.app_profile import ENTRY_PROFILE, FULL_PROFILE
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 import main as main_module
 import standalone_main
 from main import DocumentManager, MainMenu, runApplication

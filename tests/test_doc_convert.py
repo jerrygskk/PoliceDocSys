@@ -14,12 +14,13 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib import db_schema
+from tests import schema_template
 from lib import doc_convert
 
 
 def _make_db():
     conn = sqlite3.connect(":memory:")
-    db_schema.applySchema(conn)          # 正式 DDL：三主表＋triggers＋Seq_DocId
+    schema_template.applySchema(conn)          # 正式 DDL：三主表＋triggers＋Seq_DocId
     conn.executescript("""
         INSERT INTO Seq_DocId(table_name,last_id) VALUES('Document_Criminal',5);
         INSERT INTO Seq_DocId(table_name,last_id) VALUES('Document_General',20);

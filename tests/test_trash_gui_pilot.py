@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QTableWidget, QWidget)
 
 from lib.auth_manager import AuthManager
-from lib.db_schema import applySchema
+from tests.schema_template import applySchema
 from lib.db_seed import seedFreshDb
 from lib.db_utils import getConn, snapshotRow, writeTrash
 import ui_utils.trash_panel as trash_module
