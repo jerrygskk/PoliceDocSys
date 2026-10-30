@@ -1,30 +1,19 @@
 # 給接手者（Claude／Codex 請先讀這節）
 
-## 通用工作習慣在維護者的全域設定
+## 通則在維護者的全域設定
 
-跨專案共通的規則（回覆風格、台灣用語、先計畫再寫 code、公版樣板、commit／push 鐵則等）
-放在維護者的 Claude 全域設定 **`C:\Users\user\.claude\CLAUDE.md`**，本檔不重複。
-
-- **Claude**：該檔與本檔每次對話皆自動載入（Claude Code 在專案內沒有 `CLAUDE.md` 時直接讀本檔），不必另外開檔。⚠️ 專案內不得再放 `CLAUDE.md`／`CLAUDE.local.md`，否則 Claude 只讀那份、不讀本檔
-- **Codex／其他工具**：開始工作前**自行讀取該檔**（讀不到就照本檔做，不要臆測內容）。
+跨專案共通的規則（回覆風格、編碼、正式 Python、測試兩階、Qt 慣例、Git／commit／發版通則等）
+放在維護者的全域設定 **`C:\Users\user\.claude\CLAUDE.md`**（Claude 與 Codex 皆自動載入），本檔不重複，只寫本專案的事。
 
 ⚠️ 這是本檔唯一允許指向庫外檔案的地方，代價已知：該檔不隨專案版控，換機器就沒有。
-因此**專案作業本身的規則一律留在本檔**（下方 A／B／C 節），全域檔只放通用習慣——
-讀不到全域檔時，頂多少掉風格偏好，不會做錯專案的事。
+因此**專案作業本身的規則一律留在本檔**——讀不到全域檔時，頂多少掉通用習慣，不會做錯專案的事。
 
-## 讀檔編碼與測試環境（所有工具適用）
+## 測試環境
 
-**讀取中文文字檔一律明確指定 UTF-8。**
-
-- PowerShell 執行前先將 `$OutputEncoding` 與 `[Console]::OutputEncoding` 設為 UTF-8，不依賴系統預設編碼
-- 若出現亂碼，立即改用 UTF-8 重新讀取；不得依據亂碼內容判斷
-
-**跑測試一律用正式 gate 那支 Python，不要用工具自帶的 runtime。**
-
-- 正式環境：`C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe`（3.12.10，已裝齊 `requirements-dev.txt`），指令與兩段式規則見 `DEVELOPER.md` §4
-- ⚠️ **Codex runtime 那支跑不了測試**：`C:\Users\user\.cache\codex-runtimes\...\python.exe` 沒有 pytest／PySide6／matplotlib，`-m pytest` 會直接 `No module named pytest`。2026-08-03 前的文件曾指向它，已作廢
+- 正式 gate 環境：全域設定的那支 Python 3.12（本機為 3.12.10，已裝齊 `requirements-dev.txt`），指令與兩段式規則見 `DEVELOPER.md` §4
+- ⚠️ Codex runtime 那支沒有 pytest／PySide6／matplotlib，`-m pytest` 會直接 `No module named pytest`。2026-08-03 前的文件曾指向它，已作廢
 - **回報測試結果前先跑 `tests/test_environment_contract.py`**：它比對實際安裝版本與 `requirements-dev.txt`，不符即紅。這支紅著的時候，其餘測試的綠燈都不算數
-- 換了直譯器就等於換了環境：**不得**因為「我這支跑得動」而改用別的 Python 交差，也不得為了讓環境契約測試變綠而去改 `requirements-dev.txt`——那份清單是正式 gate 環境的快照，要動先問維護者
+- **不得**為了讓環境契約測試變綠而去改 `requirements-dev.txt`——那份清單是正式 gate 環境的快照，要動先問維護者
 
 ## 這是什麼
 
@@ -32,7 +21,7 @@
 - **目標環境**：Windows，顯示縮放 **125%**，全域字體 **14pt**；PyInstaller `--onefile` 打包
 - **資料**：軟刪除（清空欄位、保留 `doc_id`），不做真 DELETE
 - **文件分工**：`README.md`＝使用者門面（撰寫定義見 DEVELOPER §9）；`DEVELOPER.md`＝技術文件（架構／打包／DB／版本記錄）；`PITFALLS.md`＝踩雷速查表（症狀→解法，本表任務對照見下）；`PRINTING.md`＝簽收單列印專章（引擎／版面／驗收網，自 DEVELOPER §5 拆出）；`AGENTS.md`＝協作規則（本檔）；`docs/handover.md`＝跨對話交接（不入庫）
-- ⚠️ **入庫文件不得叫人去參照未入庫的檔案**（通則與理由見全域設定）：`AGENTS.md`／`README.md`／`DEVELOPER.md`／`PITFALLS.md` 內不得指向 `.gitignore` 排除的路徑——本專案是 `docs/*`、`dbfile.db`、根目錄 `fix_*.py`／`seed_*.py`、`*.spec`、`build/`／`dist/` 等。踩過：`docs/superpowers/` 被清掉後，協作規則檔的指路變成死連結
+- ⚠️ 入庫文件不得指向的未入庫路徑（通則見全域設定），本專案是 `docs/*`、`dbfile.db`、根目錄 `fix_*.py`／`seed_*.py`、`*.spec`、`build/`／`dist/` 等。踩過：`docs/superpowers/` 被清掉後，協作規則檔的指路變成死連結
 
 ## 任務對照表（動手前先讀哪裡）
 
@@ -59,67 +48,37 @@
 
 ## 協作偏好（務必遵守）
 
-這是維護者最看重的部分。違反這些會直接消耗他的信任與時間。
-**通用習慣（回覆風格、台灣用語、先計畫再寫 code、公版樣板、push 鐵則）見全域設定**，下面只列本專案專屬的部分。
-
-### A. 跟他互動（溝通與節奏）
-
-- **找得到就別問**：文件／code／`dbfile.db` 裡有答案的不要問；但**沒寫進文件的設計決策**一定要問，不要憑空假設
+這是維護者最看重的部分。違反這些會直接消耗他的信任與時間。下面只列本專案專屬的部分。
 
 ### B. 產出（程式與檔案）
 
-- ⚠️ **產品 runtime 相依是封閉清單，只有 `PySide6`**（全域設計原則「優先用成熟函式庫」在本專案的明確例外）：多一個套件就多一段開機解壓與載入時間，而**開啟速度是本專案刻意付出代價換來的**——PDF 產出因此走 Qt 的 `QPdfWriter`／`QPrinter` 而不引入 reportlab。要往 `requirements.txt` 加東西**一律先問他**；`tools/` 與測試相依（`requirements-dev.txt`）不受此限。分界由 `tests/test_environment_contract.py` 守著
+- ⚠️ **產品 runtime 相依是封閉清單，只有 `PySide6`**（全域「優先用成熟函式庫」在本專案的明確例外）：**開啟速度是本專案刻意付出代價換來的**——PDF 產出因此走 Qt 的 `QPdfWriter`／`QPrinter` 而不引入 reportlab。`tools/` 與測試相依（`requirements-dev.txt`）不受此限。分界由 `tests/test_environment_contract.py` 守著
 
 - ⚠️ **完整版與獨立版的差異，一律加在 `AppProfile` 的欄位裡；現場要調的東西，一律做成 `App_Settings` 的 key。不要在程式各處寫「如果是獨立版就……」這種判斷。**
   理由很簡單：差異寫在一個地方，下次要改只改那一處；散在各處，下次就會漏改其中幾處。
   全域設計原則有一條說「不要做臆測性的設定項」，那是指**還沒有人需要**就先做一個開關（例如「以後說不定要換資料庫，先做個抽象層」）。本專案這兩樣**是已經存在的真實需求**（真的有兩支 exe、現場真的要調），不在那條的範圍內，別拿那條當理由改回散落的判斷式
 
-- **README 與 DEVELOPER.md 都不主動改**，他要才改；例外：「發布版本」流程要更新 DEVELOPER 技術章節與 §8 版本記錄
-- 改完**先 `py_compile` 驗證語法**，並主動自我迭代驗證：能單測就單測、能模擬（演算法／SQL round-trip）就跑一輪再交付。容器有 PySide6 可 import（跑非 GUI 純邏輯測試），但**無法開 GUI／截圖**——Tab 互動、Dialog、表格渲染請他上機測
-- **單元測試在 `tests/`**：⚠️ **完整 gate 一律走 pytest 兩段式**（指令見 DEVELOPER §4／§7），`python -m unittest discover -s tests -t .` 只是無 pytest 環境的備援、不得拿來當發布 gate。⚠️ **`-t .` 不可省**：省略時 `tests` 被當頂層目錄、`tests/__init__.py` 不會載入，日期防呆的遮蔽裝不上，整包會卡在無人可按的確認框（PITFALLS TST-4）。檔名 `test_*.py` 勿改名；`tests/__init__.py` 與 `tests/date_guard_shim.py` 是讓 unittest 跑法也不會卡在日期防呆確認框的必要檔（PITFALLS TST-4），勿刪。單跑 GUI pilot 時先設 `$env:QT_QPA_PLATFORM = 'offscreen'`，再用 `C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe -m pytest <檔案> -q`。⚠️ **這支系統 Python 是正式 gate 的唯一環境**（見 DEVELOPER §4）；**不要用 Codex runtime 那支**（`.cache\codex-runtimes\...`），它沒有 pytest／PySide6／matplotlib，跑不了測試。換機器時絕對路徑會不同，改用已裝齊 `requirements-dev.txt` 的 Python，並先跑 `tests/test_environment_contract.py` 確認版本對得上。動到可單測純邏輯（解析／SQL round-trip／狀態計算／權限判斷）**一併新增或更新測試**。見 DEVELOPER §4。⚠️ **GUI 流程測試為九支 pilot**（清單與寫新 pilot 的四條規則見 DEVELOPER §4「GUI pilot」）；再擴充其餘 GUI 流程、抽 driver 或加 production 注入 seam，一律**須另立經核可的計畫**才動
+- 語法用 `py_compile` 驗證。容器有 PySide6 可 import（跑非 GUI 純邏輯測試），但**無法開 GUI／截圖**——Tab 互動、Dialog、表格渲染請他上機測
+- **單元測試在 `tests/`**：⚠️ **完整 gate 一律走 pytest 兩段式**（指令見 DEVELOPER §4／§7），`python -m unittest discover -s tests -t .` 只是無 pytest 環境的備援、不得拿來當發布 gate。⚠️ **`-t .` 不可省**：省略時 `tests` 被當頂層目錄、`tests/__init__.py` 不會載入，日期防呆的遮蔽裝不上，整包會卡在無人可按的確認框（PITFALLS TST-4）。檔名 `test_*.py` 勿改名；`tests/__init__.py` 與 `tests/date_guard_shim.py` 是讓 unittest 跑法也不會卡在日期防呆確認框的必要檔（PITFALLS TST-4），勿刪。單跑 GUI pilot：`$env:QT_QPA_PLATFORM = 'offscreen'` 後 `python -m pytest <檔案> -q`。⚠️ **GUI 流程測試為九支 pilot**（清單與寫新 pilot 的四條規則見 DEVELOPER §4「GUI pilot」）；再擴充其餘 GUI 流程、抽 driver 或加 production 注入 seam，一律**須另立經核可的計畫**才動
 - ⚠️ **測試分兩階跑**（通則見全域設定）：本專案的「② 完整 gate」＝DEVELOPER §4 的環境契約＋兩段 pytest＋`test_no_pii`，約 5 分鐘。
   改完當下就直接跑 ② 的範圍：`lib/theme.py`、`tests/schema_template.py`、根 `conftest.py`、`lib/db_schema.py`／`lib/db_seed.py`、列印繪圖層（另有基準比對，見 `PRINTING.md`）
-- ⚠️ **權限 gate 是每個新功能必檢項**（「按鈕反灰擋不住」的通則見全域設定）：本專案用 `_refEditable()`／`is_admin()` 等便捷判斷，勿字串比較；權限矩陣與既有 gate 詳見 DEVELOPER §10「權限」，破壞性或動實體檔案的流程另加「modal 返回後再檢查一次」（§10「執行時權限複核」）
-- ⚠️ **視窗開啟時的初始焦點不得停在日期欄位**：任何 Dialog／視窗建好後都要明確
-  `setFocus()` 到第一個該填的欄位（通常是必填的文字框或下拉），**不可讓焦點落在
-  `QDateEdit`／`NullableDateEdit`**。日期框多半已預設今天，焦點停在上面時使用者
-  的鍵盤輸入或滾輪會直接改掉日期，且畫面變化細微不易察覺，等於靜默竄改資料。
-  慣例是在 `__init__` 末尾呼叫（既有例：`reward_dialog`／`ticket_dialog`／
-  `settle_dialog`）。新增視窗一律照做並上機確認焦點位置。
-- ⚠️ **本專案的公版樣板清單**（「有公版就直接套」的通則見全域設定）：全域樣式 `lib/theme.py`（`APPLE_STYLE`／`HINT_COLOR`／`TEXT_COLOR`）、按鈕 `ui_utils/ui_common.py`（`BTN_CONFIRM`／`BTN_CANCEL`／`BTN_DANGER`）、訊息與確認框（`msgInfo`／`msgWarning`／`msgCritical`／`confirmBox`）、表格（`ui_utils/table.py` 的 `setupPreviewTable`）、日期框（`NullableDateEdit`／`setupDateEditToToday`／全域滾輪 guard，見 PITFALLS QTW-10／QTW-13）、設定面板（`ui_utils/settings_panels.py` 的 `_SettingsPanel`／`_save_row`）。在新檔案裡寫死色碼／自訂按鈕樣式＝往後改主題會漏掉這一處。⚠️ **前例已經爆過**：六個編輯彈窗曾自帶一份區域 QSS，把公版的停用反灰整個蓋掉，現場回報「欄位鎖住了卻看不出來」；連帶挖出公版自己的規則順序也寫反。2026-08-07 全部移除、彈窗一律不設 stylesheet，詳見 PITFALLS **QSS-8**（QSS-3 那條「新彈窗必設背景＋文字色」已作廢，照做會再製造同一個 bug）
+- ⚠️ **權限 gate 是每個新功能必檢項**（通則見全域設定）：本專案用 `_refEditable()`／`is_admin()` 等便捷判斷；權限矩陣與既有 gate 詳見 DEVELOPER §10「權限」，破壞性或動實體檔案的流程另加「modal 返回後再檢查一次」（§10「執行時權限複核」）
+- 初始焦點規則（通則見全域設定）的既有例：`reward_dialog`／`ticket_dialog`／`settle_dialog`，焦點不可落在 `QDateEdit`／`NullableDateEdit`
+- ⚠️ **本專案的公版樣板清單**（通則見全域設定）：全域樣式 `lib/theme.py`（`APPLE_STYLE`／`HINT_COLOR`／`TEXT_COLOR`）、按鈕 `ui_utils/ui_common.py`（`BTN_CONFIRM`／`BTN_CANCEL`／`BTN_DANGER`）、訊息與確認框（`msgInfo`／`msgWarning`／`msgCritical`／`confirmBox`）、表格（`ui_utils/table.py` 的 `setupPreviewTable`）、日期框（`NullableDateEdit`／`setupDateEditToToday`／全域滾輪 guard，見 PITFALLS QTW-10／QTW-13）、設定面板（`ui_utils/settings_panels.py` 的 `_SettingsPanel`／`_save_row`）。彈窗不設 stylesheet 的來由與公版規則順序見 PITFALLS **QSS-8**（QSS-3 那條「新彈窗必設背景＋文字色」已作廢，照做會再製造同一個 bug）
 
-### C. 版本 / Git / 發布（鐵則；完整流程與用語約定見 DEVELOPER §7「發布流程」）
+### C. 版本 / Git / 發布（完整流程與用語約定見 DEVELOPER §7「發布流程」）
 
-- **逐檔 add**：跳過 `dbfile.db` 與根目錄 `fix_*.py`／`seed_*.py`（刻意不入庫，勿誤刪）
+- **逐檔 add 的跳過清單**：`dbfile.db` 與根目錄 `fix_*.py`／`seed_*.py`（刻意不入庫，勿誤刪）
 - **push 前必跑 `python -m unittest tests.test_no_pii`**（防真實人名／個資；`dbfile.db` 只能是乾淨空殼）
-- **勿手改 `lib/version.py`**：進版一律 `python tools/bump_version.py <版號>`；進位與否**他決定**
-- **「進版」「發布版本」「出一版」**＝走完 DEVELOPER §7 發布流程**直到 GitHub Release 上架（5 asset：兩支 exe＋dbfile.db＋PACKED.zip＋速查卡，exe 與速查卡皆帶版號）才算結束**，別只做 bump＋tag 就回報完成
-- release note 給 `.md` 檔（不入庫），**不要打在對話裡**
-- 打包**只用 onefile**、build 一律用 PowerShell tool、每次砍 spec 全新 build（指令見 DEVELOPER §7）
-
-#### commit 訊息寫法（本專案補充）
-
-**通用寫法（格式、正文三件事、手動斷行、署名、PowerShell 的正解、禁止的空訊息）見全域設定**，
-Codex／其他工具開工前自行讀取全域檔。下面只列本專案專屬的部分：
-
-- commit 訊息是這個專案的**第二層歷史**（第一層是 `HISTORY.md`）——半年後查
-  「這行為什麼改成這樣」時 `git log` 就是答案，只寫「修正罰單簽收表」等於沒寫。
-- ⚠️ 已知 Codex 習慣一行結案，本專案不接受：訊息要交代**為什麼改、改成什麼、影響哪些地方**。
-- 發版用 `release: v1.2.9 摘要` 當標題。
-- ⚠️ **正文手動斷行斷在約 40 個全形字**（≈ 終端機 80 欄），這是全域規則的實際值，
-  在此寫死免得又抓錯：踩過斷在 20 個全形字左右，行數平白多一倍，訊息看起來又窄
-  又高（v1.2.10-v2 後那兩則）。太窄不是「比較保險」，是把一段話拆得更難讀。
-- 踩雷類改動把症狀與根因寫進正文（例：`msjh.ttc` 與 `msjhbd.ttc` family 名相同
-  導致靠名字切字重靜默失效），那是往後 `PITFALLS.md` 條目的素材來源。
+- **進版工具**：`python tools/bump_version.py <版號>`，勿手改 `lib/version.py`
+- **發版完成的標準**：GitHub Release 上架 5 個 asset——兩支 exe＋dbfile.db＋PACKED.zip＋速查卡，exe 與速查卡皆帶版號
+- build 一律用 PowerShell tool、每次砍 spec 全新 build（指令見 DEVELOPER §7）
+- commit 訊息是本專案的**第二層歷史**（第一層是 `HISTORY.md`）；發版用 `release: v1.2.9 摘要` 當標題
 
 ### D. 派工給 subagent（本專案的環境事實）
 
-**「環境先備妥、實測可用才准派工」與六項準備清單見全域設定**，下面只列本專案要填進 brief 的實際值：
+準備清單見全域設定，本專案要填進 brief 的實際值：
 
-- **直譯器**：`C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe`（正式 gate
-  唯一環境，見 DEVELOPER §4）；**不要用 Codex runtime 那支**（`.cache\codex-runtimes\...`），
-  它沒有 pytest／PySide6／matplotlib
-- **環境變數**：離線 Qt 測試一律 `QT_QPA_PLATFORM=offscreen`
 - **工作目錄**：專案根目錄（`getResourcePath` 靠當前工作目錄找 `dbfile.db`，見 DEVELOPER §4）
 - **測試指令**：兩段式 pytest（非 shell／shell）＋ `test_no_pii`，指令見 DEVELOPER §4
-- 測試一律用**暫存 DB**，絕不搬真實 `dbfile.db`
+- 暫存 DB，絕不搬真實 `dbfile.db`；直譯器與環境變數照全域設定
